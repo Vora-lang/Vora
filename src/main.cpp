@@ -6,7 +6,7 @@
 
 int main() {
 
-    std::string source = "1 + 2 * 3";
+    std::string source = "a = b + c * d";
 
     vora::Lexer lexer(source);
 
@@ -19,6 +19,15 @@ int main() {
     vora::ASTPrinter printer;
 
     std::cout << printer.print(expr.get()) << std::endl;
+
+    for (const auto& token : tokens) {
+        std::cout
+            << tokenTypeToString(token.type)
+            << "("
+            << token.lexeme
+            << ")"
+            << std::endl;
+    }
 
     return 0;
 }

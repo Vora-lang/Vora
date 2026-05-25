@@ -1,4 +1,5 @@
 #include "parser.h"
+#include <iostream>
 
 namespace vora {
 
@@ -10,9 +11,18 @@ std::unique_ptr<Expr> Parser::parse() {
     return expression();
 }
 
+// =========================
+// ENTRY
+// =========================
+
 std::unique_ptr<Expr> Parser::expression() {
+    // Pratt root: assignment is handled inside Pratt
     return parsePrecedence(0);
 }
+
+// =========================
+// UTIL
+// =========================
 
 bool Parser::isAtEnd() const {
     return peek().type == TokenType::END_OF_FILE;
@@ -30,22 +40,24 @@ Token Parser::advance() {
     if (!isAtEnd()) {
         current++;
     }
-
     return previous();
 }
 
 bool Parser::match(TokenType type) {
-    if (peek().type != type) {
-        return false;
-    }
-
+    if (peek().type != type) return false;
     advance();
-
     return true;
 }
 
+// =========================
+// PRECEDENCE TABLE
+// =========================
+
 int Parser::getPrecedence(TokenType type) const {
     switch (type) {
+
+        case TokenType::EQUAL:
+            return 1; // lowest, right-associative handled in Pratt
 
         case TokenType::OR:
             return 1;
@@ -80,34 +92,108 @@ int Parser::getPrecedence(TokenType type) const {
     }
 }
 
+// =========================
+// PRIMARY
+// =========================
+
 std::unique_ptr<Expr> Parser::primary() {
 
-    if (match(TokenType::NUMBER)) {
-        return std::make_unique<LiteralExpr>(
-            previous().lexeme
-        );
+    if (match(TokenType::MINUS)) {
+        Token op = previous();
+        auto right = primary();
+
+        if (!right) return nullptr;
+
+        return std::make_unique<UnaryExpr>(op, std::move(right));
     }
 
+    if (match(TokenType::NOT)) {
+        Token op = previous();
+        auto right = primary();
+
+        if (!right) return nullptr;
+
+        return std::make_unique<UnaryExpr>(op, std::move(right));
+    }
+
+    if (match(TokenType::NUMBER)) {
+        return std::make_unique<LiteralExpr>(previous().lexeme);
+    }
+
+    if (match(TokenType::IDENTIFIER)) {
+        return std::make_unique<IdentifierExpr>(previous().lexeme);
+    }
+
+    if (match(TokenType::LEFT_PAREN)) {
+        auto expr = expression();
+
+        if (!match(TokenType::RIGHT_PAREN)) {
+            std::cerr << "Expected ')'\n";
+            return nullptr;
+        }
+
+        return std::make_unique<GroupingExpr>(std::move(expr));
+    }
+
+    std::cerr << "Unexpected token: " << peek().lexeme << "\n";
     return nullptr;
 }
+
+// =========================
+// PRATT CORE
+// =========================
 
 std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
 
     auto left = primary();
 
+    if (!left) {
+        std::cerr << "Expected expression\n";
+        return nullptr;
+    }
+
     while (!isAtEnd() &&
            precedence < getPrecedence(peek().type)) {
 
         Token op = advance();
+        int opPrec = getPrecedence(op.type);
 
-        int newPrecedence = getPrecedence(op.type);
+        // right-associativity fix (power + assignment)
+        bool rightAssociative =
+            (op.type == TokenType::POWER ||
+             op.type == TokenType::EQUAL);
 
-        if (op.type == TokenType::POWER) {
-            newPrecedence--;
+        int nextPrec = opPrec - (rightAssociative ? 1 : 0);
+
+        auto right = parsePrecedence(nextPrec);
+
+        if (!right) {
+            std::cerr << "Expected right-hand expression after operator\n";
+            return nullptr;
         }
 
-        auto right = parsePrecedence(newPrecedence);
+        // =========================
+        // ASSIGNMENT (Pratt unified)
+        // =========================
+        if (op.type == TokenType::EQUAL) {
 
+            auto identifier =
+                dynamic_cast<IdentifierExpr*>(left.get());
+
+            if (!identifier) {
+                std::cerr << "Invalid assignment target\n";
+                return nullptr;
+            }
+
+            return std::make_unique<AssignmentExpr>(
+                identifier->name,
+                std::move(right)
+            );
+        }
+
+        // =========================
+        // NORMAL BINARY
+        // =========================
         left = std::make_unique<BinaryExpr>(
             std::move(left),
             op,

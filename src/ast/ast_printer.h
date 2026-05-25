@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "expr.h"
 
@@ -13,8 +14,7 @@ public:
 private:
     std::string parenthesize(
         const std::string& name,
-        const Expr* left,
-        const Expr* right
+        const std::vector<const Expr*>& exprs
     );
 };
 

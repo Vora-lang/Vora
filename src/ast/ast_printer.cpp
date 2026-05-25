@@ -12,13 +12,54 @@ std::string ASTPrinter::print(const Expr* expr) {
         return literal->value;
     }
 
+    if (auto identifier =
+        dynamic_cast<const IdentifierExpr*>(expr)) {
+
+        return identifier->name;
+    }
+
     if (auto binary =
         dynamic_cast<const BinaryExpr*>(expr)) {
 
         return parenthesize(
             binary->op.lexeme,
-            binary->left.get(),
-            binary->right.get()
+            {
+                binary->left.get(),
+                binary->right.get()
+            }
+        );
+    }
+
+    if (auto grouping =
+        dynamic_cast<const GroupingExpr*>(expr)) {
+
+        return parenthesize(
+            "group",
+            {
+                grouping->expression.get()
+            }
+        );
+    }
+
+    if (auto unary =
+        dynamic_cast<const UnaryExpr*>(expr)) {
+
+        return parenthesize(
+            unary->op.lexeme,
+            {
+                unary->right.get()
+            }
+        );
+    }
+
+    if (auto assign =
+        dynamic_cast<const AssignmentExpr*>(expr)) {
+
+        return parenthesize(
+            "assign " + assign->name,
+            {
+                assign->value.get()
+            }
         );
     }
 
@@ -27,19 +68,17 @@ std::string ASTPrinter::print(const Expr* expr) {
 
 std::string ASTPrinter::parenthesize(
     const std::string& name,
-    const Expr* left,
-    const Expr* right
+    const std::vector<const Expr*>& exprs
 ) {
 
     std::stringstream ss;
 
-    ss << "(" << name << " ";
+    ss << "(" << name;
 
-    ss << print(left);
-
-    ss << " ";
-
-    ss << print(right);
+    for (const auto* expr : exprs) {
+        ss << " ";
+        ss << print(expr);
+    }
 
     ss << ")";
 
