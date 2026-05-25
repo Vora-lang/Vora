@@ -1,27 +1,63 @@
 $ErrorActionPreference = "Stop"
 
-Write-Host "==== Nyra Build System ===="
+Write-Host ""
+Write-Host "==== Vora Build System ====" -ForegroundColor Cyan
+Write-Host ""
 
 $buildDir = "build"
 
-if (!(Test-Path $buildDir)) {
-    Write-Host "[1/4] Creating build directory..."
-    New-Item -ItemType Directory -Path $buildDir | Out-Null
+# ----------------------------------------
+# Clean old build
+# ----------------------------------------
+
+Write-Host "[1/5] Cleaning old build..." -ForegroundColor Yellow
+
+if (Test-Path $buildDir) {
+    Remove-Item $buildDir -Recurse -Force
 }
 
-Write-Host "[2/4] Configuring CMake..."
+# ----------------------------------------
+# Create build directory
+# ----------------------------------------
+
+Write-Host "[2/5] Creating build directory..." -ForegroundColor Yellow
+
+New-Item -ItemType Directory -Path $buildDir | Out-Null
+
+# ----------------------------------------
+# Configure CMake
+# ----------------------------------------
+
+Write-Host "[3/5] Configuring CMake..." -ForegroundColor Yellow
+
 cmake -S . -B $buildDir
 
-Write-Host "[3/4] Building project..."
+# ----------------------------------------
+# Build project
+# ----------------------------------------
+
+Write-Host "[4/5] Building project..." -ForegroundColor Yellow
+
 cmake --build $buildDir
 
-Write-Host "[4/4] Running Nyra..."
+# ----------------------------------------
+# Run executable
+# ----------------------------------------
 
-$exePath = "$buildDir/Debug/Nyra.exe"
+Write-Host "[5/5] Running Vora..." -ForegroundColor Yellow
+Write-Host ""
+
+$exePath = "$buildDir/Debug/Vora.exe"
 
 if (Test-Path $exePath) {
+
     & $exePath
+
+    Write-Host ""
+    Write-Host "==== Build Success ====" -ForegroundColor Green
 }
 else {
-    Write-Host "Executable not found: $exePath"
+
+    Write-Host ""
+    Write-Host "Executable not found: $exePath" -ForegroundColor Red
 }
