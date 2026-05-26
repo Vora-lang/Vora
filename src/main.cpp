@@ -6,7 +6,19 @@
 
 int main() {
 
-    std::string source = "a = b + c * d";
+    // std::string source = "let a = 1 + 2 * 3";
+    std::string source = R"(
+        if (a) {
+            return b;
+        }
+        else {
+            return c;
+        }
+
+        while (a < b) {
+            a = a + 1;
+        }
+    )";
 
     vora::Lexer lexer(source);
 
@@ -14,11 +26,20 @@ int main() {
 
     vora::Parser parser(tokens);
 
-    auto expr = parser.parse();
+    // auto expr = parser.parse();
+    // auto stmt = parser.parse();
+
+    // vora::ASTPrinter printer;
+
+    // std::cout << printer.print(stmt.get()) << std::endl;
+
+    auto program = parser.parse();
 
     vora::ASTPrinter printer;
 
-    std::cout << printer.print(expr.get()) << std::endl;
+    std::cout
+        << printer.print(program.get())
+        << std::endl;
 
     for (const auto& token : tokens) {
         std::cout

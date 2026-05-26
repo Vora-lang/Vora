@@ -5,7 +5,9 @@
 
 > Source → Token ✔
 
-> Token → AST
+> Token → AST ✔
+
+> AST → Runtime / Interpreter
 
 ## Base
 

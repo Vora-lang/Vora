@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "../ast/stmt.h"
 #include <iostream>
 
 namespace vora {
@@ -7,8 +8,26 @@ Parser::Parser(std::vector<Token> tokens)
     : tokens(std::move(tokens)) {
 }
 
-std::unique_ptr<Expr> Parser::parse() {
-    return expression();
+std::unique_ptr<Program> Parser::parse() {
+
+    std::vector<std::unique_ptr<Stmt>> statements;
+
+    while (!isAtEnd()) {
+
+        auto stmt = statement();
+
+        if (!stmt) {
+            return nullptr;
+        }
+
+        statements.push_back(
+            std::move(stmt)
+        );
+    }
+
+    return std::make_unique<Program>(
+        std::move(statements)
+    );
 }
 
 // =========================
@@ -18,6 +37,172 @@ std::unique_ptr<Expr> Parser::parse() {
 std::unique_ptr<Expr> Parser::expression() {
     // Pratt root: assignment is handled inside Pratt
     return parsePrecedence(0);
+}
+
+std::unique_ptr<Stmt> Parser::statement() {
+
+    if (match(TokenType::LET)) {
+        return letStatement();
+    }
+
+    if (match(TokenType::LEFT_BRACE)) {
+        return blockStatement();
+    }
+
+    if (match(TokenType::RETURN)) {
+        return returnStatement();
+    }
+
+    if (match(TokenType::IF)) {
+        return ifStatement();
+    }
+
+    if (match(TokenType::WHILE)) {
+        return whileStatement();
+    }
+
+    auto expr = expression();
+
+    match(TokenType::SEMICOLON);
+
+    return std::make_unique<ExprStmt>(
+        std::move(expr)
+    );
+}
+
+std::unique_ptr<Stmt> Parser::letStatement() {
+
+    if (!match(TokenType::IDENTIFIER)) {
+
+        std::cerr
+            << "Expected variable name\n";
+
+        return nullptr;
+    }
+
+    std::string name = previous().lexeme;
+
+    if (!match(TokenType::EQUAL)) {
+
+        std::cerr
+            << "Expected '=' after variable name\n";
+
+        return nullptr;
+    }
+
+    auto initializer = expression();
+
+    match(TokenType::SEMICOLON);
+
+    return std::make_unique<LetStmt>(
+        name,
+        std::move(initializer)
+    );
+}
+
+std::unique_ptr<Stmt> Parser::blockStatement() {
+
+    std::vector<std::unique_ptr<Stmt>> statements;
+
+    while (!isAtEnd() &&
+           peek().type != TokenType::RIGHT_BRACE) {
+
+        auto stmt = statement();
+
+        if (!stmt) {
+            return nullptr;
+        }
+
+        statements.push_back(
+            std::move(stmt)
+        );
+    }
+
+    if (!match(TokenType::RIGHT_BRACE)) {
+
+        std::cerr
+            << "Expected '}' after block\n";
+
+        return nullptr;
+    }
+
+    return std::make_unique<BlockStmt>(
+        std::move(statements)
+    );
+}
+
+std::unique_ptr<Stmt> Parser::returnStatement() {
+
+    auto value = expression();
+
+    match(TokenType::SEMICOLON);
+
+    return std::make_unique<ReturnStmt>(
+        std::move(value)
+    );
+}
+
+std::unique_ptr<Stmt> Parser::ifStatement() {
+
+    if (!match(TokenType::LEFT_PAREN)) {
+
+        std::cerr
+            << "Expected '(' after if\n";
+
+        return nullptr;
+    }
+
+    auto condition = expression();
+
+    if (!match(TokenType::RIGHT_PAREN)) {
+
+        std::cerr
+            << "Expected ')' after condition\n";
+
+        return nullptr;
+    }
+
+    auto thenBranch = statement();
+
+    std::unique_ptr<Stmt> elseBranch;
+
+    if (match(TokenType::ELSE)) {
+        elseBranch = statement();
+    }
+
+    return std::make_unique<IfStmt>(
+        std::move(condition),
+        std::move(thenBranch),
+        std::move(elseBranch)
+    );
+}
+
+std::unique_ptr<Stmt> Parser::whileStatement() {
+
+    if (!match(TokenType::LEFT_PAREN)) {
+
+        std::cerr
+            << "Expected '(' after while\n";
+
+        return nullptr;
+    }
+
+    auto condition = expression();
+
+    if (!match(TokenType::RIGHT_PAREN)) {
+
+        std::cerr
+            << "Expected ')' after condition\n";
+
+        return nullptr;
+    }
+
+    auto body = statement();
+
+    return std::make_unique<WhileStmt>(
+        std::move(condition),
+        std::move(body)
+    );
 }
 
 // =========================

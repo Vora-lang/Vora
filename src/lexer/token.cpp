@@ -42,6 +42,9 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::LET: return "LET";
         case TokenType::FUNC: return "FUNC";
         case TokenType::RETURN: return "RETURN";
+        case TokenType::IF: return "IF";
+        case TokenType::ELSE: return "ELSE";
+        case TokenType::WHILE: return "WHILE";
 
         case TokenType::END_OF_FILE: return "EOF";
         case TokenType::INVALID: return "INVALID";

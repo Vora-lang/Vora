@@ -6,6 +6,9 @@ const std::unordered_map<std::string, TokenType> Lexer::keywords = {
     {"let", TokenType::LET},
     {"func", TokenType::FUNC},
     {"return", TokenType::RETURN},
+    {"if", TokenType::IF},
+    {"else", TokenType::ELSE},
+    {"while", TokenType::WHILE},
 };
 
 Lexer::Lexer(std::string source)

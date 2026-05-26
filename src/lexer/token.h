@@ -55,6 +55,9 @@ namespace vora {
         LET, // let
         FUNC, // func
         RETURN, // return
+        IF, // if
+        ELSE, // else
+        WHILE, // while
 
         // Special
         END_OF_FILE, //

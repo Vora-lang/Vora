@@ -5,6 +5,8 @@
 
 #include "../lexer/token.h"
 #include "../ast/expr.h"
+#include "../ast/stmt.h"
+#include "../ast/program.h"
 
 namespace vora {
 
@@ -12,7 +14,7 @@ class Parser {
 public:
     explicit Parser(std::vector<Token> tokens);
 
-    std::unique_ptr<Expr> parse();
+    std::unique_ptr<Program> parse();
 
 private:
     std::vector<Token> tokens;
@@ -25,6 +27,18 @@ private:
     std::unique_ptr<Expr> parsePrecedence(int precedence);
 
     std::unique_ptr<Expr> primary();
+
+    std::unique_ptr<Stmt> statement();
+
+    std::unique_ptr<Stmt> letStatement();
+
+    std::unique_ptr<Stmt> blockStatement();
+
+    std::unique_ptr<Stmt> returnStatement();
+
+    std::unique_ptr<Stmt> ifStatement();
+
+    std::unique_ptr<Stmt> whileStatement();
 
 private:
     bool isAtEnd() const;
