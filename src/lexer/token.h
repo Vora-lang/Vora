@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <string>
 
@@ -39,6 +39,9 @@ namespace vora {
         AND, // &&
         OR, // ||
         NOT, // !
+        TRUE,
+        FALSE,
+        NULL_TOKEN,
 
         // Punctuation
         COMMA, // ,

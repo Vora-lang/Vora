@@ -302,7 +302,37 @@ std::unique_ptr<Expr> Parser::primary() {
     }
 
     if (match(TokenType::NUMBER)) {
-        return std::make_unique<LiteralExpr>(previous().lexeme);
+        double value =
+            std::stod(previous().lexeme);
+
+        return std::make_unique<LiteralExpr>(
+            value
+        );
+    }
+
+    if (match(TokenType::STRING)) {
+        return std::make_unique<LiteralExpr>(
+            previous().lexeme
+        );
+    }
+
+    if (match(TokenType::TRUE)) {
+        return std::make_unique<LiteralExpr>(
+            true
+        );
+    }
+
+    if (match(TokenType::FALSE)) {
+        return std::make_unique<LiteralExpr>(
+            false
+        );
+    }
+
+    if (match(TokenType::NULL_TOKEN)) {
+
+        return std::make_unique<LiteralExpr>(
+            nullptr
+        );
     }
 
     if (match(TokenType::IDENTIFIER)) {

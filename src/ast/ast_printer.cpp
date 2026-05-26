@@ -1,5 +1,5 @@
-#include "ast_printer.h"
-
+﻿#include "ast_printer.h"
+#include "program.h"
 #include <sstream>
 
 namespace vora {
@@ -9,7 +9,35 @@ std::string ASTPrinter::print(const Expr* expr) {
     if (auto literal =
         dynamic_cast<const LiteralExpr*>(expr)) {
 
-        return literal->value;
+        return std::visit([](auto&& arg) -> std::string {
+
+            using T =
+                std::decay_t<decltype(arg)>;
+
+            if constexpr (
+                std::is_same_v<T, std::nullptr_t>
+                ) {
+
+                return "null";
+
+            } else if constexpr (
+                std::is_same_v<T, bool>
+                ) {
+
+                return arg ? "true" : "false";
+
+            } else if constexpr (
+                std::is_same_v<T, std::string>
+                ) {
+
+                return arg;
+
+            } else {
+
+                return std::to_string(arg);
+            }
+
+        }, literal->value);
     }
 
     if (auto identifier =
@@ -205,5 +233,6 @@ std::string ASTPrinter::parenthesize(
 
     return ss.str();
 }
+
 
 }

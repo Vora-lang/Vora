@@ -1,9 +1,10 @@
-#pragma once
+﻿#pragma once
 
 #include <memory>
 #include <string>
 
 #include "../lexer/token.h"
+#include "../runtime/value.h"
 
 namespace vora {
 
@@ -14,11 +15,14 @@ public:
 
 class LiteralExpr : public Expr {
 public:
-    explicit LiteralExpr(std::string value)
+
+    explicit LiteralExpr(
+        Value value
+    )
         : value(std::move(value)) {
     }
 
-    std::string value;
+    Value value;
 };
 
 class BinaryExpr : public Expr {

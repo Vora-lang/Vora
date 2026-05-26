@@ -1,54 +1,57 @@
+﻿#include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "lexer/lexer.h"
 #include "parser/parser.h"
-#include "ast/ast_printer.h"
+
+#include "interpreter/interpreter.h"
 
 int main() {
 
-    // std::string source = "let a = 1 + 2 * 3";
-    std::string source = R"(
-        if (a) {
-            return b;
-        }
-        else {
-            return c;
-        }
+    // Read source file
 
-        while (a < b) {
-            a = a + 1;
-        }
-    )";
+    std::ifstream file(
+        "D:/Vora/examples/main.va"
+    );
+
+    if (!file.is_open()) {
+
+        std::cerr
+            << "Failed to open file"
+            << std::endl;
+
+        return 1;
+    }
+
+    std::stringstream buffer;
+
+    buffer << file.rdbuf();
+
+    std::string source =
+        buffer.str();
+
+    // Lexer
 
     vora::Lexer lexer(source);
 
-    auto tokens = lexer.scanTokens();
+    auto tokens =
+        lexer.scanTokens();
+
+    // Parser
 
     vora::Parser parser(tokens);
 
-    // auto expr = parser.parse();
-    // auto stmt = parser.parse();
+    auto program =
+        parser.parse();
 
-    // vora::ASTPrinter printer;
+    // Interpreter
 
-    // std::cout << printer.print(stmt.get()) << std::endl;
+    vora::Interpreter interpreter;
 
-    auto program = parser.parse();
-
-    vora::ASTPrinter printer;
-
-    std::cout
-        << printer.print(program.get())
-        << std::endl;
-
-    for (const auto& token : tokens) {
-        std::cout
-            << tokenTypeToString(token.type)
-            << "("
-            << token.lexeme
-            << ")"
-            << std::endl;
-    }
+    interpreter.interpret(
+        program.get()
+    );
 
     return 0;
 }

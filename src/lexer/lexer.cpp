@@ -1,164 +1,133 @@
-#include "lexer.h"
+﻿#include "lexer.h"
+
+#include <cctype>
 
 namespace vora {
 
-const std::unordered_map<std::string, TokenType> Lexer::keywords = {
-    {"let", TokenType::LET},
-    {"func", TokenType::FUNC},
-    {"return", TokenType::RETURN},
-    {"if", TokenType::IF},
-    {"else", TokenType::ELSE},
-    {"while", TokenType::WHILE},
-};
+    const std::unordered_map<std::string, TokenType> Lexer::keywords = {
+        {"let", TokenType::LET},
+        {"func", TokenType::FUNC},
+        {"return", TokenType::RETURN},
+        {"if", TokenType::IF},
+        {"else", TokenType::ELSE},
+        {"while", TokenType::WHILE},
+    };
 
-Lexer::Lexer(std::string source)
-    : source(std::move(source)) {
-}
-
-std::vector<Token> Lexer::scanTokens() {
-    while (!isAtEnd()) {
-        start = current;
-        scanToken();
+    Lexer::Lexer(std::string source)
+        : source(std::move(source)) {
     }
 
-    tokens.emplace_back(TokenType::END_OF_FILE, "", line);
-
-    return tokens;
-}
-
-bool Lexer::isAtEnd() const {
-    return current >= source.length();
-}
-
-bool Lexer::isAlpha(char c) const {
-    return std::isalpha(c) || c == '_';
-}
-
-bool Lexer::isAlphaNumeric(char c) const {
-    return isAlpha(c) || std::isdigit(c);
-}
-
-char Lexer::advance() {
-    return source[current++];
-}
-
-char Lexer::peek() const {
-    if (isAtEnd()) {
-        return '\0';
-    }
-
-    return source[current];
-}
-
-bool Lexer::match(char expected) {
-    if (isAtEnd()) return false;
-    if (source[current] != expected) return false;
-
-    current++;
-    return true;
-}
-
-char Lexer::peekNext() const {
-    if (current + 1 >= source.length()) {
-        return '\0';
-    }
-    return source[current + 1];
-}
-
-void Lexer::addToken(TokenType type) {
-    std::string text = source.substr(start, current - start);
-
-    tokens.emplace_back(type, text, line);
-}
-
-void Lexer::number() {
-    while (std::isdigit(peek())) {
-        advance();
-    }
-
-    addToken(TokenType::NUMBER);
-}
-
-void Lexer::identifier() {
-    while (isAlphaNumeric(peek())) {
-        advance();
-    }
-
-    std::string text = source.substr(start, current - start);
-
-    auto it = keywords.find(text);
-
-    if (it != keywords.end()) {
-        addToken(it->second);
-    }
-    else {
-        addToken(TokenType::IDENTIFIER);
-    }
-}
-
-void Lexer::string() {
-    while (peek() != '"' && !isAtEnd()) {
-        if (peek() == '\n') {
-            line++;
+    std::vector<Token> Lexer::scanTokens() {
+        while (!isAtEnd()) {
+            start = current;
+            scanToken();
         }
+
+        tokens.emplace_back(TokenType::END_OF_FILE, "", line);
+        return tokens;
+    }
+
+    bool Lexer::isAtEnd() const {
+        return current >= source.length();
+    }
+
+    bool Lexer::isAlpha(char c) const {
+        return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
+    }
+
+    bool Lexer::isAlphaNumeric(char c) const {
+        return isAlpha(c) ||
+            std::isdigit(static_cast<unsigned char>(c));
+    }
+
+    char Lexer::advance() {
+        return source[current++];
+    }
+
+    char Lexer::peek() const {
+        if (isAtEnd()) return '\0';
+        return source[current];
+    }
+
+    char Lexer::peekNext() const {
+        if (current + 1 >= source.length()) {
+            return '\0';
+        }
+        return source[current + 1];
+    }
+
+    bool Lexer::match(char expected) {
+        if (isAtEnd()) return false;
+        if (source[current] != expected) return false;
+
+        current++;
+        return true;
+    }
+
+    void Lexer::addToken(TokenType type) {
+        std::string text = source.substr(start, current - start);
+        tokens.emplace_back(type, text, line);
+    }
+
+    void Lexer::number() {
+        while (std::isdigit(static_cast<unsigned char>(peek()))) {
+            advance();
+        }
+
+        addToken(TokenType::NUMBER);
+    }
+
+    void Lexer::identifier() {
+        while (isAlphaNumeric(peek())) {
+            advance();
+        }
+
+        std::string text =
+            source.substr(start, current - start);
+
+        auto it = keywords.find(text);
+
+        if (it != keywords.end()) {
+            addToken(it->second);
+        }
+        else {
+            addToken(TokenType::IDENTIFIER);
+        }
+    }
+
+    void Lexer::string() {
+        while (peek() != '"' && !isAtEnd()) {
+            if (peek() == '\n') {
+                line++;
+            }
+            advance();
+        }
+
+        if (isAtEnd()) {
+            addToken(TokenType::INVALID);
+            return;
+        }
+
+        // closing "
         advance();
+
+        std::string value =
+            source.substr(start + 1, current - start - 2);
+
+        tokens.emplace_back(TokenType::STRING, value, line);
     }
 
-    if (isAtEnd()) {
-        addToken(TokenType::INVALID);
-        return;
-    }
+    void Lexer::scanToken() {
+        char c = advance();
 
-    // closing "
-    advance();
+        switch (c) {
 
-    std::string value = source.substr(start + 1, current - start - 2);
-
-    tokens.emplace_back(TokenType::STRING, value, line);
-}
-
-void Lexer::scanToken() {
-    char c = advance();
-
-    switch (c) {
         case '(':
             addToken(TokenType::LEFT_PAREN);
             break;
 
         case ')':
             addToken(TokenType::RIGHT_PAREN);
-            break;
-
-        case '+':
-            if (match('+')) {
-                addToken(TokenType::PLUS_PLUS);
-            } else {
-                addToken(TokenType::PLUS);
-            }
-            break;
-
-        case '-':
-            if (match('-')) {
-                addToken(TokenType::MINUS_MINUS);
-            } else {
-                addToken(TokenType::MINUS);
-            }
-            break;
-
-        case '*':
-            if (match('*')) {
-                addToken(TokenType::POWER);
-            } else {
-                addToken(TokenType::MULTIPLY);
-            }
-            break;
-
-        case '/':
-            addToken(TokenType::DIVIDE);
-            break;
-
-        case '%':
-            addToken(TokenType::MODULO);
             break;
 
         case '{':
@@ -193,10 +162,46 @@ void Lexer::scanToken() {
             addToken(TokenType::SEMICOLON);
             break;
 
+        case '+':
+            if (match('+')) {
+                addToken(TokenType::PLUS_PLUS);
+            }
+            else {
+                addToken(TokenType::PLUS);
+            }
+            break;
+
+        case '-':
+            if (match('-')) {
+                addToken(TokenType::MINUS_MINUS);
+            }
+            else {
+                addToken(TokenType::MINUS);
+            }
+            break;
+
+        case '*':
+            if (match('*')) {
+                addToken(TokenType::POWER);
+            }
+            else {
+                addToken(TokenType::MULTIPLY);
+            }
+            break;
+
+        case '/':
+            addToken(TokenType::DIVIDE);
+            break;
+
+        case '%':
+            addToken(TokenType::MODULO);
+            break;
+
         case '=':
             if (match('=')) {
                 addToken(TokenType::EQUAL_EQUAL);
-            } else {
+            }
+            else {
                 addToken(TokenType::EQUAL);
             }
             break;
@@ -204,7 +209,8 @@ void Lexer::scanToken() {
         case '<':
             if (match('=')) {
                 addToken(TokenType::LESS_EQUAL);
-            } else {
+            }
+            else {
                 addToken(TokenType::LESS);
             }
             break;
@@ -212,7 +218,8 @@ void Lexer::scanToken() {
         case '>':
             if (match('=')) {
                 addToken(TokenType::GREATER_EQUAL);
-            } else {
+            }
+            else {
                 addToken(TokenType::GREATER);
             }
             break;
@@ -220,7 +227,8 @@ void Lexer::scanToken() {
         case '!':
             if (match('=')) {
                 addToken(TokenType::NOT_EQUAL);
-            } else {
+            }
+            else {
                 addToken(TokenType::NOT);
             }
             break;
@@ -228,7 +236,8 @@ void Lexer::scanToken() {
         case '&':
             if (match('&')) {
                 addToken(TokenType::AND);
-            } else {
+            }
+            else {
                 addToken(TokenType::INVALID);
             }
             break;
@@ -236,7 +245,8 @@ void Lexer::scanToken() {
         case '|':
             if (match('|')) {
                 addToken(TokenType::OR);
-            } else {
+            }
+            else {
                 addToken(TokenType::INVALID);
             }
             break;
@@ -255,7 +265,7 @@ void Lexer::scanToken() {
             break;
 
         default:
-            if (std::isdigit(c)) {
+            if (std::isdigit(static_cast<unsigned char>(c))) {
                 number();
             }
             else if (isAlpha(c)) {
@@ -264,9 +274,8 @@ void Lexer::scanToken() {
             else {
                 addToken(TokenType::INVALID);
             }
-
             break;
+        }
     }
-}
 
-}
+} // namespace vora
