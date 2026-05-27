@@ -31,6 +31,18 @@ int main() {
     std::string source =
         buffer.str();
 
+        if (
+            source.size() >= 3
+            &&
+            static_cast<unsigned char>(source[0]) == 0xEF
+            &&
+            static_cast<unsigned char>(source[1]) == 0xBB
+            &&
+            static_cast<unsigned char>(source[2]) == 0xBF
+        ) {
+            source.erase(0, 3);
+        }
+
     // Lexer
 
     vora::Lexer lexer(source);
