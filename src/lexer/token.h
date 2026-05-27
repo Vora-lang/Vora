@@ -79,6 +79,7 @@ struct Token {
           lexeme(std::move(lexeme)),
           line(line) {
     }
+    std::string toString() const;
 };
 
 }

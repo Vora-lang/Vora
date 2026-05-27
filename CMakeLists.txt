@@ -20,6 +20,8 @@ add_executable(Vora
     src/parser/parser.cpp
 
     src/runtime/value.cpp
+    src/runtime/native_function.cpp
+    src/runtime/vora_function.cpp
     src/runtime/environment.cpp
 
     src/interpreter/interpreter.cpp

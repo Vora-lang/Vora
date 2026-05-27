@@ -61,6 +61,10 @@ std::unique_ptr<Stmt> Parser::statement() {
         return whileStatement();
     }
 
+    if (match(TokenType::FUNC)) {
+        return funcStatement();
+    }
+
     auto expr = expression();
 
     match(TokenType::SEMICOLON);
@@ -76,7 +80,7 @@ std::unique_ptr<Stmt> Parser::letStatement() {
 
         std::cerr
             << "Expected variable name\n";
-
+    
         return nullptr;
     }
 
@@ -177,6 +181,89 @@ std::unique_ptr<Stmt> Parser::ifStatement() {
     );
 }
 
+std::unique_ptr<Stmt> Parser::funcStatement() {
+
+    if (!match(TokenType::IDENTIFIER)) {
+
+        std::cerr
+            << "Expected function name\n";
+
+        return nullptr;
+    }
+
+    std::string name = previous().lexeme;
+
+    if (!match(TokenType::LEFT_PAREN)) {
+
+        std::cerr
+            << "Expected '(' after function name\n";
+
+        return nullptr;
+    }
+
+    std::vector<std::string> params;
+
+    if (!check(TokenType::RIGHT_PAREN)) {
+
+        do {
+
+            if (!match(TokenType::IDENTIFIER)) {
+
+                std::cerr
+                    << "Expected parameter name\n";
+
+                return nullptr;
+            }
+
+            params.push_back(
+                previous().lexeme
+            );
+        }
+        while (match(TokenType::COMMA));
+    }
+
+    if (!match(TokenType::RIGHT_PAREN)) {
+
+        std::cerr
+            << "Expected ')' after parameters\n";
+
+        return nullptr;
+    }
+
+    if (!match(TokenType::LEFT_BRACE)) {
+
+        std::cerr
+            << "Expected '{' before function body\n";
+
+        return nullptr;
+    }
+
+    auto bodyStmt = blockStatement();
+
+    if (!bodyStmt) {
+        return nullptr;
+    }
+
+    auto* block =
+        dynamic_cast<BlockStmt*>(bodyStmt.get());
+
+    if (!block) {
+
+        std::cerr
+            << "Expected block body\n";
+
+        return nullptr;
+    }
+
+    return std::make_unique<FuncStmt>(
+        name,
+        std::move(params),
+        std::shared_ptr<BlockStmt>(
+            dynamic_cast<BlockStmt*>(bodyStmt.release())
+        )
+    );
+}
+
 std::unique_ptr<Stmt> Parser::whileStatement() {
 
     if (!match(TokenType::LEFT_PAREN)) {
@@ -232,6 +319,10 @@ bool Parser::match(TokenType type) {
     if (peek().type != type) return false;
     advance();
     return true;
+}
+
+bool Parser::check(TokenType type) const {
+    return peek().type == type;
 }
 
 // =========================
@@ -336,7 +427,7 @@ std::unique_ptr<Expr> Parser::primary() {
     }
 
     if (match(TokenType::IDENTIFIER)) {
-        return std::make_unique<IdentifierExpr>(previous().lexeme);
+        return std::make_unique<VariableExpr>(previous().lexeme);
     }
 
     if (match(TokenType::LEFT_PAREN)) {
@@ -354,13 +445,72 @@ std::unique_ptr<Expr> Parser::primary() {
     return nullptr;
 }
 
+std::unique_ptr<Expr> Parser::finishCall(
+    std::unique_ptr<Expr> callee
+) {
+
+    std::vector<std::unique_ptr<Expr>> arguments;
+
+    if (!check(TokenType::RIGHT_PAREN)) {
+
+        do {
+
+            auto argument = expression();
+
+            if (!argument) {
+                return nullptr;
+            }
+
+            arguments.push_back(
+                std::move(argument)
+            );
+        }
+        while (match(TokenType::COMMA));
+    }
+
+    if (!match(TokenType::RIGHT_PAREN)) {
+
+        std::cerr
+            << "Expected ')' after arguments\n";
+
+        return nullptr;
+    }
+
+    return std::make_unique<CallExpr>(
+        std::move(callee),
+        std::move(arguments)
+    );
+}
+
+std::unique_ptr<Expr> Parser::call() {
+
+    auto expr = primary();
+
+    if (!expr) {
+        return nullptr;
+    }
+
+    while (match(TokenType::LEFT_PAREN)) {
+
+        expr = finishCall(
+            std::move(expr)
+        );
+
+        if (!expr) {
+            return nullptr;
+        }
+    }
+
+    return expr;
+}
+
 // =========================
 // PRATT CORE
 // =========================
 
 std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
 
-    auto left = primary();
+    auto left = call();
 
     if (!left) {
         std::cerr << "Expected expression\n";
@@ -392,16 +542,16 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
         // =========================
         if (op.type == TokenType::EQUAL) {
 
-            auto identifier =
-                dynamic_cast<IdentifierExpr*>(left.get());
+            auto variable =
+                dynamic_cast<VariableExpr*>(left.get());
 
-            if (!identifier) {
+            if (!variable) {
                 std::cerr << "Invalid assignment target\n";
                 return nullptr;
             }
 
             return std::make_unique<AssignmentExpr>(
-                identifier->name,
+                variable->name,
                 std::move(right)
             );
         }

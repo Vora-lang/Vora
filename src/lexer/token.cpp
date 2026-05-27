@@ -1,5 +1,6 @@
 #include "token.h"
 
+#include <sstream>
 namespace vora {
 
 std::string tokenTypeToString(TokenType type) {
@@ -38,6 +39,9 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::AND: return "AND";
         case TokenType::OR: return "OR";
         case TokenType::NOT: return "NOT";
+        case TokenType::TRUE: return "TRUE";
+        case TokenType::FALSE: return "FALSE";
+        case TokenType::NULL_TOKEN: return "NULL";
 
         case TokenType::LET: return "LET";
         case TokenType::FUNC: return "FUNC";
@@ -51,6 +55,19 @@ std::string tokenTypeToString(TokenType type) {
     }
 
     return "UNKNOWN";
+}
+
+std::string Token::toString() const {
+
+    std::stringstream ss;
+
+    ss
+        << tokenTypeToString(type)
+        << "("
+        << lexeme
+        << ")";
+
+    return ss.str();
 }
 
 }

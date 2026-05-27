@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "../lexer/token.h"
 #include "../runtime/value.h"
@@ -70,12 +71,15 @@ public:
     std::unique_ptr<Expr> right;
 };
 
-class IdentifierExpr : public Expr {
-    public:
-        explicit IdentifierExpr(std::string name)
-            : name(std::move(name)) {
-        }
-        std::string name;
+class VariableExpr : public Expr {
+public:
+    explicit VariableExpr(
+        std::string name
+    )
+        : name(std::move(name)) {
+    }
+
+    std::string name;
 };
 
 class AssignmentExpr : public Expr {
@@ -91,6 +95,21 @@ public:
     std::string name;
 
     std::unique_ptr<Expr> value;
+};
+
+class CallExpr : public Expr {
+public:
+    CallExpr(
+        std::unique_ptr<Expr> callee,
+        std::vector<std::unique_ptr<Expr>> arguments
+    )
+        : callee(std::move(callee)),
+          arguments(std::move(arguments)) {
+    }
+
+    std::unique_ptr<Expr> callee;
+
+    std::vector<std::unique_ptr<Expr>> arguments;
 };
 
 }

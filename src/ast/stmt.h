@@ -95,4 +95,23 @@ public:
     std::unique_ptr<Stmt> body;
 };
 
+class FuncStmt : public Stmt {
+public:
+    FuncStmt(
+        std::string name,
+        std::vector<std::string> params,
+        std::shared_ptr<BlockStmt> body
+    )
+        : name(std::move(name)),
+          params(std::move(params)),
+          body(std::move(body)) {
+    }
+
+    std::string name;
+
+    std::vector<std::string> params;
+
+    std::shared_ptr<BlockStmt> body;
+};
+
 }

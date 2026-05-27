@@ -28,6 +28,12 @@ private:
 
     std::unique_ptr<Expr> primary();
 
+    std::unique_ptr<Expr> call();
+
+    std::unique_ptr<Expr> finishCall(
+        std::unique_ptr<Expr> callee
+    );
+
     std::unique_ptr<Stmt> statement();
 
     std::unique_ptr<Stmt> letStatement();
@@ -40,6 +46,8 @@ private:
 
     std::unique_ptr<Stmt> whileStatement();
 
+    std::unique_ptr<Stmt> funcStatement();
+
 private:
     bool isAtEnd() const;
 
@@ -50,6 +58,8 @@ private:
     Token previous() const;
 
     bool match(TokenType type);
+
+    bool check(TokenType type) const;
 
     int getPrecedence(TokenType type) const;
 };

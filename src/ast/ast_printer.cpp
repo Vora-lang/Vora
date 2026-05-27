@@ -1,5 +1,8 @@
 ﻿#include "ast_printer.h"
 #include "program.h"
+
+#include "../runtime/callable.h"
+
 #include <sstream>
 
 namespace vora {
@@ -32,6 +35,12 @@ std::string ASTPrinter::print(const Expr* expr) {
 
                 return arg;
 
+            } else if constexpr (
+                std::is_same_v<T, std::shared_ptr<Callable>>
+                ) {
+
+                return "<fn>";
+
             } else {
 
                 return std::to_string(arg);
@@ -40,10 +49,10 @@ std::string ASTPrinter::print(const Expr* expr) {
         }, literal->value);
     }
 
-    if (auto identifier =
-        dynamic_cast<const IdentifierExpr*>(expr)) {
+    if (auto variable =
+        dynamic_cast<const VariableExpr*>(expr)) {
 
-        return identifier->name;
+        return variable->name;
     }
 
     if (auto binary =
@@ -91,6 +100,24 @@ std::string ASTPrinter::print(const Expr* expr) {
         );
     }
 
+    if (auto call =
+        dynamic_cast<const CallExpr*>(expr)) {
+
+        std::stringstream ss;
+
+        ss << "(call ";
+        ss << print(call->callee.get());
+
+        for (const auto& argument : call->arguments) {
+            ss << " ";
+            ss << print(argument.get());
+        }
+
+        ss << ")";
+
+        return ss.str();
+    }
+
     return "unknown";
 }
 
@@ -113,6 +140,26 @@ std::string ASTPrinter::print(const Stmt* stmt) {
                 letStmt->initializer.get()
             }
         );
+    }
+
+    if (auto func =
+        dynamic_cast<const FuncStmt*>(stmt)) {
+
+        std::stringstream ss;
+
+        ss << "(func " << func->name;
+
+        for (const auto& param : func->params) {
+            ss << " " << param;
+        }
+
+        ss << " ";
+
+        ss << print(func->body.get());
+
+        ss << ")";
+
+        return ss.str();
     }
 
     if (auto block =
