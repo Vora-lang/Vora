@@ -7,7 +7,7 @@
 
 > Token → AST ✔
 
-> AST → Runtime / Interpreter
+> AST → Runtime / Interpreter ✔
 
 ## Base
 
@@ -21,7 +21,7 @@
 
 ## Aim
 
-### 第一版
+### 第一版 ✔
 
 > AST Interpreter
 
