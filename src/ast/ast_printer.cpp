@@ -36,6 +36,28 @@ std::string ASTPrinter::print(const Expr* expr) {
                 return arg;
 
             } else if constexpr (
+                std::is_same_v<T, std::shared_ptr<Array>>
+                ) {
+
+                std::string out = "[";
+                for (size_t i = 0; i < arg->elements.size(); ++i) {
+                    if (i > 0) {
+                        out += ", ";
+                    }
+                    out += std::visit([](auto&& inner) -> std::string {
+                        using U = std::decay_t<decltype(inner)>;
+                        if constexpr (std::is_same_v<U, std::nullptr_t>) return "null";
+                        else if constexpr (std::is_same_v<U, bool>) return inner ? "true" : "false";
+                        else if constexpr (std::is_same_v<U, std::string>) return inner;
+                        else if constexpr (std::is_same_v<U, std::shared_ptr<Callable>>) return "<fn>";
+                        else if constexpr (std::is_same_v<U, std::shared_ptr<Array>>) return "[array]";
+                        else return std::to_string(inner);
+                    }, arg->elements[i]);
+                }
+                out += "]";
+                return out;
+
+            } else if constexpr (
                 std::is_same_v<T, std::shared_ptr<Callable>>
                 ) {
 
@@ -116,6 +138,37 @@ std::string ASTPrinter::print(const Expr* expr) {
         ss << ")";
 
         return ss.str();
+    }
+
+    if (auto array =
+        dynamic_cast<const ArrayExpr*>(expr)) {
+
+        std::stringstream ss;
+
+        ss << "[";
+
+        for (size_t i = 0; i < array->elements.size(); ++i) {
+            if (i > 0) {
+                ss << ", ";
+            }
+            ss << print(array->elements[i].get());
+        }
+
+        ss << "]";
+
+        return ss.str();
+    }
+
+    if (auto indexExpr =
+        dynamic_cast<const IndexExpr*>(expr)) {
+
+        return parenthesize(
+            "index",
+            {
+                indexExpr->array.get(),
+                indexExpr->index.get()
+            }
+        );
     }
 
     return "unknown";

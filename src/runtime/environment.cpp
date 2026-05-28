@@ -1,4 +1,5 @@
 #include "environment.h"
+#include "runtime_error.h"
 
 #include <iostream>
 
@@ -43,7 +44,8 @@ bool Environment::hasLocal(
 }
 
 Value Environment::get(
-    const std::string& name
+    const std::string& name,
+    const Token& token
 ) const {
 
     if (hasLocal(name)) {
@@ -51,20 +53,19 @@ Value Environment::get(
     }
 
     if (const Environment* parentEnv = parent()) {
-        return parentEnv->get(name);
+        return parentEnv->get(name, token);
     }
 
-    std::cerr
-        << "Undefined variable: "
-        << name
-        << std::endl;
-
-    return nullptr;
+    throw RuntimeError(
+        "Undefined variable: " + name,
+        token
+    );
 }
 
 void Environment::assign(
     const std::string& name,
-    const Value& value
+    const Value& value,
+    const Token& token
 ) {
 
     if (hasLocal(name)) {
@@ -75,15 +76,16 @@ void Environment::assign(
     if (const Environment* parentEnv = parent()) {
         const_cast<Environment*>(parentEnv)->assign(
             name,
-            value
+            value,
+            token
         );
         return;
     }
 
-    std::cerr
-        << "Undefined variable: "
-        << name
-        << std::endl;
+    throw RuntimeError(
+        "Undefined variable: " + name,
+        token
+    );
 }
 
 Environment* Environment::enclosingEnvironment() const {

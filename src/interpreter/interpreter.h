@@ -12,6 +12,8 @@
 
 #include "../runtime/environment.h"
 #include "../runtime/native_function.h"
+#include "../runtime/runtime_config.h"
+#include "../runtime/runtime_error.h"
 #include "../runtime/value.h"
 
 namespace vora {
@@ -21,7 +23,9 @@ class VoraFunction;
 class Interpreter {
 public:
 
-    Interpreter();
+    explicit Interpreter(
+        RuntimeConfig config = {}
+    );
 
     void interpret(
         const Program* program
@@ -33,6 +37,8 @@ public:
     );
 
 private:
+
+    RuntimeConfig config;
 
     std::shared_ptr<Environment> globals;
 
@@ -62,7 +68,8 @@ private:
 
     Value invoke(
         const Value& callee,
-        const std::vector<Value>& arguments
+        const std::vector<Value>& arguments,
+        const Token& token
     );
 
     void defineNative(
@@ -80,6 +87,10 @@ private:
     void defineBinding(
         const std::string& name,
         const Value& value
+    );
+
+    std::string interpolateString(
+        const std::string& str
     );
 };
 

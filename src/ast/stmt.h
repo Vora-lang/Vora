@@ -95,6 +95,29 @@ public:
     std::unique_ptr<Stmt> body;
 };
 
+class ForStmt : public Stmt {
+public:
+    ForStmt(
+        std::string variable,
+        std::unique_ptr<Expr> iterable,
+        std::unique_ptr<Stmt> body,
+        Token forToken
+    )
+        : variable(std::move(variable)),
+          iterable(std::move(iterable)),
+          body(std::move(body)),
+          forToken(std::move(forToken)) {
+    }
+
+    std::string variable;
+
+    std::unique_ptr<Expr> iterable;
+
+    std::unique_ptr<Stmt> body;
+
+    Token forToken;
+};
+
 class FuncStmt : public Stmt {
 public:
     FuncStmt(

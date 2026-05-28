@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "../lexer/token.h"
 #include "value.h"
 
 namespace vora {
@@ -28,12 +29,14 @@ public:
     );
 
     Value get(
-        const std::string& name
+        const std::string& name,
+        const Token& token
     ) const;
 
     void assign(
         const std::string& name,
-        const Value& value
+        const Value& value,
+        const Token& token
     );
 
     bool hasLocal(

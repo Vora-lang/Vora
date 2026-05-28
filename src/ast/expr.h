@@ -73,43 +73,87 @@ public:
 
 class VariableExpr : public Expr {
 public:
-    explicit VariableExpr(
-        std::string name
+    VariableExpr(
+        std::string name,
+        Token nameToken
     )
-        : name(std::move(name)) {
+        : name(std::move(name)),
+          nameToken(std::move(nameToken)) {
     }
 
     std::string name;
+
+    Token nameToken;
 };
 
 class AssignmentExpr : public Expr {
 public:
     AssignmentExpr(
         std::string name,
-        std::unique_ptr<Expr> value
+        std::unique_ptr<Expr> value,
+        Token nameToken
     )
         : name(std::move(name)),
-          value(std::move(value)) {
+          value(std::move(value)),
+          nameToken(std::move(nameToken)) {
     }
 
     std::string name;
 
     std::unique_ptr<Expr> value;
+
+    Token nameToken;
 };
 
 class CallExpr : public Expr {
 public:
     CallExpr(
         std::unique_ptr<Expr> callee,
-        std::vector<std::unique_ptr<Expr>> arguments
+        std::vector<std::unique_ptr<Expr>> arguments,
+        Token paren
     )
         : callee(std::move(callee)),
-          arguments(std::move(arguments)) {
+          arguments(std::move(arguments)),
+          paren(std::move(paren)) {
     }
 
     std::unique_ptr<Expr> callee;
 
     std::vector<std::unique_ptr<Expr>> arguments;
+
+    Token paren;
+};
+
+class ArrayExpr : public Expr {
+public:
+    ArrayExpr(
+        std::vector<std::unique_ptr<Expr>> elements,
+        Token leftBracket
+    )
+        : elements(std::move(elements)),
+          leftBracket(std::move(leftBracket)) {
+    }
+
+    std::vector<std::unique_ptr<Expr>> elements;
+
+    Token leftBracket;
+};
+
+class IndexExpr : public Expr {
+public:
+    IndexExpr(
+        std::unique_ptr<Expr> array,
+        std::unique_ptr<Expr> index,
+        Token bracket
+    )
+        : array(std::move(array)),
+          index(std::move(index)),
+          bracket(std::move(bracket)) {
+    }
+
+    std::unique_ptr<Expr> array;
+    std::unique_ptr<Expr> index;
+    Token bracket;
 };
 
 }

@@ -29,6 +29,21 @@ void printValue(const Value& value) {
                 << (arg ? "true" : "false");
 
         } else if constexpr (
+            std::is_same_v<T, std::shared_ptr<Array>>
+        ) {
+
+            std::cout << "[";
+
+            for (size_t i = 0; i < arg->elements.size(); ++i) {
+                if (i > 0) {
+                    std::cout << ", ";
+                }
+                printValue(arg->elements[i]);
+            }
+
+            std::cout << "]";
+
+        } else if constexpr (
             std::is_same_v<T, std::shared_ptr<Callable>>
         ) {
 

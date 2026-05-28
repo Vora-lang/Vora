@@ -51,6 +51,10 @@ private:
     char peekNext() const;
 
     bool match(char expected);
+
+    void lineComment();
+
+    void blockComment();
 };
 
 }

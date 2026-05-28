@@ -17,8 +17,10 @@ struct ReturnSignal {
 
 }
 
-Interpreter::Interpreter()
-    : globals(std::make_shared<Environment>()),
+Interpreter::Interpreter(
+    RuntimeConfig config)
+    : config(config),
+      globals(std::make_shared<Environment>()),
       environment(globals.get()) {
 
     defineNative(
@@ -101,18 +103,18 @@ void Interpreter::defineBinding(
 
 Value Interpreter::invoke(
     const Value& callee,
-    const std::vector<Value>& arguments
+    const std::vector<Value>& arguments,
+    const Token& token
 ) {
 
     if (!std::holds_alternative<
             std::shared_ptr<Callable>
         >(callee)) {
 
-        std::cerr
-            << "Can only call functions"
-            << std::endl;
-
-        return nullptr;
+        throw RuntimeError(
+            "Can only call functions",
+            token
+        );
     }
 
     const auto& callable =
@@ -126,14 +128,27 @@ Value Interpreter::invoke(
                 native->arity()
             )) {
 
-            std::cerr
-                << "Expected "
-                << native->arity()
-                << " arguments but got "
-                << arguments.size()
-                << std::endl;
+            throw RuntimeError(
+                "Wrong arity: expected "
+                    + std::to_string(native->arity())
+                    + " arguments but got "
+                    + std::to_string(arguments.size()),
+                token
+            );
+        }
+    }
 
-            return nullptr;
+    if (auto function =
+        std::dynamic_pointer_cast<VoraFunction>(callable)) {
+
+        if (arguments.size() != function->params().size()) {
+            throw RuntimeError(
+                "Wrong arity: expected "
+                    + std::to_string(function->params().size())
+                    + " arguments but got "
+                    + std::to_string(arguments.size()),
+                token
+            );
         }
     }
 
@@ -191,18 +206,6 @@ Value Interpreter::callFunction(
     const VoraFunction& function,
     const std::vector<Value>& arguments
 ) {
-
-    if (arguments.size() != function.params().size()) {
-
-        std::cerr
-            << "Expected "
-            << function.params().size()
-            << " arguments but got "
-            << arguments.size()
-            << std::endl;
-
-        return nullptr;
-    }
 
     pushScope(
         function.closure().get()
@@ -284,7 +287,8 @@ Value Interpreter::evaluate(
 
         environment.assign(
             assign->name,
-            value
+            value,
+            assign->nameToken
         );
 
         return value;
@@ -311,7 +315,8 @@ Value Interpreter::evaluate(
 
         return invoke(
             callee,
-            arguments
+            arguments,
+            call->paren
         );
     }
 
@@ -319,12 +324,87 @@ Value Interpreter::evaluate(
         dynamic_cast<const VariableExpr*>(expr)) {
 
         return environment.get(
-            variable->name
+            variable->name,
+            variable->nameToken
         );
+    }
+
+    if (auto array =
+        dynamic_cast<const ArrayExpr*>(expr)) {
+
+        auto result = std::make_shared<Array>();
+        result->elements.reserve(array->elements.size());
+
+        for (const auto& element : array->elements) {
+            result->elements.push_back(
+                evaluate(element.get())
+            );
+        }
+
+        return result;
+    }
+
+    if (auto indexExpr =
+        dynamic_cast<const IndexExpr*>(expr)) {
+
+        Value array =
+            evaluate(indexExpr->array.get());
+
+        Value indexValue =
+            evaluate(indexExpr->index.get());
+
+        if (!std::holds_alternative<
+                std::shared_ptr<Array>
+            >(array)) {
+
+            throw RuntimeError(
+                "Indexing requires an array",
+                indexExpr->bracket
+            );
+        }
+
+        if (!std::holds_alternative<double>(indexValue)) {
+            throw RuntimeError(
+                "Array index must be a number",
+                indexExpr->bracket
+            );
+        }
+
+        double rawIndex =
+            std::get<double>(indexValue);
+
+        if (rawIndex < 0 ||
+            std::floor(rawIndex) != rawIndex) {
+
+            throw RuntimeError(
+                "Array index must be a non-negative integer",
+                indexExpr->bracket
+            );
+        }
+
+        size_t index =
+            static_cast<size_t>(rawIndex);
+
+        const auto& elements =
+            std::get<std::shared_ptr<Array>>(array)->elements;
+
+        if (index >= elements.size()) {
+            throw RuntimeError(
+                "Index out of bounds",
+                indexExpr->bracket
+            );
+        }
+
+        return elements[index];
     }
 
     if (auto literal =
         dynamic_cast<const LiteralExpr*>(expr)) {
+
+        if (std::holds_alternative<std::string>(literal->value)) {
+            std::string str = std::get<std::string>(literal->value);
+            return interpolateString(str);
+        }
 
         return literal->value;
     }
@@ -365,11 +445,10 @@ Value Interpreter::evaluate(
             return !isTruthy(right);
         }
 
-        std::cerr
-            << "Invalid unary operand"
-            << std::endl;
-
-        return nullptr;
+        throw RuntimeError(
+            "Invalid unary operand",
+            unary->op
+        );
     }
 
     if (auto binary =
@@ -412,11 +491,10 @@ Value Interpreter::evaluate(
 
                 if (r == 0) {
 
-                    std::cerr
-                        << "Runtime Error: Division by zero"
-                        << std::endl;
-
-                    return nullptr;
+                    throw RuntimeError(
+                        "Division by zero",
+                        binary->op
+                    );
                 }
 
                 return l / r;
@@ -447,11 +525,10 @@ Value Interpreter::evaluate(
             }
         }
 
-        std::cerr
-            << "Invalid binary operands"
-            << std::endl;
-
-        return nullptr;
+        throw RuntimeError(
+            "Invalid binary operands",
+            binary->op
+        );
     }
 
     std::cerr
@@ -524,6 +601,39 @@ void Interpreter::execute(
         return;
     }
 
+    if (auto forStmt =
+        dynamic_cast<const ForStmt*>(stmt)) {
+
+        Value iterable = evaluate(forStmt->iterable.get());
+
+        if (!std::holds_alternative<
+                std::shared_ptr<Array>
+            >(iterable)) {
+
+            throw RuntimeError(
+                "Can only iterate over arrays",
+                forStmt->forToken
+            );
+        }
+
+        const auto& array =
+            std::get<std::shared_ptr<Array>>(iterable);
+
+        for (const auto& element : array->elements) {
+            pushScope();
+            environment.define(
+                forStmt->variable,
+                element
+            );
+
+            execute(forStmt->body.get());
+
+            popScope();
+        }
+
+        return;
+    }
+
     if (auto returnStmt =
         dynamic_cast<const ReturnStmt*>(stmt)) {
 
@@ -564,10 +674,66 @@ void Interpreter::execute(
     if (auto exprStmt =
         dynamic_cast<const ExprStmt*>(stmt)) {
     
-        evaluate(exprStmt->expression.get());
+        Value result = evaluate(exprStmt->expression.get());
+
+        if (config.repl()) {
+            printValue(result);
+            std::cout << std::endl;
+        }
     
         return;
     }
+}
+
+std::string Interpreter::interpolateString(
+    const std::string& str
+) {
+    std::string result;
+    size_t i = 0;
+
+    while (i < str.length()) {
+        if (i + 1 < str.length() && str[i] == '$' && str[i + 1] == '{') {
+            i += 2;
+            std::string varName;
+
+            while (i < str.length() && str[i] != '}') {
+                varName += str[i];
+                i++;
+            }
+
+            if (i < str.length() && str[i] == '}') {
+                i++;
+                try {
+                    Value val = environment.get(varName, Token(TokenType::IDENTIFIER, varName, 0));
+                    if (std::holds_alternative<double>(val)) {
+                        double d = std::get<double>(val);
+                        if (d == static_cast<int>(d)) {
+                            result += std::to_string(static_cast<int>(d));
+                        } else {
+                            result += std::to_string(d);
+                        }
+                    } else if (std::holds_alternative<std::string>(val)) {
+                        result += std::get<std::string>(val);
+                    } else if (std::holds_alternative<bool>(val)) {
+                        result += std::get<bool>(val) ? "true" : "false";
+                    } else if (std::holds_alternative<std::nullptr_t>(val)) {
+                        result += "null";
+                    } else {
+                        result += "[object]";
+                    }
+                } catch (const RuntimeError&) {
+                    result += "${";
+                    result += varName;
+                    result += "}";
+                }
+            }
+        } else {
+            result += str[i];
+            i++;
+        }
+    }
+
+    return result;
 }
 
 }

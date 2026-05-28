@@ -61,6 +61,10 @@ std::unique_ptr<Stmt> Parser::statement() {
         return whileStatement();
     }
 
+    if (match(TokenType::FOR)) {
+        return forStatement();
+    }
+
     if (match(TokenType::FUNC)) {
         return funcStatement();
     }
@@ -178,6 +182,46 @@ std::unique_ptr<Stmt> Parser::ifStatement() {
         std::move(condition),
         std::move(thenBranch),
         std::move(elseBranch)
+    );
+}
+
+std::unique_ptr<Stmt> Parser::forStatement() {
+
+    Token forToken = previous();
+
+    if (!match(TokenType::IDENTIFIER)) {
+        std::cerr
+            << "Expected loop variable name after 'for'\n";
+        return nullptr;
+    }
+
+    std::string variable = previous().lexeme;
+
+    if (!match(TokenType::IN)) {
+        std::cerr
+            << "Expected 'in' after loop variable\n";
+        return nullptr;
+    }
+
+    auto iterable = expression();
+
+    if (!match(TokenType::LEFT_BRACE)) {
+        std::cerr
+            << "Expected '{' before for loop body\n";
+        return nullptr;
+    }
+
+    auto body = blockStatement();
+
+    if (!body) {
+        return nullptr;
+    }
+
+    return std::make_unique<ForStmt>(
+        std::move(variable),
+        std::move(iterable),
+        std::move(body),
+        forToken
     );
 }
 
@@ -427,7 +471,39 @@ std::unique_ptr<Expr> Parser::primary() {
     }
 
     if (match(TokenType::IDENTIFIER)) {
-        return std::make_unique<VariableExpr>(previous().lexeme);
+        return std::make_unique<VariableExpr>(
+            previous().lexeme,
+            previous()
+        );
+    }
+
+    if (match(TokenType::LEFT_BRACKET)) {
+        Token leftBracket = previous();
+
+        std::vector<std::unique_ptr<Expr>> elements;
+
+        if (!check(TokenType::RIGHT_BRACKET)) {
+            do {
+                auto element = expression();
+
+                if (!element) {
+                    return nullptr;
+                }
+
+                elements.push_back(std::move(element));
+            }
+            while (match(TokenType::COMMA));
+        }
+
+        if (!match(TokenType::RIGHT_BRACKET)) {
+            std::cerr << "Expected ']' after array literal" << "\n";
+            return nullptr;
+        }
+
+        return std::make_unique<ArrayExpr>(
+            std::move(elements),
+            leftBracket
+        );
     }
 
     if (match(TokenType::LEFT_PAREN)) {
@@ -478,7 +554,8 @@ std::unique_ptr<Expr> Parser::finishCall(
 
     return std::make_unique<CallExpr>(
         std::move(callee),
-        std::move(arguments)
+        std::move(arguments),
+        previous()
     );
 }
 
@@ -490,15 +567,44 @@ std::unique_ptr<Expr> Parser::call() {
         return nullptr;
     }
 
-    while (match(TokenType::LEFT_PAREN)) {
+    while (true) {
 
-        expr = finishCall(
-            std::move(expr)
-        );
+        if (match(TokenType::LEFT_PAREN)) {
 
-        if (!expr) {
-            return nullptr;
+            expr = finishCall(
+                std::move(expr)
+            );
+
+            if (!expr) {
+                return nullptr;
+            }
+
+            continue;
         }
+
+        if (match(TokenType::LEFT_BRACKET)) {
+
+            auto indexExpr = expression();
+
+            if (!indexExpr) {
+                return nullptr;
+            }
+
+            if (!match(TokenType::RIGHT_BRACKET)) {
+                std::cerr
+                    << "Expected ']' after index expression\n";
+                return nullptr;
+            }
+
+            expr = std::make_unique<IndexExpr>(
+                std::move(expr),
+                std::move(indexExpr),
+                previous()
+            );
+            continue;
+        }
+
+        break;
     }
 
     return expr;
@@ -552,7 +658,8 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
 
             return std::make_unique<AssignmentExpr>(
                 variable->name,
-                std::move(right)
+                std::move(right),
+                variable->nameToken
             );
         }
 

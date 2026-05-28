@@ -61,6 +61,8 @@ namespace vora {
         IF, // if
         ELSE, // else
         WHILE, // while
+        FOR, // for
+        IN, // in
 
         // Special
         END_OF_FILE, //

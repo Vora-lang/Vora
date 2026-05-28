@@ -11,6 +11,8 @@ namespace vora {
         {"if", TokenType::IF},
         {"else", TokenType::ELSE},
         {"while", TokenType::WHILE},
+        {"for", TokenType::FOR},
+        {"in", TokenType::IN},
     };
 
     Lexer::Lexer(std::string source)
@@ -72,6 +74,14 @@ namespace vora {
     void Lexer::number() {
         while (std::isdigit(static_cast<unsigned char>(peek()))) {
             advance();
+        }
+
+        // Handle decimal point
+        if (peek() == '.' && std::isdigit(static_cast<unsigned char>(peekNext()))) {
+            advance(); // consume the '.'
+            while (std::isdigit(static_cast<unsigned char>(peek()))) {
+                advance();
+            }
         }
 
         addToken(TokenType::NUMBER);
@@ -190,7 +200,15 @@ namespace vora {
             break;
 
         case '/':
-            addToken(TokenType::DIVIDE);
+            if (match('/')) {
+                lineComment();
+            }
+            else if (match('*')) {
+                blockComment();
+            }
+            else {
+                addToken(TokenType::DIVIDE);
+            }
             break;
 
         case '%':
@@ -275,6 +293,26 @@ namespace vora {
                 addToken(TokenType::INVALID);
             }
             break;
+        }
+    }
+
+    void Lexer::lineComment() {
+        while (peek() != '\n' && !isAtEnd()) {
+            advance();
+        }
+    }
+
+    void Lexer::blockComment() {
+        while (!isAtEnd()) {
+            if (peek() == '\n') {
+                line++;
+            }
+            if (peek() == '*' && peekNext() == '/') {
+                advance();
+                advance();
+                break;
+            }
+            advance();
         }
     }
 
