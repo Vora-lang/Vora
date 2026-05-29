@@ -49,6 +49,10 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::IF: return "IF";
         case TokenType::ELSE: return "ELSE";
         case TokenType::WHILE: return "WHILE";
+        case TokenType::FOR: return "FOR";
+        case TokenType::IN: return "IN";
+        case TokenType::OBJ: return "OBJ";
+        case TokenType::THIS: return "THIS";
 
         case TokenType::END_OF_FILE: return "EOF";
         case TokenType::INVALID: return "INVALID";

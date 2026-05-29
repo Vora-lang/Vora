@@ -13,6 +13,8 @@ namespace vora {
         {"while", TokenType::WHILE},
         {"for", TokenType::FOR},
         {"in", TokenType::IN},
+        {"Obj", TokenType::OBJ},
+        {"this", TokenType::THIS},
     };
 
     Lexer::Lexer(std::string source)

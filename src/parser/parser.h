@@ -50,6 +50,8 @@ private:
 
     std::unique_ptr<Stmt> funcStatement();
 
+    std::unique_ptr<Stmt> objStatement();
+
 private:
     bool isAtEnd() const;
 

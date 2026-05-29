@@ -191,6 +191,41 @@ void Interpreter::popScope() {
     scopeStack.pop_back();
 }
 
+void Interpreter::pushScopeWithEnclosing(Environment* enclosing) {
+    pushScope(enclosing);
+}
+
+void Interpreter::executeBlockWithThis(
+    const std::vector<std::unique_ptr<Stmt>>& statements,
+    const Value& thisValue,
+    const std::vector<std::string>& params,
+    const std::vector<Value>& arguments
+) {
+    pushScope();
+
+    try {
+        for (size_t i = 0; i < params.size(); ++i) {
+            environment.define(
+                params[i],
+                arguments[i]
+            );
+        }
+
+        environment.define("this", thisValue);
+
+        executeBlock(statements);
+
+    } catch (const ReturnSignal&) {
+        popScope();
+        throw;
+    } catch (...) {
+        popScope();
+        throw;
+    }
+
+    popScope();
+}
+
 std::shared_ptr<Environment> Interpreter::captureClosure() {
 
     if (scopeStack.empty()) {
@@ -531,6 +566,112 @@ Value Interpreter::evaluate(
         );
     }
 
+    if (auto propExpr =
+        dynamic_cast<const PropertyExpr*>(expr)) {
+
+        Value obj = evaluate(propExpr->object.get());
+
+        if (!std::holds_alternative<
+                std::shared_ptr<ObjectInstance>
+            >(obj)) {
+
+            throw RuntimeError(
+                "Can only access properties on objects",
+                propExpr->dot
+            );
+        }
+
+        const auto& instance =
+            std::get<std::shared_ptr<ObjectInstance>>(obj);
+
+        auto it = instance->properties.find(propExpr->property);
+
+        if (it != instance->properties.end()) {
+            return it->second;
+        }
+
+        if (instance->classDefinition) {
+            auto methodIt = instance->classDefinition->methods.find(propExpr->property);
+            if (methodIt != instance->classDefinition->methods.end()) {
+                // Return a bound method that sets 'this' when called
+                struct BoundMethodCallable : public Callable {
+                    std::shared_ptr<VoraFunction> method;
+                    std::shared_ptr<ObjectInstance> instance;
+
+                    BoundMethodCallable(std::shared_ptr<VoraFunction> m, std::shared_ptr<ObjectInstance> inst)
+                        : method(std::move(m)), instance(std::move(inst)) {}
+
+                    Value call(Interpreter& interpreter, const std::vector<Value>& arguments) override {
+                        interpreter.pushScope(method->closure().get());
+
+                        for (size_t i = 0; i < method->params().size(); ++i) {
+                            interpreter.getEnvironment().define(
+                                method->params()[i],
+                                arguments[i]
+                            );
+                        }
+
+                        interpreter.getEnvironment().define("this", instance);
+
+                        try {
+                            interpreter.executeBlock(method->body()->statements);
+                        } catch (const ReturnSignal& signal) {
+                            interpreter.popScope();
+                            return signal.value;
+                        }
+
+                        interpreter.popScope();
+                        return nullptr;
+                    }
+                };
+
+                return std::make_shared<BoundMethodCallable>(methodIt->second, instance);
+            }
+        }
+
+        throw RuntimeError(
+            "Undefined property: " + propExpr->property,
+            propExpr->dot
+        );
+    }
+
+    if (auto propAssign =
+        dynamic_cast<const PropertyAssignmentExpr*>(expr)) {
+
+        Value obj = evaluate(propAssign->object.get());
+        Value value = evaluate(propAssign->value.get());
+
+        if (!std::holds_alternative<
+                std::shared_ptr<ObjectInstance>
+            >(obj)) {
+
+            throw RuntimeError(
+                "Can only set properties on objects",
+                propAssign->dot
+            );
+        }
+
+        const auto& instance =
+            std::get<std::shared_ptr<ObjectInstance>>(obj);
+
+        instance->properties[propAssign->property] = value;
+
+        return value;
+    }
+
+    if (auto thisExpr =
+        dynamic_cast<const ThisExpr*>(expr)) {
+
+        try {
+            return environment.get("this", thisExpr->keyword);
+        } catch (const RuntimeError&) {
+            throw RuntimeError(
+                "Cannot use 'this' outside of object method",
+                thisExpr->keyword
+            );
+        }
+    }
+
     std::cerr
         << "Unknown expression"
         << std::endl;
@@ -660,6 +801,69 @@ void Interpreter::execute(
         return;
     }
 
+    if (auto objStmt =
+        dynamic_cast<const ObjStmt*>(stmt)) {
+
+        auto objClass = std::make_shared<ObjectClass>();
+        objClass->className = objStmt->name;
+        objClass->params = objStmt->params;
+        objClass->body = objStmt->body;
+
+        for (const auto& methodStmt : objStmt->methods) {
+            if (auto funcStmt = dynamic_cast<const FuncStmt*>(methodStmt.get())) {
+                objClass->methods[funcStmt->name] =
+                    std::make_shared<VoraFunction>(
+                        funcStmt->name,
+                        funcStmt->params,
+                        funcStmt->body,
+                        captureClosure()
+                    );
+            }
+        }
+
+        auto constructor = std::make_shared<VoraFunction>(
+            objStmt->name,
+            objStmt->params,
+            objStmt->body,
+            captureClosure()
+        );
+
+        struct ObjectConstructorCallable : public Callable {
+            std::shared_ptr<ObjectClass> classDef;
+            std::shared_ptr<VoraFunction> constructorFn;
+
+            ObjectConstructorCallable(
+                std::shared_ptr<ObjectClass> c,
+                std::shared_ptr<VoraFunction> f
+            ) : classDef(c), constructorFn(f) {}
+
+            Value call(
+                Interpreter& interpreter,
+                const std::vector<Value>& arguments
+            ) override {
+                auto instance = std::make_shared<ObjectInstance>();
+                instance->className = classDef->className;
+                instance->classDefinition = classDef;
+
+                interpreter.executeBlockWithThis(
+                    constructorFn->body()->statements,
+                    instance,
+                    constructorFn->params(),
+                    arguments
+                );
+
+                return instance;
+            }
+        };
+
+        auto constructorCallable =
+            std::make_shared<ObjectConstructorCallable>(objClass, constructor);
+
+        defineBinding(objStmt->name, constructorCallable);
+
+        return;
+    }
+
     if (auto letStmt =
         dynamic_cast<const LetStmt*>(stmt)) {
 
@@ -704,7 +908,57 @@ std::string Interpreter::interpolateString(
             if (i < str.length() && str[i] == '}') {
                 i++;
                 try {
-                    Value val = environment.get(varName, Token(TokenType::IDENTIFIER, varName, 0));
+                    Value val;
+                    // support dotted names like "this.name"
+                    if (varName.find('.') == std::string::npos) {
+                        val = environment.get(varName, Token(TokenType::IDENTIFIER, varName, 0));
+                    } else {
+                        size_t start = 0;
+                        bool found = true;
+                        // get base identifier
+                        size_t dot = varName.find('.', start);
+                        std::string base = varName.substr(start, dot - start);
+                        try {
+                            val = environment.get(base, Token(TokenType::IDENTIFIER, base, 0));
+                        } catch (const RuntimeError&) {
+                            found = false;
+                        }
+
+                        while (found && dot != std::string::npos) {
+                            start = dot + 1;
+                            dot = varName.find('.', start);
+                            std::string prop = varName.substr(start, (dot == std::string::npos) ? std::string::npos : dot - start);
+
+                            if (!std::holds_alternative<std::shared_ptr<ObjectInstance>>(val)) {
+                                found = false;
+                                break;
+                            }
+
+                            auto instance = std::get<std::shared_ptr<ObjectInstance>>(val);
+
+                            auto it = instance->properties.find(prop);
+                            if (it != instance->properties.end()) {
+                                val = it->second;
+                                continue;
+                            }
+
+                            if (instance->classDefinition) {
+                                auto methodIt = instance->classDefinition->methods.find(prop);
+                                if (methodIt != instance->classDefinition->methods.end()) {
+                                    val = methodIt->second;
+                                    continue;
+                                }
+                            }
+
+                            found = false;
+                            break;
+                        }
+
+                        if (!found) {
+                            throw RuntimeError("Undefined property: " + varName, Token(TokenType::IDENTIFIER, varName, 0));
+                        }
+                    }
+
                     if (std::holds_alternative<double>(val)) {
                         double d = std::get<double>(val);
                         if (d == static_cast<int>(d)) {

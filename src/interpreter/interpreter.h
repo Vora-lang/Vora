@@ -36,6 +36,19 @@ public:
         const std::vector<Value>& arguments
     );
 
+    Environment& getEnvironment() { return environment; }
+
+    void pushScopeWithEnclosing(Environment* enclosing);
+
+    void popScope();
+
+    void executeBlockWithThis(
+        const std::vector<std::unique_ptr<Stmt>>& statements,
+        const Value& thisValue,
+        const std::vector<std::string>& params,
+        const std::vector<Value>& arguments
+    );
+
 private:
 
     RuntimeConfig config;
@@ -51,8 +64,6 @@ private:
     void pushScope(
         Environment* enclosing
     );
-
-    void popScope();
 
     Value evaluate(
         const Expr* expr

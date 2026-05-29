@@ -51,6 +51,7 @@ std::string ASTPrinter::print(const Expr* expr) {
                         else if constexpr (std::is_same_v<U, std::string>) return inner;
                         else if constexpr (std::is_same_v<U, std::shared_ptr<Callable>>) return "<fn>";
                         else if constexpr (std::is_same_v<U, std::shared_ptr<Array>>) return "[array]";
+                        else if constexpr (std::is_same_v<U, std::shared_ptr<ObjectInstance>>) return "<object>";
                         else return std::to_string(inner);
                     }, arg->elements[i]);
                 }
@@ -62,6 +63,12 @@ std::string ASTPrinter::print(const Expr* expr) {
                 ) {
 
                 return "<fn>";
+
+            } else if constexpr (
+                std::is_same_v<T, std::shared_ptr<ObjectInstance>>
+                ) {
+
+                return "<" + arg->className + " object>";
 
             } else {
 

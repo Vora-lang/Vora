@@ -1,2 +1,12 @@
-﻿let a = 1.53883833838338 + 2.05;
-print(a);
+Obj Student(name, age) {
+    this.name = name;
+    this.age = age;
+
+    func greet() {
+        print("Hello, my name is ${this.name}");
+    }
+}
+
+let student = Student("Alice", 18);
+student.greet();      // 输出: Hello, my name is Alice
+print(student.age);   // 输出: 18

@@ -68,6 +68,15 @@ void printValue(const Value& value) {
                 std::cout << "<fn>";
             }
 
+        } else if constexpr (
+            std::is_same_v<T, std::shared_ptr<ObjectInstance>>
+        ) {
+
+            std::cout
+                << "<"
+                << arg->className
+                << " object>";
+
         } else {
 
             std::cout << arg;

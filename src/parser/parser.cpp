@@ -69,6 +69,10 @@ std::unique_ptr<Stmt> Parser::statement() {
         return funcStatement();
     }
 
+    if (match(TokenType::OBJ)) {
+        return objStatement();
+    }
+
     auto expr = expression();
 
     match(TokenType::SEMICOLON);
@@ -308,6 +312,102 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
     );
 }
 
+std::unique_ptr<Stmt> Parser::objStatement() {
+
+    if (!match(TokenType::IDENTIFIER)) {
+
+        std::cerr
+            << "Expected object name\n";
+
+        return nullptr;
+    }
+
+    std::string name = previous().lexeme;
+
+    if (!match(TokenType::LEFT_PAREN)) {
+
+        std::cerr
+            << "Expected '(' after object name\n";
+
+        return nullptr;
+    }
+
+    std::vector<std::string> params;
+
+    if (!check(TokenType::RIGHT_PAREN)) {
+
+        do {
+
+            if (!match(TokenType::IDENTIFIER)) {
+
+                std::cerr
+                    << "Expected parameter name\n";
+
+                return nullptr;
+            }
+
+            params.push_back(
+                previous().lexeme
+            );
+        }
+        while (match(TokenType::COMMA));
+    }
+
+    if (!match(TokenType::RIGHT_PAREN)) {
+
+        std::cerr
+            << "Expected ')' after parameters\n";
+
+        return nullptr;
+    }
+
+    if (!match(TokenType::LEFT_BRACE)) {
+
+        std::cerr
+            << "Expected '{' before object body\n";
+
+        return nullptr;
+    }
+
+    std::vector<std::unique_ptr<Stmt>> methods;
+    std::vector<std::unique_ptr<Stmt>> bodyStmts;
+
+    while (!isAtEnd() &&
+           peek().type != TokenType::RIGHT_BRACE) {
+
+        auto stmt = statement();
+
+        if (!stmt) {
+            return nullptr;
+        }
+
+        if (dynamic_cast<FuncStmt*>(stmt.get())) {
+            methods.push_back(std::move(stmt));
+        } else {
+            bodyStmts.push_back(std::move(stmt));
+        }
+    }
+
+    if (!match(TokenType::RIGHT_BRACE)) {
+
+        std::cerr
+            << "Expected '}' after object body\n";
+
+        return nullptr;
+    }
+
+    auto body = std::make_shared<BlockStmt>(
+        std::move(bodyStmts)
+    );
+
+    return std::make_unique<ObjStmt>(
+        name,
+        std::move(params),
+        std::move(methods),
+        body
+    );
+}
+
 std::unique_ptr<Stmt> Parser::whileStatement() {
 
     if (!match(TokenType::LEFT_PAREN)) {
@@ -434,6 +534,12 @@ std::unique_ptr<Expr> Parser::primary() {
         if (!right) return nullptr;
 
         return std::make_unique<UnaryExpr>(op, std::move(right));
+    }
+
+    if (match(TokenType::THIS)) {
+        return std::make_unique<ThisExpr>(
+            previous()
+        );
     }
 
     if (match(TokenType::NUMBER)) {
@@ -604,6 +710,25 @@ std::unique_ptr<Expr> Parser::call() {
             continue;
         }
 
+        if (match(TokenType::DOT)) {
+            Token dot = previous();
+
+            if (!match(TokenType::IDENTIFIER)) {
+                std::cerr
+                    << "Expected property name after '.'\n";
+                return nullptr;
+            }
+
+            std::string property = previous().lexeme;
+
+            expr = std::make_unique<PropertyExpr>(
+                std::move(expr),
+                property,
+                dot
+            );
+            continue;
+        }
+
         break;
     }
 
@@ -651,16 +776,28 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
             auto variable =
                 dynamic_cast<VariableExpr*>(left.get());
 
-            if (!variable) {
-                std::cerr << "Invalid assignment target\n";
-                return nullptr;
+            if (variable) {
+                return std::make_unique<AssignmentExpr>(
+                    variable->name,
+                    std::move(right),
+                    variable->nameToken
+                );
             }
 
-            return std::make_unique<AssignmentExpr>(
-                variable->name,
-                std::move(right),
-                variable->nameToken
-            );
+            auto property =
+                dynamic_cast<PropertyExpr*>(left.get());
+
+            if (property) {
+                return std::make_unique<PropertyAssignmentExpr>(
+                    std::move(property->object),
+                    property->property,
+                    std::move(right),
+                    property->dot
+                );
+            }
+
+            std::cerr << "Invalid assignment target\n";
+            return nullptr;
         }
 
         // =========================

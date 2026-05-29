@@ -156,4 +156,53 @@ public:
     Token bracket;
 };
 
+class PropertyExpr : public Expr {
+public:
+    PropertyExpr(
+        std::unique_ptr<Expr> object,
+        std::string property,
+        Token dot
+    )
+        : object(std::move(object)),
+          property(std::move(property)),
+          dot(std::move(dot)) {
+    }
+
+    std::unique_ptr<Expr> object;
+    std::string property;
+    Token dot;
+};
+
+class PropertyAssignmentExpr : public Expr {
+public:
+    PropertyAssignmentExpr(
+        std::unique_ptr<Expr> object,
+        std::string property,
+        std::unique_ptr<Expr> value,
+        Token dot
+    )
+        : object(std::move(object)),
+          property(std::move(property)),
+          value(std::move(value)),
+          dot(std::move(dot)) {
+    }
+
+    std::unique_ptr<Expr> object;
+    std::string property;
+    std::unique_ptr<Expr> value;
+    Token dot;
+};
+
+class ThisExpr : public Expr {
+public:
+    explicit ThisExpr(
+        Token keyword
+    )
+        : keyword(std::move(keyword)) {
+    }
+
+    Token keyword;
+};
+
 }
+

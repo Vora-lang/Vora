@@ -63,6 +63,8 @@ namespace vora {
         WHILE, // while
         FOR, // for
         IN, // in
+        OBJ, // Obj
+        THIS, // this
 
         // Special
         END_OF_FILE, //

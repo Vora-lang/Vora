@@ -137,4 +137,27 @@ public:
     std::shared_ptr<BlockStmt> body;
 };
 
+class ObjStmt : public Stmt {
+public:
+    ObjStmt(
+        std::string name,
+        std::vector<std::string> params,
+        std::vector<std::unique_ptr<Stmt>> methods,
+        std::shared_ptr<BlockStmt> body
+    )
+        : name(std::move(name)),
+          params(std::move(params)),
+          methods(std::move(methods)),
+          body(std::move(body)) {
+    }
+
+    std::string name;
+
+    std::vector<std::string> params;
+
+    std::vector<std::unique_ptr<Stmt>> methods;
+
+    std::shared_ptr<BlockStmt> body;
+};
+
 }
