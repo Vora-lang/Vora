@@ -1,12 +1,3 @@
-Obj Student(name, age) {
-    this.name = name;
-    this.age = age;
-
-    func greet() {
-        print("Hello, my name is ${this.name}");
-    }
-}
-
-let student = Student("Alice", 18);
-student.greet();      // 输出: Hello, my name is Alice
-print(student.age);   // 输出: 18
+let arr = [1, "hello", TRUE, null];
+print(arr[0])              // 输出: 1
+print(arr[1])              // 输出: hello
