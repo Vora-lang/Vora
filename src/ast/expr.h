@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <memory>
 #include <string>
@@ -9,9 +9,13 @@
 
 namespace vora {
 
+class ExprVisitor;
+
 class Expr {
 public:
     virtual ~Expr() = default;
+    virtual Value accept(ExprVisitor& visitor) const = 0;
+    virtual std::unique_ptr<Expr> clone() const = 0;
 };
 
 class LiteralExpr : public Expr {
@@ -22,6 +26,9 @@ public:
     )
         : value(std::move(value)) {
     }
+
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
 
     Value value;
 };
@@ -38,6 +45,9 @@ public:
           right(std::move(right)) {
     }
 
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
     std::unique_ptr<Expr> left;
 
     Token op;
@@ -53,6 +63,9 @@ public:
         : expression(std::move(expression)) {
     }
 
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
     std::unique_ptr<Expr> expression;
 };
 
@@ -65,6 +78,9 @@ public:
         : op(std::move(op)),
           right(std::move(right)) {
     }
+
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
 
     Token op;
 
@@ -80,6 +96,9 @@ public:
         : name(std::move(name)),
           nameToken(std::move(nameToken)) {
     }
+
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
 
     std::string name;
 
@@ -97,6 +116,9 @@ public:
           value(std::move(value)),
           nameToken(std::move(nameToken)) {
     }
+
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
 
     std::string name;
 
@@ -117,6 +139,9 @@ public:
           paren(std::move(paren)) {
     }
 
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
     std::unique_ptr<Expr> callee;
 
     std::vector<std::unique_ptr<Expr>> arguments;
@@ -133,6 +158,9 @@ public:
         : elements(std::move(elements)),
           leftBracket(std::move(leftBracket)) {
     }
+
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
 
     std::vector<std::unique_ptr<Expr>> elements;
 
@@ -151,6 +179,9 @@ public:
           bracket(std::move(bracket)) {
     }
 
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
     std::unique_ptr<Expr> array;
     std::unique_ptr<Expr> index;
     Token bracket;
@@ -167,6 +198,9 @@ public:
           property(std::move(property)),
           dot(std::move(dot)) {
     }
+
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
 
     std::unique_ptr<Expr> object;
     std::string property;
@@ -187,6 +221,9 @@ public:
           dot(std::move(dot)) {
     }
 
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
     std::unique_ptr<Expr> object;
     std::string property;
     std::unique_ptr<Expr> value;
@@ -201,8 +238,30 @@ public:
         : keyword(std::move(keyword)) {
     }
 
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
     Token keyword;
 };
 
-}
+class IncDecExpr : public Expr {
+public:
+    IncDecExpr(
+        Token op,
+        std::unique_ptr<Expr> target,
+        bool isPrefix
+    )
+        : op(std::move(op)),
+          target(std::move(target)),
+          isPrefix(isPrefix) {
+    }
 
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    Token op;           // PLUS_PLUS or MINUS_MINUS
+    std::unique_ptr<Expr> target;  // VariableExpr or PropertyExpr
+    bool isPrefix;      // true = ++x, false = x++
+};
+
+}

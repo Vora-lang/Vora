@@ -16,12 +16,19 @@ public:
 
     std::unique_ptr<Program> parse();
 
+    bool hasError() const { return hadError; }
+
 private:
     std::vector<Token> tokens;
 
     size_t current = 0;
 
+    bool hadError = false;
+
 private:
+
+    void error(const std::string& message);
+    void synchronize();
     std::unique_ptr<Expr> expression();
 
     std::unique_ptr<Expr> parsePrecedence(int precedence);
@@ -51,6 +58,10 @@ private:
     std::unique_ptr<Stmt> funcStatement();
 
     std::unique_ptr<Stmt> objStatement();
+
+    std::unique_ptr<Stmt> breakStatement();
+
+    std::unique_ptr<Stmt> continueStatement();
 
 private:
     bool isAtEnd() const;

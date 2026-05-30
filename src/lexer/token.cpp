@@ -53,6 +53,14 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::IN: return "IN";
         case TokenType::OBJ: return "OBJ";
         case TokenType::THIS: return "THIS";
+        case TokenType::BREAK: return "BREAK";
+        case TokenType::CONTINUE: return "CONTINUE";
+
+        case TokenType::PLUS_EQUAL: return "PLUS_EQUAL";
+        case TokenType::MINUS_EQUAL: return "MINUS_EQUAL";
+        case TokenType::MULTIPLY_EQUAL: return "MULTIPLY_EQUAL";
+        case TokenType::DIVIDE_EQUAL: return "DIVIDE_EQUAL";
+        case TokenType::MODULO_EQUAL: return "MODULO_EQUAL";
 
         case TokenType::END_OF_FILE: return "EOF";
         case TokenType::INVALID: return "INVALID";

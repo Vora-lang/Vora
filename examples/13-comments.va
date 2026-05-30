@@ -1,0 +1,19 @@
+// 注释
+print("=== comments ===")
+
+// 行注释
+print("after line comment")
+
+/*
+   块注释
+*/
+print("after block comment")
+
+/*
+   嵌套块注释
+   /* level 1
+      /* level 2 */
+      still level 1
+   */
+*/
+print("after nested block comment")

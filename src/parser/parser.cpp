@@ -17,7 +17,19 @@ std::unique_ptr<Program> Parser::parse() {
         auto stmt = statement();
 
         if (!stmt) {
-            return nullptr;
+            // Synchronize and keep going so we report all errors,
+            // not just the first one.
+            synchronize();
+            continue;
+        }
+
+        // Skip statements whose expression failed to parse (ExprStmt
+        // with a null inner expression is a parse error marker).
+        if (auto* es = dynamic_cast<ExprStmt*>(stmt.get())) {
+            if (!es->expression) {
+                synchronize();
+                continue;
+            }
         }
 
         statements.push_back(
@@ -25,9 +37,47 @@ std::unique_ptr<Program> Parser::parse() {
         );
     }
 
+    if (hadError) {
+        return nullptr;
+    }
+
     return std::make_unique<Program>(
         std::move(statements)
     );
+}
+
+void Parser::error(const std::string& message) {
+    hadError = true;
+    std::cerr << "[line " << peek().line << "] Error: " << message << "\n";
+}
+
+void Parser::synchronize() {
+    // Skip tokens until we hit a likely statement boundary.
+    while (!isAtEnd()) {
+        // If we just passed a semicolon or closing brace, we're at a boundary.
+        if (previous().type == TokenType::SEMICOLON ||
+            previous().type == TokenType::RIGHT_BRACE) {
+            return;
+        }
+
+        // Statement-start keywords are safe resync points.
+        switch (peek().type) {
+            case TokenType::LET:
+            case TokenType::FUNC:
+            case TokenType::IF:
+            case TokenType::WHILE:
+            case TokenType::FOR:
+            case TokenType::RETURN:
+            case TokenType::OBJ:
+            case TokenType::BREAK:
+            case TokenType::CONTINUE:
+                return;
+            default:
+                break;
+        }
+
+        advance();
+    }
 }
 
 // =========================
@@ -73,6 +123,14 @@ std::unique_ptr<Stmt> Parser::statement() {
         return objStatement();
     }
 
+    if (match(TokenType::BREAK)) {
+        return breakStatement();
+    }
+
+    if (match(TokenType::CONTINUE)) {
+        return continueStatement();
+    }
+
     auto expr = expression();
 
     match(TokenType::SEMICOLON);
@@ -85,20 +143,24 @@ std::unique_ptr<Stmt> Parser::statement() {
 std::unique_ptr<Stmt> Parser::letStatement() {
 
     if (!match(TokenType::IDENTIFIER)) {
-
-        std::cerr
-            << "Expected variable name\n";
-    
+        error("Expected variable name");
         return nullptr;
     }
 
     std::string name = previous().lexeme;
 
+    // Optional type annotation: let x:int = ...
+    std::string typeAnnotation;
+    if (match(TokenType::COLON)) {
+        if (!match(TokenType::IDENTIFIER)) {
+            error("Expected type name after ':'");
+            return nullptr;
+        }
+        typeAnnotation = previous().lexeme;
+    }
+
     if (!match(TokenType::EQUAL)) {
-
-        std::cerr
-            << "Expected '=' after variable name\n";
-
+        error("Expected '=' after variable name");
         return nullptr;
     }
 
@@ -108,7 +170,8 @@ std::unique_ptr<Stmt> Parser::letStatement() {
 
     return std::make_unique<LetStmt>(
         name,
-        std::move(initializer)
+        std::move(initializer),
+        typeAnnotation
     );
 }
 
@@ -132,8 +195,7 @@ std::unique_ptr<Stmt> Parser::blockStatement() {
 
     if (!match(TokenType::RIGHT_BRACE)) {
 
-        std::cerr
-            << "Expected '}' after block\n";
+                    error("Expected '}' after block\n");
 
         return nullptr;
     }
@@ -158,8 +220,7 @@ std::unique_ptr<Stmt> Parser::ifStatement() {
 
     if (!match(TokenType::LEFT_PAREN)) {
 
-        std::cerr
-            << "Expected '(' after if\n";
+                    error("Expected '(' after if\n");
 
         return nullptr;
     }
@@ -168,8 +229,7 @@ std::unique_ptr<Stmt> Parser::ifStatement() {
 
     if (!match(TokenType::RIGHT_PAREN)) {
 
-        std::cerr
-            << "Expected ')' after condition\n";
+                    error("Expected ')' after condition\n");
 
         return nullptr;
     }
@@ -194,24 +254,21 @@ std::unique_ptr<Stmt> Parser::forStatement() {
     Token forToken = previous();
 
     if (!match(TokenType::IDENTIFIER)) {
-        std::cerr
-            << "Expected loop variable name after 'for'\n";
+                    error("Expected loop variable name after 'for'\n");
         return nullptr;
     }
 
     std::string variable = previous().lexeme;
 
     if (!match(TokenType::IN)) {
-        std::cerr
-            << "Expected 'in' after loop variable\n";
+                    error("Expected 'in' after loop variable\n");
         return nullptr;
     }
 
     auto iterable = expression();
 
     if (!match(TokenType::LEFT_BRACE)) {
-        std::cerr
-            << "Expected '{' before for loop body\n";
+                    error("Expected '{' before for loop body\n");
         return nullptr;
     }
 
@@ -233,8 +290,7 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
 
     if (!match(TokenType::IDENTIFIER)) {
 
-        std::cerr
-            << "Expected function name\n";
+                    error("Expected function name\n");
 
         return nullptr;
     }
@@ -243,8 +299,7 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
 
     if (!match(TokenType::LEFT_PAREN)) {
 
-        std::cerr
-            << "Expected '(' after function name\n";
+                    error("Expected '(' after function name\n");
 
         return nullptr;
     }
@@ -257,8 +312,7 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
 
             if (!match(TokenType::IDENTIFIER)) {
 
-                std::cerr
-                    << "Expected parameter name\n";
+                            error("Expected parameter name\n");
 
                 return nullptr;
             }
@@ -272,16 +326,14 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
 
     if (!match(TokenType::RIGHT_PAREN)) {
 
-        std::cerr
-            << "Expected ')' after parameters\n";
+                    error("Expected ')' after parameters\n");
 
         return nullptr;
     }
 
     if (!match(TokenType::LEFT_BRACE)) {
 
-        std::cerr
-            << "Expected '{' before function body\n";
+                    error("Expected '{' before function body\n");
 
         return nullptr;
     }
@@ -297,8 +349,7 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
 
     if (!block) {
 
-        std::cerr
-            << "Expected block body\n";
+                    error("Expected block body\n");
 
         return nullptr;
     }
@@ -316,8 +367,7 @@ std::unique_ptr<Stmt> Parser::objStatement() {
 
     if (!match(TokenType::IDENTIFIER)) {
 
-        std::cerr
-            << "Expected object name\n";
+                    error("Expected object name\n");
 
         return nullptr;
     }
@@ -326,8 +376,7 @@ std::unique_ptr<Stmt> Parser::objStatement() {
 
     if (!match(TokenType::LEFT_PAREN)) {
 
-        std::cerr
-            << "Expected '(' after object name\n";
+                    error("Expected '(' after object name\n");
 
         return nullptr;
     }
@@ -340,8 +389,7 @@ std::unique_ptr<Stmt> Parser::objStatement() {
 
             if (!match(TokenType::IDENTIFIER)) {
 
-                std::cerr
-                    << "Expected parameter name\n";
+                            error("Expected parameter name\n");
 
                 return nullptr;
             }
@@ -355,16 +403,14 @@ std::unique_ptr<Stmt> Parser::objStatement() {
 
     if (!match(TokenType::RIGHT_PAREN)) {
 
-        std::cerr
-            << "Expected ')' after parameters\n";
+                    error("Expected ')' after parameters\n");
 
         return nullptr;
     }
 
     if (!match(TokenType::LEFT_BRACE)) {
 
-        std::cerr
-            << "Expected '{' before object body\n";
+                    error("Expected '{' before object body\n");
 
         return nullptr;
     }
@@ -390,8 +436,7 @@ std::unique_ptr<Stmt> Parser::objStatement() {
 
     if (!match(TokenType::RIGHT_BRACE)) {
 
-        std::cerr
-            << "Expected '}' after object body\n";
+                    error("Expected '}' after object body\n");
 
         return nullptr;
     }
@@ -412,8 +457,7 @@ std::unique_ptr<Stmt> Parser::whileStatement() {
 
     if (!match(TokenType::LEFT_PAREN)) {
 
-        std::cerr
-            << "Expected '(' after while\n";
+                    error("Expected '(' after while\n");
 
         return nullptr;
     }
@@ -422,8 +466,7 @@ std::unique_ptr<Stmt> Parser::whileStatement() {
 
     if (!match(TokenType::RIGHT_PAREN)) {
 
-        std::cerr
-            << "Expected ')' after condition\n";
+                    error("Expected ')' after condition\n");
 
         return nullptr;
     }
@@ -477,6 +520,11 @@ int Parser::getPrecedence(TokenType type) const {
     switch (type) {
 
         case TokenType::EQUAL:
+        case TokenType::PLUS_EQUAL:
+        case TokenType::MINUS_EQUAL:
+        case TokenType::MULTIPLY_EQUAL:
+        case TokenType::DIVIDE_EQUAL:
+        case TokenType::MODULO_EQUAL:
             return 1; // lowest, right-associative handled in Pratt
 
         case TokenType::OR:
@@ -534,6 +582,23 @@ std::unique_ptr<Expr> Parser::primary() {
         if (!right) return nullptr;
 
         return std::make_unique<UnaryExpr>(op, std::move(right));
+    }
+
+    // prefix ++x / --x
+    if (match(TokenType::PLUS_PLUS) || match(TokenType::MINUS_MINUS)) {
+        Token op = previous();
+        auto target = call();  // use call() so ++obj.prop chains work
+
+        if (!target) return nullptr;
+
+        // target must be assignable
+        if (!dynamic_cast<VariableExpr*>(target.get()) &&
+            !dynamic_cast<PropertyExpr*>(target.get())) {
+            error("Invalid target for prefix " + op.lexeme);
+            return nullptr;
+        }
+
+        return std::make_unique<IncDecExpr>(op, std::move(target), true);
     }
 
     if (match(TokenType::THIS)) {
@@ -602,7 +667,7 @@ std::unique_ptr<Expr> Parser::primary() {
         }
 
         if (!match(TokenType::RIGHT_BRACKET)) {
-            std::cerr << "Expected ']' after array literal" << "\n";
+            error("Expected ']' after array literal");
             return nullptr;
         }
 
@@ -616,15 +681,16 @@ std::unique_ptr<Expr> Parser::primary() {
         auto expr = expression();
 
         if (!match(TokenType::RIGHT_PAREN)) {
-            std::cerr << "Expected ')'\n";
+            error("Expected ')' after expression");
             return nullptr;
         }
 
         return std::make_unique<GroupingExpr>(std::move(expr));
     }
 
-    std::cerr << "Unexpected token: " << peek().lexeme << "\n";
-    return nullptr;
+    error("Unexpected token: " + peek().lexeme);
+    advance();  // consume the bad token so we don't loop on it
+    return std::make_unique<LiteralExpr>(nullptr);  // placeholder
 }
 
 std::unique_ptr<Expr> Parser::finishCall(
@@ -652,8 +718,7 @@ std::unique_ptr<Expr> Parser::finishCall(
 
     if (!match(TokenType::RIGHT_PAREN)) {
 
-        std::cerr
-            << "Expected ')' after arguments\n";
+        error("Expected ')' after arguments");
 
         return nullptr;
     }
@@ -697,8 +762,7 @@ std::unique_ptr<Expr> Parser::call() {
             }
 
             if (!match(TokenType::RIGHT_BRACKET)) {
-                std::cerr
-                    << "Expected ']' after index expression\n";
+                error("Expected ']' after index expression");
                 return nullptr;
             }
 
@@ -714,8 +778,7 @@ std::unique_ptr<Expr> Parser::call() {
             Token dot = previous();
 
             if (!match(TokenType::IDENTIFIER)) {
-                std::cerr
-                    << "Expected property name after '.'\n";
+                error("Expected property name after '.'");
                 return nullptr;
             }
 
@@ -726,6 +789,16 @@ std::unique_ptr<Expr> Parser::call() {
                 property,
                 dot
             );
+            continue;
+        }
+
+        // postfix x++ / x--  (only if lhs is an lvalue, otherwise
+        // the ++/-- belongs to the next statement as a prefix operator)
+        if ((check(TokenType::PLUS_PLUS) || check(TokenType::MINUS_MINUS)) &&
+            (dynamic_cast<VariableExpr*>(expr.get()) ||
+             dynamic_cast<PropertyExpr*>(expr.get()))) {
+            Token op = advance();  // consume ++ / --
+            expr = std::make_unique<IncDecExpr>(op, std::move(expr), false);
             continue;
         }
 
@@ -744,8 +817,8 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
     auto left = call();
 
     if (!left) {
-        std::cerr << "Expected expression\n";
-        return nullptr;
+        error("Expected expression");
+        return std::make_unique<LiteralExpr>(nullptr);  // placeholder
     }
 
     while (!isAtEnd() &&
@@ -754,17 +827,22 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
         Token op = advance();
         int opPrec = getPrecedence(op.type);
 
-        // right-associativity fix (power + assignment)
+        // right-associativity fix (power + assignment / compound-assignment)
         bool rightAssociative =
             (op.type == TokenType::POWER ||
-             op.type == TokenType::EQUAL);
+             op.type == TokenType::EQUAL ||
+             op.type == TokenType::PLUS_EQUAL ||
+             op.type == TokenType::MINUS_EQUAL ||
+             op.type == TokenType::MULTIPLY_EQUAL ||
+             op.type == TokenType::DIVIDE_EQUAL ||
+             op.type == TokenType::MODULO_EQUAL);
 
         int nextPrec = opPrec - (rightAssociative ? 1 : 0);
 
         auto right = parsePrecedence(nextPrec);
 
         if (!right) {
-            std::cerr << "Expected right-hand expression after operator\n";
+            error("Expected right-hand expression after operator");
             return nullptr;
         }
 
@@ -796,7 +874,61 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
                 );
             }
 
-            std::cerr << "Invalid assignment target\n";
+            error("Invalid assignment target");
+            return nullptr;
+        }
+
+        // =========================
+        // COMPOUND ASSIGNMENT (+=, -=, *=, /=, %=)
+        // Desugar: x += y  →  x = x + y
+        // =========================
+        if (op.type == TokenType::PLUS_EQUAL ||
+            op.type == TokenType::MINUS_EQUAL ||
+            op.type == TokenType::MULTIPLY_EQUAL ||
+            op.type == TokenType::DIVIDE_EQUAL ||
+            op.type == TokenType::MODULO_EQUAL) {
+
+            // Map compound op to base op
+            TokenType baseOp;
+            switch (op.type) {
+                case TokenType::PLUS_EQUAL:     baseOp = TokenType::PLUS;     break;
+                case TokenType::MINUS_EQUAL:    baseOp = TokenType::MINUS;    break;
+                case TokenType::MULTIPLY_EQUAL: baseOp = TokenType::MULTIPLY; break;
+                case TokenType::DIVIDE_EQUAL:   baseOp = TokenType::DIVIDE;   break;
+                case TokenType::MODULO_EQUAL:   baseOp = TokenType::MODULO;   break;
+                default: break;
+            }
+
+            Token baseToken(baseOp, op.lexeme.substr(0, 1), op.line);
+
+            // Build the binary: left op right
+            auto bin = std::make_unique<BinaryExpr>(
+                std::unique_ptr<Expr>(left->clone()),  // clone left for the read
+                baseToken,
+                std::move(right)
+            );
+
+            // Reuse the same assignment logic
+            auto variable = dynamic_cast<VariableExpr*>(left.get());
+            if (variable) {
+                return std::make_unique<AssignmentExpr>(
+                    variable->name,
+                    std::move(bin),
+                    variable->nameToken
+                );
+            }
+
+            auto property = dynamic_cast<PropertyExpr*>(left.get());
+            if (property) {
+                return std::make_unique<PropertyAssignmentExpr>(
+                    std::unique_ptr<Expr>(property->object->clone()),
+                    property->property,
+                    std::move(bin),
+                    property->dot
+                );
+            }
+
+            error("Invalid target for compound assignment");
             return nullptr;
         }
 
@@ -811,6 +943,18 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
     }
 
     return left;
+}
+
+// =========================
+// BREAK / CONTINUE
+// =========================
+
+std::unique_ptr<Stmt> Parser::breakStatement() {
+    return std::make_unique<BreakStmt>(previous());
+}
+
+std::unique_ptr<Stmt> Parser::continueStatement() {
+    return std::make_unique<ContinueStmt>(previous());
 }
 
 }

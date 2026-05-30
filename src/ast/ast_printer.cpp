@@ -1,4 +1,4 @@
-﻿#include "ast_printer.h"
+#include "ast_printer.h"
 #include "program.h"
 
 #include "../runtime/callable.h"
@@ -7,301 +7,345 @@
 
 namespace vora {
 
+// =========================================================================
+// Entry points — delegate via double dispatch, return accumulated result
+// =========================================================================
+
 std::string ASTPrinter::print(const Expr* expr) {
-
-    if (auto literal =
-        dynamic_cast<const LiteralExpr*>(expr)) {
-
-        return std::visit([](auto&& arg) -> std::string {
-
-            using T =
-                std::decay_t<decltype(arg)>;
-
-            if constexpr (
-                std::is_same_v<T, std::nullptr_t>
-                ) {
-
-                return "null";
-
-            } else if constexpr (
-                std::is_same_v<T, bool>
-                ) {
-
-                return arg ? "true" : "false";
-
-            } else if constexpr (
-                std::is_same_v<T, std::string>
-                ) {
-
-                return arg;
-
-            } else if constexpr (
-                std::is_same_v<T, std::shared_ptr<Array>>
-                ) {
-
-                std::string out = "[";
-                for (size_t i = 0; i < arg->elements.size(); ++i) {
-                    if (i > 0) {
-                        out += ", ";
-                    }
-                    out += std::visit([](auto&& inner) -> std::string {
-                        using U = std::decay_t<decltype(inner)>;
-                        if constexpr (std::is_same_v<U, std::nullptr_t>) return "null";
-                        else if constexpr (std::is_same_v<U, bool>) return inner ? "true" : "false";
-                        else if constexpr (std::is_same_v<U, std::string>) return inner;
-                        else if constexpr (std::is_same_v<U, std::shared_ptr<Callable>>) return "<fn>";
-                        else if constexpr (std::is_same_v<U, std::shared_ptr<Array>>) return "[array]";
-                        else if constexpr (std::is_same_v<U, std::shared_ptr<ObjectInstance>>) return "<object>";
-                        else return std::to_string(inner);
-                    }, arg->elements[i]);
-                }
-                out += "]";
-                return out;
-
-            } else if constexpr (
-                std::is_same_v<T, std::shared_ptr<Callable>>
-                ) {
-
-                return "<fn>";
-
-            } else if constexpr (
-                std::is_same_v<T, std::shared_ptr<ObjectInstance>>
-                ) {
-
-                return "<" + arg->className + " object>";
-
-            } else {
-
-                return std::to_string(arg);
-            }
-
-        }, literal->value);
-    }
-
-    if (auto variable =
-        dynamic_cast<const VariableExpr*>(expr)) {
-
-        return variable->name;
-    }
-
-    if (auto binary =
-        dynamic_cast<const BinaryExpr*>(expr)) {
-
-        return parenthesize(
-            binary->op.lexeme,
-            {
-                binary->left.get(),
-                binary->right.get()
-            }
-        );
-    }
-
-    if (auto grouping =
-        dynamic_cast<const GroupingExpr*>(expr)) {
-
-        return parenthesize(
-            "group",
-            {
-                grouping->expression.get()
-            }
-        );
-    }
-
-    if (auto unary =
-        dynamic_cast<const UnaryExpr*>(expr)) {
-
-        return parenthesize(
-            unary->op.lexeme,
-            {
-                unary->right.get()
-            }
-        );
-    }
-
-    if (auto assign =
-        dynamic_cast<const AssignmentExpr*>(expr)) {
-
-        return parenthesize(
-            "assign " + assign->name,
-            {
-                assign->value.get()
-            }
-        );
-    }
-
-    if (auto call =
-        dynamic_cast<const CallExpr*>(expr)) {
-
-        std::stringstream ss;
-
-        ss << "(call ";
-        ss << print(call->callee.get());
-
-        for (const auto& argument : call->arguments) {
-            ss << " ";
-            ss << print(argument.get());
-        }
-
-        ss << ")";
-
-        return ss.str();
-    }
-
-    if (auto array =
-        dynamic_cast<const ArrayExpr*>(expr)) {
-
-        std::stringstream ss;
-
-        ss << "[";
-
-        for (size_t i = 0; i < array->elements.size(); ++i) {
-            if (i > 0) {
-                ss << ", ";
-            }
-            ss << print(array->elements[i].get());
-        }
-
-        ss << "]";
-
-        return ss.str();
-    }
-
-    if (auto indexExpr =
-        dynamic_cast<const IndexExpr*>(expr)) {
-
-        return parenthesize(
-            "index",
-            {
-                indexExpr->array.get(),
-                indexExpr->index.get()
-            }
-        );
-    }
-
-    return "unknown";
+    expr->accept(*this);
+    return result_;
 }
 
 std::string ASTPrinter::print(const Stmt* stmt) {
-
-    if (auto exprStmt =
-        dynamic_cast<const ExprStmt*>(stmt)) {
-
-        return print(
-            exprStmt->expression.get()
-        );
-    }
-
-    if (auto letStmt =
-        dynamic_cast<const LetStmt*>(stmt)) {
-
-        return parenthesize(
-            "let " + letStmt->name,
-            {
-                letStmt->initializer.get()
-            }
-        );
-    }
-
-    if (auto func =
-        dynamic_cast<const FuncStmt*>(stmt)) {
-
-        std::stringstream ss;
-
-        ss << "(func " << func->name;
-
-        for (const auto& param : func->params) {
-            ss << " " << param;
-        }
-
-        ss << " ";
-
-        ss << print(func->body.get());
-
-        ss << ")";
-
-        return ss.str();
-    }
-
-    if (auto block =
-        dynamic_cast<const BlockStmt*>(stmt)) {
-
-        std::stringstream ss;
-
-        ss << "(block";
-
-        for (const auto& statement :
-             block->statements) {
-
-            ss << " ";
-
-            ss << print(statement.get());
-        }
-
-        ss << ")";
-
-        return ss.str();
-    }
-
-    if (auto returnStmt =
-        dynamic_cast<const ReturnStmt*>(stmt)) {
-
-        return parenthesize(
-            "return",
-            {
-                returnStmt->value.get()
-            }
-        );
-    }
-
-    if (auto ifStmt =
-        dynamic_cast<const IfStmt*>(stmt)) {
-
-        std::stringstream ss;
-
-        ss << "(if ";
-
-        ss << print(ifStmt->condition.get());
-
-        ss << " ";
-
-        ss << print(ifStmt->thenBranch.get());
-
-        if (ifStmt->elseBranch) {
-
-            ss << " ";
-
-            ss << print(ifStmt->elseBranch.get());
-        }
-
-        ss << ")";
-
-        return ss.str();
-    }
-
-    if (auto whileStmt =
-        dynamic_cast<const WhileStmt*>(stmt)) {
-
-        std::stringstream ss;
-
-        ss << "(while ";
-
-        ss << print(
-            whileStmt->condition.get()
-        );
-
-        ss << " ";
-
-        ss << print(
-            whileStmt->body.get()
-        );
-
-        ss << ")";
-
-        return ss.str();
-    }
-
-    return "unknown stmt";
+    stmt->accept(*this);
+    return result_;
 }
+
+// =========================================================================
+// ExprVisitor — visit methods
+// =========================================================================
+
+Value ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
+
+    result_ = std::visit([](auto&& arg) -> std::string {
+
+        using T = std::decay_t<decltype(arg)>;
+
+        if constexpr (std::is_same_v<T, std::nullptr_t>) {
+            return "null";
+        } else if constexpr (std::is_same_v<T, bool>) {
+            return arg ? "true" : "false";
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            return arg;
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<Array>>) {
+            std::string out = "[";
+            for (size_t i = 0; i < arg->elements.size(); ++i) {
+                if (i > 0) {
+                    out += ", ";
+                }
+                out += std::visit([](auto&& inner) -> std::string {
+                    using U = std::decay_t<decltype(inner)>;
+                    if constexpr (std::is_same_v<U, std::nullptr_t>) return "null";
+                    else if constexpr (std::is_same_v<U, bool>) return inner ? "true" : "false";
+                    else if constexpr (std::is_same_v<U, std::string>) return inner;
+                    else if constexpr (std::is_same_v<U, std::shared_ptr<Callable>>) return "<fn>";
+                    else if constexpr (std::is_same_v<U, std::shared_ptr<Array>>) return "[array]";
+                    else if constexpr (std::is_same_v<U, std::shared_ptr<ObjectInstance>>) return "<object>";
+                    else return std::to_string(inner);
+                }, arg->elements[i]);
+            }
+            out += "]";
+            return out;
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<Callable>>) {
+            return "<fn>";
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<ObjectInstance>>) {
+            return "<" + arg->className + " object>";
+        } else {
+            return std::to_string(arg);
+        }
+
+    }, expr.value);
+
+    return nullptr;
+}
+
+Value ASTPrinter::visitVariableExpr(const VariableExpr& expr) {
+
+    result_ = expr.name;
+    return nullptr;
+}
+
+Value ASTPrinter::visitBinaryExpr(const BinaryExpr& expr) {
+
+    result_ = parenthesize(
+        expr.op.lexeme,
+        { expr.left.get(), expr.right.get() }
+    );
+    return nullptr;
+}
+
+Value ASTPrinter::visitGroupingExpr(const GroupingExpr& expr) {
+
+    result_ = parenthesize(
+        "group",
+        { expr.expression.get() }
+    );
+    return nullptr;
+}
+
+Value ASTPrinter::visitUnaryExpr(const UnaryExpr& expr) {
+
+    result_ = parenthesize(
+        expr.op.lexeme,
+        { expr.right.get() }
+    );
+    return nullptr;
+}
+
+Value ASTPrinter::visitAssignmentExpr(const AssignmentExpr& expr) {
+
+    result_ = parenthesize(
+        "assign " + expr.name,
+        { expr.value.get() }
+    );
+    return nullptr;
+}
+
+Value ASTPrinter::visitCallExpr(const CallExpr& expr) {
+
+    std::stringstream ss;
+
+    ss << "(call ";
+    ss << print(expr.callee.get());
+
+    for (const auto& argument : expr.arguments) {
+        ss << " ";
+        ss << print(argument.get());
+    }
+
+    ss << ")";
+
+    result_ = ss.str();
+    return nullptr;
+}
+
+Value ASTPrinter::visitArrayExpr(const ArrayExpr& expr) {
+
+    std::stringstream ss;
+
+    ss << "[";
+
+    for (size_t i = 0; i < expr.elements.size(); ++i) {
+        if (i > 0) {
+            ss << ", ";
+        }
+        ss << print(expr.elements[i].get());
+    }
+
+    ss << "]";
+
+    result_ = ss.str();
+    return nullptr;
+}
+
+Value ASTPrinter::visitIndexExpr(const IndexExpr& expr) {
+
+    result_ = parenthesize(
+        "index",
+        { expr.array.get(), expr.index.get() }
+    );
+    return nullptr;
+}
+
+Value ASTPrinter::visitPropertyExpr(const PropertyExpr& expr) {
+
+    result_ = parenthesize(
+        "property " + expr.property,
+        { expr.object.get() }
+    );
+    return nullptr;
+}
+
+Value ASTPrinter::visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) {
+
+    result_ = parenthesize(
+        "property-assign " + expr.property,
+        { expr.object.get(), expr.value.get() }
+    );
+    return nullptr;
+}
+
+Value ASTPrinter::visitThisExpr(const ThisExpr& /*expr*/) {
+
+    result_ = "this";
+    return nullptr;
+}
+
+Value ASTPrinter::visitIncDecExpr(const IncDecExpr& expr) {
+    std::stringstream ss;
+    if (expr.isPrefix) {
+        ss << "(" << expr.op.lexeme << " " << print(expr.target.get()) << ")";
+    } else {
+        ss << "(" << print(expr.target.get()) << " " << expr.op.lexeme << ")";
+    }
+    result_ = ss.str();
+    return nullptr;
+}
+
+// =========================================================================
+// StmtVisitor — visit methods
+// =========================================================================
+
+void ASTPrinter::visitExprStmt(const ExprStmt& stmt) {
+
+    result_ = print(stmt.expression.get());
+}
+
+void ASTPrinter::visitLetStmt(const LetStmt& stmt) {
+
+    std::string label = "let " + stmt.name;
+    if (!stmt.typeAnnotation.empty()) {
+        label += ":" + stmt.typeAnnotation;
+    }
+
+    result_ = parenthesize(
+        label,
+        { stmt.initializer.get() }
+    );
+}
+
+void ASTPrinter::visitFuncStmt(const FuncStmt& stmt) {
+
+    std::stringstream ss;
+
+    ss << "(func " << stmt.name;
+
+    for (const auto& param : stmt.params) {
+        ss << " " << param;
+    }
+
+    ss << " ";
+
+    ss << print(stmt.body.get());
+
+    ss << ")";
+
+    result_ = ss.str();
+}
+
+void ASTPrinter::visitBlockStmt(const BlockStmt& stmt) {
+
+    std::stringstream ss;
+
+    ss << "(block";
+
+    for (const auto& statement : stmt.statements) {
+        ss << " ";
+        ss << print(statement.get());
+    }
+
+    ss << ")";
+
+    result_ = ss.str();
+}
+
+void ASTPrinter::visitReturnStmt(const ReturnStmt& stmt) {
+
+    result_ = parenthesize(
+        "return",
+        { stmt.value.get() }
+    );
+}
+
+void ASTPrinter::visitIfStmt(const IfStmt& stmt) {
+
+    std::stringstream ss;
+
+    ss << "(if ";
+
+    ss << print(stmt.condition.get());
+
+    ss << " ";
+
+    ss << print(stmt.thenBranch.get());
+
+    if (stmt.elseBranch) {
+        ss << " ";
+        ss << print(stmt.elseBranch.get());
+    }
+
+    ss << ")";
+
+    result_ = ss.str();
+}
+
+void ASTPrinter::visitWhileStmt(const WhileStmt& stmt) {
+
+    std::stringstream ss;
+
+    ss << "(while ";
+
+    ss << print(stmt.condition.get());
+
+    ss << " ";
+
+    ss << print(stmt.body.get());
+
+    ss << ")";
+
+    result_ = ss.str();
+}
+
+void ASTPrinter::visitForStmt(const ForStmt& stmt) {
+
+    std::stringstream ss;
+
+    ss << "(for ";
+    ss << stmt.variable;
+    ss << " in ";
+    ss << print(stmt.iterable.get());
+    ss << " ";
+    ss << print(stmt.body.get());
+    ss << ")";
+
+    result_ = ss.str();
+}
+
+void ASTPrinter::visitObjStmt(const ObjStmt& stmt) {
+
+    std::stringstream ss;
+
+    ss << "(obj " << stmt.name;
+
+    for (const auto& param : stmt.params) {
+        ss << " " << param;
+    }
+
+    ss << " ";
+
+    ss << print(stmt.body.get());
+
+    for (const auto& method : stmt.methods) {
+        ss << " ";
+        ss << print(method.get());
+    }
+
+    ss << ")";
+
+    result_ = ss.str();
+}
+
+void ASTPrinter::visitBreakStmt(const BreakStmt& /*stmt*/) {
+    result_ = "(break)";
+}
+
+void ASTPrinter::visitContinueStmt(const ContinueStmt& /*stmt*/) {
+    result_ = "(continue)";
+}
+
+// =========================================================================
+// Program (top-level container — no visitor needed)
+// =========================================================================
 
 std::string ASTPrinter::print(const Program* program) {
 
@@ -309,11 +353,8 @@ std::string ASTPrinter::print(const Program* program) {
 
     ss << "(program";
 
-    for (const auto& stmt :
-         program->statements) {
-
+    for (const auto& stmt : program->statements) {
         ss << " ";
-
         ss << print(stmt.get());
     }
 
@@ -321,6 +362,10 @@ std::string ASTPrinter::print(const Program* program) {
 
     return ss.str();
 }
+
+// =========================================================================
+// Helper
+// =========================================================================
 
 std::string ASTPrinter::parenthesize(
     const std::string& name,
@@ -340,6 +385,5 @@ std::string ASTPrinter::parenthesize(
 
     return ss.str();
 }
-
 
 }

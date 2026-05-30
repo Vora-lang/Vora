@@ -43,4 +43,6 @@ struct ObjectInstance {
 
 void printValue(const Value& value);
 
+std::string valueToString(const Value& value);
+
 }

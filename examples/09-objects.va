@@ -1,0 +1,31 @@
+// 对象：构造、属性、方法、this
+Obj Person(name, age) {
+    this.name = name
+    this.age = age
+
+    func greet() {
+        print("I'm " + this.name + ", age " + this.age)
+    }
+
+    func birthday() {
+        this.age = this.age + 1
+    }
+}
+
+let alice = Person("Alice", 25)
+alice.greet()
+
+print(alice.name)
+print(alice.age)
+
+// 属性赋值
+alice.age = 26
+print(alice.age)
+
+// 方法调用
+alice.birthday()
+print(alice.age)
+
+// 属性 ++ / --
+alice.age++
+print(alice.age)

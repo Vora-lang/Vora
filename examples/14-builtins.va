@@ -1,0 +1,25 @@
+// 内建函数
+print("=== print ===")
+print("hello", 42, true, null)
+
+print("=== clock ===")
+let t = clock()
+print(t)
+
+print("=== input ===")
+// 17-type-annotations.va
+
+print("=== range ===")
+let r = range(5)
+print(r)
+print(range(2, 5))
+print(range(0, 10, 3))
+print(range(5, 0, -1))
+
+print("=== int/float conversion ===")
+print(int(3.14))
+print(int("42"))
+print(int(true))
+print(float("3.14"))
+print(float(42))
+print(float(false))

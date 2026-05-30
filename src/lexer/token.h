@@ -32,6 +32,13 @@ namespace vora {
         MINUS_MINUS, // --
         POWER, // **
 
+        // Compound assignment
+        PLUS_EQUAL, // +=
+        MINUS_EQUAL, // -=
+        MULTIPLY_EQUAL, // *=
+        DIVIDE_EQUAL, // /=
+        MODULO_EQUAL, // %=
+
         EQUAL_EQUAL, // ==
         LESS_EQUAL, // <=
         GREATER_EQUAL, // >=
@@ -65,6 +72,8 @@ namespace vora {
         IN, // in
         OBJ, // Obj
         THIS, // this
+        BREAK, // break
+        CONTINUE, // continue
 
         // Special
         END_OF_FILE, //

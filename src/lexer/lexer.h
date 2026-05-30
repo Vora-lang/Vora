@@ -36,7 +36,7 @@ private:
 
     void number();
 
-    void string();
+    void string(char delimiter);
 
     void identifier();
 

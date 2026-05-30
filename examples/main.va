@@ -1,3 +1,6 @@
-let arr = [1, "hello", TRUE, null];
-print(arr[0])              // 输出: 1
-print(arr[1])              // 输出: hello
+let a = [1,2,3]
+print(a)              // 输出: [1, 2, 3]
+let a = [4,5]
+for i in a {
+    print(i)          // 输出: 4, 5
+}

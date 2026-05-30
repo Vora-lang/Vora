@@ -1,4 +1,4 @@
-﻿#include "interpreter.h"
+#include "interpreter.h"
 
 #include "../runtime/callable.h"
 #include "../runtime/vora_function.h"
@@ -7,6 +7,7 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+
 namespace vora {
 
 namespace {
@@ -15,7 +16,11 @@ struct ReturnSignal {
     Value value;
 };
 
-}
+struct BreakSignal {};
+
+struct ContinueSignal {};
+
+} // anonymous namespace
 
 Interpreter::Interpreter(
     RuntimeConfig config)
@@ -61,14 +66,123 @@ Interpreter::Interpreter(
 
     defineNative(
         "input",
-        0,
-        [](const std::vector<Value>&) -> Value {
+        -1,
+        [](const std::vector<Value>& arguments) -> Value {
+
+            if (!arguments.empty()) {
+                std::cout << valueToString(arguments[0]);
+            }
 
             std::string line;
 
             std::getline(std::cin, line);
 
             return line;
+        }
+    );
+
+    defineNative(
+        "int",
+        1,
+        [](const std::vector<Value>& arguments) -> Value {
+            const auto& arg = arguments[0];
+
+            if (std::holds_alternative<double>(arg)) {
+                double val = std::get<double>(arg);
+                return std::trunc(val);
+            }
+
+            if (std::holds_alternative<std::string>(arg)) {
+                try {
+                    double val = std::stod(std::get<std::string>(arg));
+                    return std::trunc(val);
+                } catch (const std::exception&) {
+                    throw RuntimeError(
+                        "Cannot convert string to int",
+                        Token(TokenType::IDENTIFIER, "int", 0)
+                    );
+                }
+            }
+
+            if (std::holds_alternative<bool>(arg)) {
+                return std::get<bool>(arg) ? 1.0 : 0.0;
+            }
+
+            throw RuntimeError(
+                "int() expects a number, string, or bool",
+                Token(TokenType::IDENTIFIER, "int", 0)
+            );
+        }
+    );
+
+    defineNative(
+        "float",
+        1,
+        [](const std::vector<Value>& arguments) -> Value {
+            const auto& arg = arguments[0];
+
+            if (std::holds_alternative<double>(arg)) {
+                return arg;  // already a float
+            }
+
+            if (std::holds_alternative<std::string>(arg)) {
+                try {
+                    return std::stod(std::get<std::string>(arg));
+                } catch (const std::exception&) {
+                    throw RuntimeError(
+                        "Cannot convert string to float",
+                        Token(TokenType::IDENTIFIER, "float", 0)
+                    );
+                }
+            }
+
+            if (std::holds_alternative<bool>(arg)) {
+                return std::get<bool>(arg) ? 1.0 : 0.0;
+            }
+
+            throw RuntimeError(
+                "float() expects a number, string, or bool",
+                Token(TokenType::IDENTIFIER, "float", 0)
+            );
+        }
+    );
+
+    defineNative(
+        "range",
+        -1,
+        [](const std::vector<Value>& arguments) -> Value {
+
+            double start = 0;
+            double end = 0;
+            double step = 1;
+
+            if (arguments.size() == 1) {
+                end = std::get<double>(arguments[0]);
+            } else if (arguments.size() == 2) {
+                start = std::get<double>(arguments[0]);
+                end = std::get<double>(arguments[1]);
+            } else if (arguments.size() == 3) {
+                start = std::get<double>(arguments[0]);
+                end = std::get<double>(arguments[1]);
+                step = std::get<double>(arguments[2]);
+            } else {
+                throw RuntimeError(
+                    "range() expects 1, 2, or 3 arguments",
+                    Token(TokenType::IDENTIFIER, "range", 0)
+                );
+            }
+
+            auto arr = std::make_shared<Array>();
+            if (step > 0) {
+                for (double i = start; i < end; i += step) {
+                    arr->elements.push_back(i);
+                }
+            } else if (step < 0) {
+                for (double i = start; i > end; i += step) {
+                    arr->elements.push_back(i);
+                }
+            }
+            return arr;
         }
     );
 }
@@ -306,378 +420,652 @@ void Interpreter::interpret(
             << std::endl;
     }
 }
-Value Interpreter::evaluate(
-    const Expr* expr
-) {
 
-    if (auto assign =
-            dynamic_cast<
-                const AssignmentExpr*
-            >(expr)) {
+// =========================================================================
+// Expression dispatch (double dispatch via expr->accept(*this))
+// =========================================================================
 
-        Value value =
-            evaluate(
-                assign->value.get()
-            );
+Value Interpreter::evaluate(const Expr* expr) {
+    return expr->accept(*this);
+}
 
-        environment.assign(
-            assign->name,
-            value,
-            assign->nameToken
-        );
+// =========================================================================
+// Statement dispatch (double dispatch via stmt->accept(*this))
+// =========================================================================
 
-        return value;
-    }
+void Interpreter::execute(const Stmt* stmt) {
+    stmt->accept(*this);
+}
 
-    if (auto call =
-        dynamic_cast<const CallExpr*>(expr)) {
+// =========================================================================
+// ExprVisitor — visit methods
+// =========================================================================
 
-        Value callee =
-            evaluate(call->callee.get());
+Value Interpreter::visitAssignmentExpr(const AssignmentExpr& expr) {
 
-        std::vector<Value> arguments;
+    Value value = evaluate(expr.value.get());
 
-        arguments.reserve(
-            call->arguments.size()
-        );
+    environment.assign(
+        expr.name,
+        value,
+        expr.nameToken
+    );
 
-        for (const auto& argument : call->arguments) {
+    return value;
+}
 
-            arguments.push_back(
-                evaluate(argument.get())
-            );
-        }
+Value Interpreter::visitCallExpr(const CallExpr& expr) {
 
-        return invoke(
-            callee,
-            arguments,
-            call->paren
-        );
-    }
+    Value callee = evaluate(expr.callee.get());
 
-    if (auto variable =
-        dynamic_cast<const VariableExpr*>(expr)) {
+    std::vector<Value> arguments;
 
-        return environment.get(
-            variable->name,
-            variable->nameToken
+    arguments.reserve(expr.arguments.size());
+
+    for (const auto& argument : expr.arguments) {
+        arguments.push_back(
+            evaluate(argument.get())
         );
     }
 
-    if (auto array =
-        dynamic_cast<const ArrayExpr*>(expr)) {
+    return invoke(
+        callee,
+        arguments,
+        expr.paren
+    );
+}
 
-        auto result = std::make_shared<Array>();
-        result->elements.reserve(array->elements.size());
+Value Interpreter::visitVariableExpr(const VariableExpr& expr) {
 
-        for (const auto& element : array->elements) {
-            result->elements.push_back(
-                evaluate(element.get())
-            );
-        }
+    return environment.get(
+        expr.name,
+        expr.nameToken
+    );
+}
 
-        return result;
+Value Interpreter::visitArrayExpr(const ArrayExpr& expr) {
+
+    auto result = std::make_shared<Array>();
+    result->elements.reserve(expr.elements.size());
+
+    for (const auto& element : expr.elements) {
+        result->elements.push_back(
+            evaluate(element.get())
+        );
     }
 
-    if (auto indexExpr =
-        dynamic_cast<const IndexExpr*>(expr)) {
+    return result;
+}
 
-        Value array =
-            evaluate(indexExpr->array.get());
+Value Interpreter::visitIndexExpr(const IndexExpr& expr) {
 
-        Value indexValue =
-            evaluate(indexExpr->index.get());
+    Value target = evaluate(expr.array.get());
+    Value indexValue = evaluate(expr.index.get());
 
-        if (!std::holds_alternative<
-                std::shared_ptr<Array>
-            >(array)) {
+    if (!std::holds_alternative<double>(indexValue)) {
+        throw RuntimeError(
+            "Index must be a number",
+            expr.bracket
+        );
+    }
 
-            throw RuntimeError(
-                "Indexing requires an array",
-                indexExpr->bracket
-            );
+    double rawIndex = std::get<double>(indexValue);
+
+    if (rawIndex < 0 || std::floor(rawIndex) != rawIndex) {
+        throw RuntimeError(
+            "Index must be a non-negative integer",
+            expr.bracket
+        );
+    }
+
+    size_t index = static_cast<size_t>(rawIndex);
+
+    // --- string indexing ---
+    if (std::holds_alternative<std::string>(target)) {
+        const auto& str = std::get<std::string>(target);
+        if (index >= str.size()) {
+            throw RuntimeError("Index out of bounds", expr.bracket);
         }
+        return std::string(1, str[index]);
+    }
 
-        if (!std::holds_alternative<double>(indexValue)) {
-            throw RuntimeError(
-                "Array index must be a number",
-                indexExpr->bracket
-            );
-        }
-
-        double rawIndex =
-            std::get<double>(indexValue);
-
-        if (rawIndex < 0 ||
-            std::floor(rawIndex) != rawIndex) {
-
-            throw RuntimeError(
-                "Array index must be a non-negative integer",
-                indexExpr->bracket
-            );
-        }
-
-        size_t index =
-            static_cast<size_t>(rawIndex);
-
+    // --- array indexing ---
+    if (std::holds_alternative<std::shared_ptr<Array>>(target)) {
         const auto& elements =
-            std::get<std::shared_ptr<Array>>(array)->elements;
-
+            std::get<std::shared_ptr<Array>>(target)->elements;
         if (index >= elements.size()) {
-            throw RuntimeError(
-                "Index out of bounds",
-                indexExpr->bracket
-            );
+            throw RuntimeError("Index out of bounds", expr.bracket);
         }
-
         return elements[index];
     }
 
-    if (auto literal =
-        dynamic_cast<const LiteralExpr*>(expr)) {
+    throw RuntimeError(
+        "Indexing requires an array or string",
+        expr.bracket
+    );
+}
 
-        if (std::holds_alternative<std::string>(literal->value)) {
-            std::string str = std::get<std::string>(literal->value);
-            return interpolateString(str);
+Value Interpreter::visitLiteralExpr(const LiteralExpr& expr) {
+
+    if (std::holds_alternative<std::string>(expr.value)) {
+        std::string str = std::get<std::string>(expr.value);
+        return interpolateString(str);
+    }
+
+    return expr.value;
+}
+
+Value Interpreter::visitGroupingExpr(const GroupingExpr& expr) {
+
+    return evaluate(expr.expression.get());
+}
+
+Value Interpreter::visitUnaryExpr(const UnaryExpr& expr) {
+
+    Value right = evaluate(expr.right.get());
+
+    if (std::holds_alternative<double>(right)) {
+
+        double value = std::get<double>(right);
+
+        switch (expr.op.type) {
+
+        case TokenType::MINUS:
+            return -value;
+
+        default:
+            break;
+        }
+    }
+
+    if (expr.op.type == TokenType::NOT) {
+        return !isTruthy(right);
+    }
+
+    throw RuntimeError(
+        "Invalid unary operand",
+        expr.op
+    );
+}
+
+Value Interpreter::visitBinaryExpr(const BinaryExpr& expr) {
+
+    Value left = evaluate(expr.left.get());
+
+    Value right = evaluate(expr.right.get());
+
+    // --- string concatenation ---
+    if (expr.op.type == TokenType::PLUS) {
+
+        // string + string
+        if (std::holds_alternative<std::string>(left) &&
+            std::holds_alternative<std::string>(right)) {
+            return std::get<std::string>(left) + std::get<std::string>(right);
         }
 
-        return literal->value;
+        // array + array (merge)
+        if (std::holds_alternative<std::shared_ptr<Array>>(left) &&
+            std::holds_alternative<std::shared_ptr<Array>>(right)) {
+            auto result = std::make_shared<Array>();
+            const auto& leftArr = std::get<std::shared_ptr<Array>>(left)->elements;
+            const auto& rightArr = std::get<std::shared_ptr<Array>>(right)->elements;
+            result->elements.reserve(leftArr.size() + rightArr.size());
+            result->elements.insert(result->elements.end(), leftArr.begin(), leftArr.end());
+            result->elements.insert(result->elements.end(), rightArr.begin(), rightArr.end());
+            return result;
+        }
+
+        // array + value (append) — must be before any+string to avoid
+        // valueToString promotion
+        if (std::holds_alternative<std::shared_ptr<Array>>(left)) {
+            auto result = std::make_shared<Array>();
+            const auto& leftArr = std::get<std::shared_ptr<Array>>(left)->elements;
+            result->elements.reserve(leftArr.size() + 1);
+            result->elements.insert(result->elements.end(), leftArr.begin(), leftArr.end());
+            result->elements.push_back(right);
+            return result;
+        }
+
+        // value + array (prepend)
+        if (std::holds_alternative<std::shared_ptr<Array>>(right)) {
+            auto result = std::make_shared<Array>();
+            const auto& rightArr = std::get<std::shared_ptr<Array>>(right)->elements;
+            result->elements.reserve(1 + rightArr.size());
+            result->elements.push_back(left);
+            result->elements.insert(result->elements.end(), rightArr.begin(), rightArr.end());
+            return result;
+        }
+
+        // string + any
+        if (std::holds_alternative<std::string>(left)) {
+            return std::get<std::string>(left) + valueToString(right);
+        }
+
+        // any + string
+        if (std::holds_alternative<std::string>(right)) {
+            return valueToString(left) + std::get<std::string>(right);
+        }
     }
 
-    if (auto grouping =
-        dynamic_cast<const GroupingExpr*>(expr)) {
+    // --- numeric operations ---
+    if (
+        std::holds_alternative<double>(left)
+        &&
+        std::holds_alternative<double>(right)
+    ) {
 
-        return evaluate(
-            grouping->expression.get()
-        );
-    }
+        double l = std::get<double>(left);
 
-    if (auto unary =
-        dynamic_cast<const UnaryExpr*>(expr)) {
+        double r = std::get<double>(right);
 
-        Value right =
-            evaluate(
-                unary->right.get()
-            );
+        switch (expr.op.type) {
 
-        if (std::holds_alternative<double>(right)) {
+        case TokenType::PLUS:
+            return l + r;
 
-            double value =
-                std::get<double>(right);
+        case TokenType::MINUS:
+            return l - r;
 
-            switch (unary->op.type) {
+        case TokenType::MULTIPLY:
+            return l * r;
 
-            case TokenType::MINUS:
-                return -value;
+        case TokenType::DIVIDE:
 
-            default:
-                break;
+            if (r == 0) {
+                throw RuntimeError(
+                    "Division by zero",
+                    expr.op
+                );
             }
-        }
 
-        if (unary->op.type == TokenType::NOT) {
+            return l / r;
 
-            return !isTruthy(right);
+        case TokenType::POWER:
+            return std::pow(l, r);
+
+        case TokenType::MODULO:
+            if (r == 0) {
+                throw RuntimeError(
+                    "Modulo by zero",
+                    expr.op
+                );
+            }
+            return std::fmod(l, r);
+
+        case TokenType::LESS:
+            return l < r;
+
+        case TokenType::LESS_EQUAL:
+            return l <= r;
+
+        case TokenType::GREATER:
+            return l > r;
+
+        case TokenType::GREATER_EQUAL:
+            return l >= r;
+
+        case TokenType::EQUAL_EQUAL:
+            return l == r;
+
+        case TokenType::NOT_EQUAL:
+            return l != r;
+
+        default:
+            break;
         }
+    }
+
+    throw RuntimeError(
+        "Invalid binary operands",
+        expr.op
+    );
+}
+
+Value Interpreter::visitPropertyExpr(const PropertyExpr& expr) {
+
+    Value obj = evaluate(expr.object.get());
+
+    if (!std::holds_alternative<
+            std::shared_ptr<ObjectInstance>
+        >(obj)) {
 
         throw RuntimeError(
-            "Invalid unary operand",
-            unary->op
+            "Can only access properties on objects",
+            expr.dot
         );
     }
 
-    if (auto binary =
-        dynamic_cast<const BinaryExpr*>(expr)) {
+    const auto& instance =
+        std::get<std::shared_ptr<ObjectInstance>>(obj);
 
-        Value left =
-            evaluate(
-                binary->left.get()
-            );
+    auto it = instance->properties.find(expr.property);
 
-        Value right =
-            evaluate(
-                binary->right.get()
-            );
-
-        if (
-            std::holds_alternative<double>(left)
-            &&
-            std::holds_alternative<double>(right)
-        ) {
-
-            double l =
-                std::get<double>(left);
-
-            double r =
-                std::get<double>(right);
-
-            switch (binary->op.type) {
-
-            case TokenType::PLUS:
-                return l + r;
-
-            case TokenType::MINUS:
-                return l - r;
-
-            case TokenType::MULTIPLY:
-                return l * r;
-
-            case TokenType::DIVIDE:
-
-                if (r == 0) {
-
-                    throw RuntimeError(
-                        "Division by zero",
-                        binary->op
-                    );
-                }
-
-                return l / r;
-
-            case TokenType::POWER:
-                return std::pow(l, r);
-
-            case TokenType::LESS:
-                return l < r;
-
-            case TokenType::LESS_EQUAL:
-                return l <= r;
-
-            case TokenType::GREATER:
-                return l > r;
-
-            case TokenType::GREATER_EQUAL:
-                return l >= r;
-
-            case TokenType::EQUAL_EQUAL:
-                return l == r;
-
-            case TokenType::NOT_EQUAL:
-                return l != r;
-
-            default:
-                break;
-            }
-        }
-
-        throw RuntimeError(
-            "Invalid binary operands",
-            binary->op
-        );
+    if (it != instance->properties.end()) {
+        return it->second;
     }
 
-    if (auto propExpr =
-        dynamic_cast<const PropertyExpr*>(expr)) {
+    if (instance->classDefinition) {
+        auto methodIt = instance->classDefinition->methods.find(expr.property);
+        if (methodIt != instance->classDefinition->methods.end()) {
+            // Return a bound method that sets 'this' when called
+            struct BoundMethodCallable : public Callable {
+                std::shared_ptr<VoraFunction> method;
+                std::shared_ptr<ObjectInstance> instance;
 
-        Value obj = evaluate(propExpr->object.get());
+                BoundMethodCallable(std::shared_ptr<VoraFunction> m, std::shared_ptr<ObjectInstance> inst)
+                    : method(std::move(m)), instance(std::move(inst)) {}
 
-        if (!std::holds_alternative<
-                std::shared_ptr<ObjectInstance>
-            >(obj)) {
+                Value call(Interpreter& interpreter, const std::vector<Value>& arguments) override {
+                    interpreter.pushScope(method->closure().get());
 
-            throw RuntimeError(
-                "Can only access properties on objects",
-                propExpr->dot
-            );
-        }
-
-        const auto& instance =
-            std::get<std::shared_ptr<ObjectInstance>>(obj);
-
-        auto it = instance->properties.find(propExpr->property);
-
-        if (it != instance->properties.end()) {
-            return it->second;
-        }
-
-        if (instance->classDefinition) {
-            auto methodIt = instance->classDefinition->methods.find(propExpr->property);
-            if (methodIt != instance->classDefinition->methods.end()) {
-                // Return a bound method that sets 'this' when called
-                struct BoundMethodCallable : public Callable {
-                    std::shared_ptr<VoraFunction> method;
-                    std::shared_ptr<ObjectInstance> instance;
-
-                    BoundMethodCallable(std::shared_ptr<VoraFunction> m, std::shared_ptr<ObjectInstance> inst)
-                        : method(std::move(m)), instance(std::move(inst)) {}
-
-                    Value call(Interpreter& interpreter, const std::vector<Value>& arguments) override {
-                        interpreter.pushScope(method->closure().get());
-
-                        for (size_t i = 0; i < method->params().size(); ++i) {
-                            interpreter.getEnvironment().define(
-                                method->params()[i],
-                                arguments[i]
-                            );
-                        }
-
-                        interpreter.getEnvironment().define("this", instance);
-
-                        try {
-                            interpreter.executeBlock(method->body()->statements);
-                        } catch (const ReturnSignal& signal) {
-                            interpreter.popScope();
-                            return signal.value;
-                        }
-
-                        interpreter.popScope();
-                        return nullptr;
+                    for (size_t i = 0; i < method->params().size(); ++i) {
+                        interpreter.getEnvironment().define(
+                            method->params()[i],
+                            arguments[i]
+                        );
                     }
-                };
 
-                return std::make_shared<BoundMethodCallable>(methodIt->second, instance);
-            }
+                    interpreter.getEnvironment().define("this", instance);
+
+                    try {
+                        interpreter.executeBlock(method->body()->statements);
+                    } catch (const ReturnSignal& signal) {
+                        interpreter.popScope();
+                        return signal.value;
+                    }
+
+                    interpreter.popScope();
+                    return nullptr;
+                }
+            };
+
+            return std::make_shared<BoundMethodCallable>(methodIt->second, instance);
         }
+    }
+
+    throw RuntimeError(
+        "Undefined property: " + expr.property,
+        expr.dot
+    );
+}
+
+Value Interpreter::visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) {
+
+    Value obj = evaluate(expr.object.get());
+    Value value = evaluate(expr.value.get());
+
+    if (!std::holds_alternative<
+            std::shared_ptr<ObjectInstance>
+        >(obj)) {
 
         throw RuntimeError(
-            "Undefined property: " + propExpr->property,
-            propExpr->dot
+            "Can only set properties on objects",
+            expr.dot
         );
     }
 
-    if (auto propAssign =
-        dynamic_cast<const PropertyAssignmentExpr*>(expr)) {
+    const auto& instance =
+        std::get<std::shared_ptr<ObjectInstance>>(obj);
 
-        Value obj = evaluate(propAssign->object.get());
-        Value value = evaluate(propAssign->value.get());
+    instance->properties[expr.property] = value;
 
-        if (!std::holds_alternative<
-                std::shared_ptr<ObjectInstance>
-            >(obj)) {
+    return value;
+}
 
-            throw RuntimeError(
-                "Can only set properties on objects",
-                propAssign->dot
-            );
+Value Interpreter::visitThisExpr(const ThisExpr& expr) {
+
+    try {
+        return environment.get("this", expr.keyword);
+    } catch (const RuntimeError&) {
+        throw RuntimeError(
+            "Cannot use 'this' outside of object method",
+            expr.keyword
+        );
+    }
+}
+
+Value Interpreter::visitIncDecExpr(const IncDecExpr& expr) {
+
+    double delta = (expr.op.type == TokenType::PLUS_PLUS) ? 1.0 : -1.0;
+
+    // --- Variable target ---
+    if (auto var = dynamic_cast<const VariableExpr*>(expr.target.get())) {
+        Value current = environment.get(var->name, var->nameToken);
+        if (!std::holds_alternative<double>(current)) {
+            throw RuntimeError("Can only increment/decrement numbers", expr.op);
         }
-
-        const auto& instance =
-            std::get<std::shared_ptr<ObjectInstance>>(obj);
-
-        instance->properties[propAssign->property] = value;
-
-        return value;
+        double oldVal = std::get<double>(current);
+        double newVal = oldVal + delta;
+        environment.assign(var->name, newVal, var->nameToken);
+        return expr.isPrefix ? newVal : oldVal;
     }
 
-    if (auto thisExpr =
-        dynamic_cast<const ThisExpr*>(expr)) {
+    // --- Property target ---
+    if (auto prop = dynamic_cast<const PropertyExpr*>(expr.target.get())) {
+        Value obj = evaluate(prop->object.get());
+        if (!std::holds_alternative<std::shared_ptr<ObjectInstance>>(obj)) {
+            throw RuntimeError("Can only increment/decrement properties on objects", expr.op);
+        }
+        auto instance = std::get<std::shared_ptr<ObjectInstance>>(obj);
+        auto it = instance->properties.find(prop->property);
+        if (it == instance->properties.end()) {
+            throw RuntimeError("Undefined property: " + prop->property, expr.op);
+        }
+        if (!std::holds_alternative<double>(it->second)) {
+            throw RuntimeError("Can only increment/decrement numbers", expr.op);
+        }
+        double oldVal = std::get<double>(it->second);
+        double newVal = oldVal + delta;
+        instance->properties[prop->property] = newVal;
+        return expr.isPrefix ? newVal : oldVal;
+    }
+
+    throw RuntimeError("Invalid increment/decrement target", expr.op);
+}
+
+// =========================================================================
+// StmtVisitor — visit methods
+// =========================================================================
+
+void Interpreter::visitBlockStmt(const BlockStmt& stmt) {
+
+    executeBlock(stmt.statements);
+}
+
+void Interpreter::visitIfStmt(const IfStmt& stmt) {
+
+    if (isTruthy(
+            evaluate(stmt.condition.get())
+        )) {
+
+        execute(stmt.thenBranch.get());
+    }
+    else if (stmt.elseBranch) {
+
+        execute(stmt.elseBranch.get());
+    }
+}
+
+void Interpreter::visitWhileStmt(const WhileStmt& stmt) {
+
+    while (isTruthy(
+        evaluate(stmt.condition.get())
+    )) {
 
         try {
-            return environment.get("this", thisExpr->keyword);
-        } catch (const RuntimeError&) {
-            throw RuntimeError(
-                "Cannot use 'this' outside of object method",
-                thisExpr->keyword
-            );
+            execute(stmt.body.get());
+        } catch (const BreakSignal&) {
+            break;
+        } catch (const ContinueSignal&) {
+            // continue to next iteration
+        }
+    }
+}
+
+void Interpreter::visitForStmt(const ForStmt& stmt) {
+
+    Value iterable = evaluate(stmt.iterable.get());
+
+    // --- string iteration ---
+    if (std::holds_alternative<std::string>(iterable)) {
+        const auto& str = std::get<std::string>(iterable);
+        for (size_t i = 0; i < str.size(); ++i) {
+            pushScope();
+            std::string ch(1, str[i]);
+            environment.define(stmt.variable, ch);
+            try {
+                execute(stmt.body.get());
+            } catch (const BreakSignal&) {
+                popScope();
+                break;
+            } catch (const ContinueSignal&) {
+                popScope();
+                continue;
+            }
+            popScope();
+        }
+        return;
+    }
+
+    // --- array iteration (includes range() results) ---
+    if (std::holds_alternative<std::shared_ptr<Array>>(iterable)) {
+        const auto& array =
+            std::get<std::shared_ptr<Array>>(iterable);
+
+        for (const auto& element : array->elements) {
+            pushScope();
+            environment.define(stmt.variable, element);
+            try {
+                execute(stmt.body.get());
+            } catch (const BreakSignal&) {
+                popScope();
+                break;
+            } catch (const ContinueSignal&) {
+                popScope();
+                continue;
+            }
+            popScope();
+        }
+        return;
+    }
+
+    throw RuntimeError(
+        "Can only iterate over arrays, strings, or range()",
+        stmt.forToken
+    );
+}
+
+void Interpreter::visitReturnStmt(const ReturnStmt& stmt) {
+
+    throw ReturnSignal{
+        evaluate(stmt.value.get())
+    };
+}
+
+void Interpreter::visitFuncStmt(const FuncStmt& stmt) {
+
+    auto function = std::make_shared<VoraFunction>(
+        stmt.name,
+        stmt.params,
+        stmt.body,
+        captureClosure()
+    );
+
+    defineBinding(
+        stmt.name,
+        function
+    );
+}
+
+void Interpreter::visitObjStmt(const ObjStmt& stmt) {
+
+    auto objClass = std::make_shared<ObjectClass>();
+    objClass->className = stmt.name;
+    objClass->params = stmt.params;
+    objClass->body = stmt.body;
+
+    for (const auto& methodStmt : stmt.methods) {
+        if (auto funcStmt = dynamic_cast<const FuncStmt*>(methodStmt.get())) {
+            objClass->methods[funcStmt->name] =
+                std::make_shared<VoraFunction>(
+                    funcStmt->name,
+                    funcStmt->params,
+                    funcStmt->body,
+                    captureClosure()
+                );
         }
     }
 
-    std::cerr
-        << "Unknown expression"
-        << std::endl;
+    auto constructor = std::make_shared<VoraFunction>(
+        stmt.name,
+        stmt.params,
+        stmt.body,
+        captureClosure()
+    );
 
-    return nullptr;
+    struct ObjectConstructorCallable : public Callable {
+        std::shared_ptr<ObjectClass> classDef;
+        std::shared_ptr<VoraFunction> constructorFn;
+
+        ObjectConstructorCallable(
+            std::shared_ptr<ObjectClass> c,
+            std::shared_ptr<VoraFunction> f
+        ) : classDef(c), constructorFn(f) {}
+
+        Value call(
+            Interpreter& interpreter,
+            const std::vector<Value>& arguments
+        ) override {
+            auto instance = std::make_shared<ObjectInstance>();
+            instance->className = classDef->className;
+            instance->classDefinition = classDef;
+
+            interpreter.executeBlockWithThis(
+                constructorFn->body()->statements,
+                instance,
+                constructorFn->params(),
+                arguments
+            );
+
+            return instance;
+        }
+    };
+
+    auto constructorCallable =
+        std::make_shared<ObjectConstructorCallable>(objClass, constructor);
+
+    defineBinding(stmt.name, constructorCallable);
 }
+
+void Interpreter::visitBreakStmt(const BreakStmt& /*stmt*/) {
+    throw BreakSignal{};
+}
+
+void Interpreter::visitContinueStmt(const ContinueStmt& /*stmt*/) {
+    throw ContinueSignal{};
+}
+
+void Interpreter::visitLetStmt(const LetStmt& stmt) {
+
+    defineBinding(
+        stmt.name,
+        evaluate(stmt.initializer.get())
+    );
+}
+
+void Interpreter::visitExprStmt(const ExprStmt& stmt) {
+
+    Value result = evaluate(stmt.expression.get());
+
+    if (config.repl()) {
+        printValue(result);
+        std::cout << std::endl;
+    }
+}
+
+// =========================================================================
+// Block execution (scope management)
+// =========================================================================
 
 void Interpreter::executeBlock(
     const std::vector<std::unique_ptr<Stmt>>& statements
@@ -701,193 +1089,9 @@ void Interpreter::executeBlock(
     popScope();
 }
 
-void Interpreter::execute(
-    const Stmt* stmt
-) {
-
-    if (auto block =
-        dynamic_cast<const BlockStmt*>(stmt)) {
-
-        executeBlock(block->statements);
-        return;
-    }
-
-    if (auto ifStmt =
-        dynamic_cast<const IfStmt*>(stmt)) {
-
-        if (isTruthy(
-                evaluate(ifStmt->condition.get())
-            )) {
-
-            execute(ifStmt->thenBranch.get());
-        }
-        else if (ifStmt->elseBranch) {
-
-            execute(ifStmt->elseBranch.get());
-        }
-
-        return;
-    }
-
-    if (auto whileStmt =
-        dynamic_cast<const WhileStmt*>(stmt)) {
-
-        while (isTruthy(
-            evaluate(whileStmt->condition.get())
-        )) {
-
-            execute(whileStmt->body.get());
-        }
-
-        return;
-    }
-
-    if (auto forStmt =
-        dynamic_cast<const ForStmt*>(stmt)) {
-
-        Value iterable = evaluate(forStmt->iterable.get());
-
-        if (!std::holds_alternative<
-                std::shared_ptr<Array>
-            >(iterable)) {
-
-            throw RuntimeError(
-                "Can only iterate over arrays",
-                forStmt->forToken
-            );
-        }
-
-        const auto& array =
-            std::get<std::shared_ptr<Array>>(iterable);
-
-        for (const auto& element : array->elements) {
-            pushScope();
-            environment.define(
-                forStmt->variable,
-                element
-            );
-
-            execute(forStmt->body.get());
-
-            popScope();
-        }
-
-        return;
-    }
-
-    if (auto returnStmt =
-        dynamic_cast<const ReturnStmt*>(stmt)) {
-
-        throw ReturnSignal{
-            evaluate(returnStmt->value.get())
-        };
-    }
-
-    if (auto func =
-        dynamic_cast<const FuncStmt*>(stmt)) {
-
-        auto function = std::make_shared<VoraFunction>(
-            func->name,
-            func->params,
-            func->body,
-            captureClosure()
-        );
-
-        defineBinding(
-            func->name,
-            function
-        );
-
-        return;
-    }
-
-    if (auto objStmt =
-        dynamic_cast<const ObjStmt*>(stmt)) {
-
-        auto objClass = std::make_shared<ObjectClass>();
-        objClass->className = objStmt->name;
-        objClass->params = objStmt->params;
-        objClass->body = objStmt->body;
-
-        for (const auto& methodStmt : objStmt->methods) {
-            if (auto funcStmt = dynamic_cast<const FuncStmt*>(methodStmt.get())) {
-                objClass->methods[funcStmt->name] =
-                    std::make_shared<VoraFunction>(
-                        funcStmt->name,
-                        funcStmt->params,
-                        funcStmt->body,
-                        captureClosure()
-                    );
-            }
-        }
-
-        auto constructor = std::make_shared<VoraFunction>(
-            objStmt->name,
-            objStmt->params,
-            objStmt->body,
-            captureClosure()
-        );
-
-        struct ObjectConstructorCallable : public Callable {
-            std::shared_ptr<ObjectClass> classDef;
-            std::shared_ptr<VoraFunction> constructorFn;
-
-            ObjectConstructorCallable(
-                std::shared_ptr<ObjectClass> c,
-                std::shared_ptr<VoraFunction> f
-            ) : classDef(c), constructorFn(f) {}
-
-            Value call(
-                Interpreter& interpreter,
-                const std::vector<Value>& arguments
-            ) override {
-                auto instance = std::make_shared<ObjectInstance>();
-                instance->className = classDef->className;
-                instance->classDefinition = classDef;
-
-                interpreter.executeBlockWithThis(
-                    constructorFn->body()->statements,
-                    instance,
-                    constructorFn->params(),
-                    arguments
-                );
-
-                return instance;
-            }
-        };
-
-        auto constructorCallable =
-            std::make_shared<ObjectConstructorCallable>(objClass, constructor);
-
-        defineBinding(objStmt->name, constructorCallable);
-
-        return;
-    }
-
-    if (auto letStmt =
-        dynamic_cast<const LetStmt*>(stmt)) {
-
-        defineBinding(
-            letStmt->name,
-            evaluate(letStmt->initializer.get())
-        );
-
-        return;
-    }
-
-    if (auto exprStmt =
-        dynamic_cast<const ExprStmt*>(stmt)) {
-    
-        Value result = evaluate(exprStmt->expression.get());
-
-        if (config.repl()) {
-            printValue(result);
-            std::cout << std::endl;
-        }
-    
-        return;
-    }
-}
+// =========================================================================
+// String interpolation
+// =========================================================================
 
 std::string Interpreter::interpolateString(
     const std::string& str

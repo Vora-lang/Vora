@@ -8,9 +8,12 @@
 
 namespace vora {
 
+class StmtVisitor;
+
 class Stmt {
 public:
     virtual ~Stmt() = default;
+    virtual void accept(StmtVisitor& visitor) const = 0;
 };
 
 class ExprStmt : public Stmt {
@@ -21,6 +24,8 @@ public:
         : expression(std::move(expression)) {
     }
 
+    void accept(StmtVisitor& visitor) const override;
+
     std::unique_ptr<Expr> expression;
 };
 
@@ -28,15 +33,21 @@ class LetStmt : public Stmt {
 public:
     LetStmt(
         std::string name,
-        std::unique_ptr<Expr> initializer
+        std::unique_ptr<Expr> initializer,
+        std::string typeAnnotation = ""
     )
         : name(std::move(name)),
-          initializer(std::move(initializer)) {
+          initializer(std::move(initializer)),
+          typeAnnotation(std::move(typeAnnotation)) {
     }
+
+    void accept(StmtVisitor& visitor) const override;
 
     std::string name;
 
     std::unique_ptr<Expr> initializer;
+
+    std::string typeAnnotation;  // empty = no annotation
 };
 
 class BlockStmt : public Stmt {
@@ -46,6 +57,8 @@ public:
     )
         : statements(std::move(statements)) {
     }
+
+    void accept(StmtVisitor& visitor) const override;
 
     std::vector<std::unique_ptr<Stmt>> statements;
 };
@@ -57,6 +70,8 @@ public:
     )
         : value(std::move(value)) {
     }
+
+    void accept(StmtVisitor& visitor) const override;
 
     std::unique_ptr<Expr> value;
 };
@@ -72,6 +87,8 @@ public:
           thenBranch(std::move(thenBranch)),
           elseBranch(std::move(elseBranch)) {
     }
+
+    void accept(StmtVisitor& visitor) const override;
 
     std::unique_ptr<Expr> condition;
 
@@ -89,6 +106,8 @@ public:
         : condition(std::move(condition)),
           body(std::move(body)) {
     }
+
+    void accept(StmtVisitor& visitor) const override;
 
     std::unique_ptr<Expr> condition;
 
@@ -108,6 +127,8 @@ public:
           body(std::move(body)),
           forToken(std::move(forToken)) {
     }
+
+    void accept(StmtVisitor& visitor) const override;
 
     std::string variable;
 
@@ -130,6 +151,8 @@ public:
           body(std::move(body)) {
     }
 
+    void accept(StmtVisitor& visitor) const override;
+
     std::string name;
 
     std::vector<std::string> params;
@@ -151,6 +174,8 @@ public:
           body(std::move(body)) {
     }
 
+    void accept(StmtVisitor& visitor) const override;
+
     std::string name;
 
     std::vector<std::string> params;
@@ -158,6 +183,28 @@ public:
     std::vector<std::unique_ptr<Stmt>> methods;
 
     std::shared_ptr<BlockStmt> body;
+};
+
+class BreakStmt : public Stmt {
+public:
+    explicit BreakStmt(Token keyword)
+        : keyword(std::move(keyword)) {
+    }
+
+    void accept(StmtVisitor& visitor) const override;
+
+    Token keyword;
+};
+
+class ContinueStmt : public Stmt {
+public:
+    explicit ContinueStmt(Token keyword)
+        : keyword(std::move(keyword)) {
+    }
+
+    void accept(StmtVisitor& visitor) const override;
+
+    Token keyword;
 };
 
 }

@@ -15,6 +15,13 @@ namespace vora {
         {"in", TokenType::IN},
         {"Obj", TokenType::OBJ},
         {"this", TokenType::THIS},
+        {"break", TokenType::BREAK},
+        {"continue", TokenType::CONTINUE},
+        {"true", TokenType::TRUE},
+        {"false", TokenType::FALSE},
+        {"null", TokenType::NULL_TOKEN},
+        {"and", TokenType::AND},
+        {"or", TokenType::OR},
     };
 
     Lexer::Lexer(std::string source)
@@ -107,12 +114,40 @@ namespace vora {
         }
     }
 
-    void Lexer::string() {
-        while (peek() != '"' && !isAtEnd()) {
+    void Lexer::string(char delimiter) {
+        std::string value;
+
+        while (peek() != delimiter && !isAtEnd()) {
             if (peek() == '\n') {
                 line++;
             }
-            advance();
+
+            char c = advance();
+
+            if (c == '\\') {
+                if (isAtEnd()) {
+                    addToken(TokenType::INVALID);
+                    return;
+                }
+
+                char escaped = advance();
+                switch (escaped) {
+                    case 'n':  value += '\n'; break;
+                    case 't':  value += '\t'; break;
+                    case 'r':  value += '\r'; break;
+                    case '0':  value += '\0'; break;
+                    case '\\': value += '\\'; break;
+                    case '"':  value += '"';  break;
+                    case '\'': value += '\''; break;
+                    default:
+                        // Unrecognized escape: keep both characters
+                        value += '\\';
+                        value += escaped;
+                        break;
+                }
+            } else {
+                value += c;
+            }
         }
 
         if (isAtEnd()) {
@@ -120,11 +155,8 @@ namespace vora {
             return;
         }
 
-        // closing "
+        // closing quote
         advance();
-
-        std::string value =
-            source.substr(start + 1, current - start - 2);
 
         tokens.emplace_back(TokenType::STRING, value, line);
     }
@@ -178,6 +210,9 @@ namespace vora {
             if (match('+')) {
                 addToken(TokenType::PLUS_PLUS);
             }
+            else if (match('=')) {
+                addToken(TokenType::PLUS_EQUAL);
+            }
             else {
                 addToken(TokenType::PLUS);
             }
@@ -187,6 +222,9 @@ namespace vora {
             if (match('-')) {
                 addToken(TokenType::MINUS_MINUS);
             }
+            else if (match('=')) {
+                addToken(TokenType::MINUS_EQUAL);
+            }
             else {
                 addToken(TokenType::MINUS);
             }
@@ -195,6 +233,9 @@ namespace vora {
         case '*':
             if (match('*')) {
                 addToken(TokenType::POWER);
+            }
+            else if (match('=')) {
+                addToken(TokenType::MULTIPLY_EQUAL);
             }
             else {
                 addToken(TokenType::MULTIPLY);
@@ -208,13 +249,21 @@ namespace vora {
             else if (match('*')) {
                 blockComment();
             }
+            else if (match('=')) {
+                addToken(TokenType::DIVIDE_EQUAL);
+            }
             else {
                 addToken(TokenType::DIVIDE);
             }
             break;
 
         case '%':
-            addToken(TokenType::MODULO);
+            if (match('=')) {
+                addToken(TokenType::MODULO_EQUAL);
+            }
+            else {
+                addToken(TokenType::MODULO);
+            }
             break;
 
         case '=':
@@ -272,7 +321,11 @@ namespace vora {
             break;
 
         case '"':
-            string();
+            string('"');
+            break;
+
+        case '\'':
+            string('\'');
             break;
 
         case ' ':
@@ -305,15 +358,30 @@ namespace vora {
     }
 
     void Lexer::blockComment() {
+        int depth = 1;  // opening /* already consumed
+
         while (!isAtEnd()) {
             if (peek() == '\n') {
                 line++;
             }
-            if (peek() == '*' && peekNext() == '/') {
-                advance();
-                advance();
-                break;
+
+            if (peek() == '/' && peekNext() == '*') {
+                advance();  // consume /
+                advance();  // consume *
+                depth++;
+                continue;
             }
+
+            if (peek() == '*' && peekNext() == '/') {
+                advance();  // consume *
+                advance();  // consume /
+                depth--;
+                if (depth == 0) {
+                    return;
+                }
+                continue;
+            }
+
             advance();
         }
     }
