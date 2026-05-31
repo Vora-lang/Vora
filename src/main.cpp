@@ -1,4 +1,6 @@
 ﻿#include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <ctime>
 #include <fstream>
 #include <iostream>
@@ -127,6 +129,70 @@ static void runScript(
                 if (std::holds_alternative<bool>(arg))
                     return std::get<bool>(arg) ? 1.0 : 0.0;
                 return nullptr;
+            });
+        vm.defineNative("range", -1,
+            [](const std::vector<Value>& arguments) -> Value {
+                double start = 0, end = 0, step = 1;
+                if (arguments.size() == 1) {
+                    end = std::get<double>(arguments[0]);
+                } else if (arguments.size() == 2) {
+                    start = std::get<double>(arguments[0]);
+                    end = std::get<double>(arguments[1]);
+                } else if (arguments.size() == 3) {
+                    start = std::get<double>(arguments[0]);
+                    end = std::get<double>(arguments[1]);
+                    step = std::get<double>(arguments[2]);
+                }
+                auto arr = std::make_shared<Array>();
+                if (step > 0) {
+                    for (double i = start; i < end; i += step)
+                        arr->elements.push_back(i);
+                } else if (step < 0) {
+                    for (double i = start; i > end; i += step)
+                        arr->elements.push_back(i);
+                }
+                return arr;
+            });
+        vm.defineNative("input", -1,
+            [](const std::vector<Value>& arguments) -> Value {
+                if (!arguments.empty()) std::cout << valueToString(arguments[0]);
+                std::string line;
+                std::getline(std::cin, line);
+                return line;
+            });
+        vm.defineNative("bin", 1,
+            [](const std::vector<Value>& arguments) -> Value {
+                double val = std::get<double>(arguments[0]);
+                int64_t n = static_cast<int64_t>(std::trunc(val));
+                if (n == 0) return std::string("0b0");
+                bool neg = n < 0;
+                uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
+                std::string bits;
+                while (u > 0) { bits = (u & 1 ? '1' : '0') + bits; u >>= 1; }
+                return (neg ? std::string("-0b") : std::string("0b")) + bits;
+            });
+        vm.defineNative("oct", 1,
+            [](const std::vector<Value>& arguments) -> Value {
+                double val = std::get<double>(arguments[0]);
+                int64_t n = static_cast<int64_t>(std::trunc(val));
+                if (n == 0) return std::string("0o0");
+                bool neg = n < 0;
+                uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
+                std::string digits;
+                while (u > 0) { digits = static_cast<char>('0' + (u & 7)) + digits; u >>= 3; }
+                return (neg ? std::string("-0o") : std::string("0o")) + digits;
+            });
+        vm.defineNative("hex", 1,
+            [](const std::vector<Value>& arguments) -> Value {
+                double val = std::get<double>(arguments[0]);
+                int64_t n = static_cast<int64_t>(std::trunc(val));
+                if (n == 0) return std::string("0x0");
+                bool neg = n < 0;
+                uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
+                const char* hexChars = "0123456789abcdef";
+                std::string digits;
+                while (u > 0) { digits = hexChars[u & 0xF] + digits; u >>= 4; }
+                return (neg ? std::string("-0x") : std::string("0x")) + digits;
             });
 
         // Print bytecode disassembly if requested

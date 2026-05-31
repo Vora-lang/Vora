@@ -1,14 +1,20 @@
 # run_tests.ps1 — Vora test suite runner (PowerShell)
-# Usage: .\tests\run_tests.ps1
+# Usage:
+#   .\tests\run_tests.ps1          # Interpreter mode (default)
+#   .\tests\run_tests.ps1 -VM      # VM mode
+
+param([switch]$VM)
 
 $ErrorActionPreference = "Continue"
 $Vora = ".\build\Debug\Vora.exe"
 $Pass = 0
 $Fail = 0
 $Errors = @()
+$Mode = if ($VM) { "VM" } else { "Interpreter" }
+$VmFlag = if ($VM) { "--vm" } else { "" }
 
 Write-Host "============================================"
-Write-Host "  Vora Test Suite"
+Write-Host "  Vora Test Suite ($Mode mode)"
 Write-Host "============================================"
 Write-Host ""
 
@@ -17,7 +23,7 @@ Get-ChildItem -Path tests/lexer, tests/parser, tests/runtime, tests/interpreter 
     $name = $_.FullName -replace [regex]::Escape("$PWD\"), ""
     Write-Host ("  {0,-45} " -f $name) -NoNewline
 
-    $output = & $Vora $file 2>&1
+    $output = & $Vora $VmFlag $file 2>&1
     if ($LASTEXITCODE -eq 0)
     {
         Write-Host "PASS" -ForegroundColor Green

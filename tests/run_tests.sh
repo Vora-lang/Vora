@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # run_tests.sh — Vora test suite runner
-# Usage: bash tests/run_tests.sh
+# Usage:
+#   bash tests/run_tests.sh          # Interpreter mode (default)
+#   bash tests/run_tests.sh --vm     # VM mode
 
 set -e
 
@@ -9,8 +11,15 @@ PASS=0
 FAIL=0
 ERRORS=""
 
+VM_FLAG=""
+MODE="Interpreter"
+if [[ "$1" == "--vm" ]]; then
+    VM_FLAG="--vm"
+    MODE="VM"
+fi
+
 echo "============================================"
-echo "  Vora Test Suite"
+echo "  Vora Test Suite ($MODE mode)"
 echo "============================================"
 echo ""
 
@@ -18,7 +27,7 @@ run_test() {
     local file="$1"
     local name="${file#tests/}"
     printf "  %-45s " "$name"
-    if output=$("$VORA" "$file" 2>&1); then
+    if output=$("$VORA" $VM_FLAG "$file" 2>&1); then
         echo "PASS"
         PASS=$((PASS + 1))
     else

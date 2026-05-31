@@ -379,7 +379,7 @@ InterpretResult VM::run() {
             }
             case OpCode::OP_JUMP_IF_FALSE: {
                 uint16_t offset = readShort();
-                if (!isTruthy(pop())) {
+                if (!isTruthy(peek(0))) {
                     ip += offset;
                 }
                 break;
