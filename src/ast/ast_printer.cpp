@@ -192,6 +192,14 @@ Value ASTPrinter::visitIncDecExpr(const IncDecExpr& expr) {
     return nullptr;
 }
 
+Value ASTPrinter::visitTernaryExpr(const TernaryExpr& expr) {
+    result_ = parenthesize(
+        "?:",
+        { expr.condition.get(), expr.thenBranch.get(), expr.elseBranch.get() }
+    );
+    return nullptr;
+}
+
 // =========================================================================
 // StmtVisitor — visit methods
 // =========================================================================
@@ -317,6 +325,10 @@ void ASTPrinter::visitObjStmt(const ObjStmt& stmt) {
 
     ss << "(obj " << stmt.name;
 
+    if (!stmt.parentName.empty()) {
+        ss << " : " << stmt.parentName;
+    }
+
     for (const auto& param : stmt.params) {
         ss << " " << param;
     }
@@ -341,6 +353,26 @@ void ASTPrinter::visitBreakStmt(const BreakStmt& /*stmt*/) {
 
 void ASTPrinter::visitContinueStmt(const ContinueStmt& /*stmt*/) {
     result_ = "(continue)";
+}
+
+void ASTPrinter::visitTryStmt(const TryStmt& stmt) {
+    std::stringstream ss;
+    ss << "(try " << print(stmt.tryBlock.get());
+
+    if (stmt.catchBlock) {
+        ss << " (catch " << stmt.catchVar << " " << print(stmt.catchBlock.get()) << ")";
+    }
+
+    if (stmt.finallyBlock) {
+        ss << " (finally " << print(stmt.finallyBlock.get()) << ")";
+    }
+
+    ss << ")";
+    result_ = ss.str();
+}
+
+void ASTPrinter::visitThrowStmt(const ThrowStmt& stmt) {
+    result_ = parenthesize("throw", { stmt.value.get() });
 }
 
 // =========================================================================

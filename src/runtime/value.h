@@ -33,6 +33,8 @@ struct ObjectClass {
     std::vector<std::string> params;
     std::shared_ptr<BlockStmt> body;
     std::map<std::string, std::shared_ptr<VoraFunction>> methods;
+    std::string parentClassName;              // empty = no parent
+    std::shared_ptr<ObjectClass> parentClass;  // resolved at runtime
 };
 
 struct ObjectInstance {

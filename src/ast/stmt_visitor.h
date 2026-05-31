@@ -24,6 +24,8 @@ public:
     virtual void visitObjStmt(const ObjStmt& stmt) = 0;
     virtual void visitBreakStmt(const BreakStmt& stmt) = 0;
     virtual void visitContinueStmt(const ContinueStmt& stmt) = 0;
+    virtual void visitTryStmt(const TryStmt& stmt) = 0;
+    virtual void visitThrowStmt(const ThrowStmt& stmt) = 0;
 };
 
 }

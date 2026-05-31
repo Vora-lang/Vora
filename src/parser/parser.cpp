@@ -71,6 +71,7 @@ void Parser::synchronize() {
             case TokenType::OBJ:
             case TokenType::BREAK:
             case TokenType::CONTINUE:
+            case TokenType::TRY:
                 return;
             default:
                 break;
@@ -129,6 +130,14 @@ std::unique_ptr<Stmt> Parser::statement() {
 
     if (match(TokenType::CONTINUE)) {
         return continueStatement();
+    }
+
+    if (match(TokenType::TRY)) {
+        return tryStatement();
+    }
+
+    if (match(TokenType::THROW)) {
+        return throwStatement();
     }
 
     auto expr = expression();
@@ -374,6 +383,16 @@ std::unique_ptr<Stmt> Parser::objStatement() {
 
     std::string name = previous().lexeme;
 
+    // Optional inheritance: Obj Child : Parent (params) { ... }
+    std::string parentName;
+    if (match(TokenType::COLON)) {
+        if (!match(TokenType::IDENTIFIER)) {
+            error("Expected parent class name after ':'\n");
+            return nullptr;
+        }
+        parentName = previous().lexeme;
+    }
+
     if (!match(TokenType::LEFT_PAREN)) {
 
                     error("Expected '(' after object name\n");
@@ -447,6 +466,7 @@ std::unique_ptr<Stmt> Parser::objStatement() {
 
     return std::make_unique<ObjStmt>(
         name,
+        parentName,
         std::move(params),
         std::move(methods),
         body
@@ -531,6 +551,9 @@ int Parser::getPrecedence(TokenType type) const {
             return 1;
 
         case TokenType::AND:
+            return 2;
+
+        case TokenType::QUESTION:
             return 2;
 
         case TokenType::EQUAL_EQUAL:
@@ -827,6 +850,34 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
         Token op = advance();
         int opPrec = getPrecedence(op.type);
 
+        // =========================
+        // TERNARY (precedence 2, right-associative)
+        // =========================
+        if (op.type == TokenType::QUESTION) {
+            auto thenBranch = parsePrecedence(0);
+            if (!thenBranch) {
+                error("Expected expression after '?'");
+                return nullptr;
+            }
+            if (!match(TokenType::COLON)) {
+                error("Expected ':' in ternary expression");
+                return nullptr;
+            }
+            // Right-associative: else-branch parsed at opPrec-1 so nested
+            // ternaries in the else position bind to the right.
+            auto elseBranch = parsePrecedence(opPrec - 1);
+            if (!elseBranch) {
+                error("Expected expression after ':'");
+                return nullptr;
+            }
+            left = std::make_unique<TernaryExpr>(
+                std::move(left),
+                std::move(thenBranch),
+                std::move(elseBranch)
+            );
+            continue;
+        }
+
         // right-associativity fix (power + assignment / compound-assignment)
         bool rightAssociative =
             (op.type == TokenType::POWER ||
@@ -955,6 +1006,92 @@ std::unique_ptr<Stmt> Parser::breakStatement() {
 
 std::unique_ptr<Stmt> Parser::continueStatement() {
     return std::make_unique<ContinueStmt>(previous());
+}
+
+std::unique_ptr<Stmt> Parser::tryStatement() {
+    Token tryToken = previous();  // the 'try' keyword
+
+    if (!match(TokenType::LEFT_BRACE)) {
+        error("Expected '{' after 'try'");
+        return nullptr;
+    }
+
+    auto tryBlock = blockStatement();
+    if (!tryBlock) {
+        return nullptr;
+    }
+
+    std::string catchVar;
+    std::unique_ptr<Stmt> catchBlock;
+
+    if (match(TokenType::CATCH)) {
+        if (!match(TokenType::LEFT_PAREN)) {
+            error("Expected '(' after 'catch'");
+            return nullptr;
+        }
+
+        if (!match(TokenType::IDENTIFIER)) {
+            error("Expected catch variable name");
+            return nullptr;
+        }
+
+        catchVar = previous().lexeme;
+
+        if (!match(TokenType::RIGHT_PAREN)) {
+            error("Expected ')' after catch variable");
+            return nullptr;
+        }
+
+        if (!match(TokenType::LEFT_BRACE)) {
+            error("Expected '{' after catch clause");
+            return nullptr;
+        }
+
+        catchBlock = blockStatement();
+        if (!catchBlock) {
+            return nullptr;
+        }
+    }
+
+    std::unique_ptr<Stmt> finallyBlock;
+
+    if (match(TokenType::FINALLY)) {
+        if (!match(TokenType::LEFT_BRACE)) {
+            error("Expected '{' after 'finally'");
+            return nullptr;
+        }
+
+        finallyBlock = blockStatement();
+        if (!finallyBlock) {
+            return nullptr;
+        }
+    }
+
+    if (!catchBlock && !finallyBlock) {
+        error("Expected 'catch' or 'finally' after 'try'");
+        return nullptr;
+    }
+
+    return std::make_unique<TryStmt>(
+        std::move(tryBlock),
+        std::move(catchVar),
+        std::move(catchBlock),
+        std::move(finallyBlock)
+    );
+}
+
+std::unique_ptr<Stmt> Parser::throwStatement() {
+    Token keyword = previous();  // the 'throw' keyword
+
+    auto value = expression();
+    if (!value) {
+        return nullptr;
+    }
+
+    return std::make_unique<ThrowStmt>(
+        std::move(value),
+        keyword
+    );
 }
 
 }

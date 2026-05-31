@@ -54,6 +54,7 @@ namespace vora {
         COMMA, // ,
         DOT, // .
         COLON, // :
+        QUESTION, // ?
         SEMICOLON, // ;
 
         // Literals
@@ -74,6 +75,10 @@ namespace vora {
         THIS, // this
         BREAK, // break
         CONTINUE, // continue
+        TRY, // try
+        CATCH, // catch
+        FINALLY, // finally
+        THROW, // throw
 
         // Special
         END_OF_FILE, //

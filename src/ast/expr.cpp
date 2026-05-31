@@ -131,4 +131,14 @@ std::unique_ptr<Expr> IncDecExpr::clone() const {
     );
 }
 
+Value TernaryExpr::accept(ExprVisitor& visitor) const {
+    return visitor.visitTernaryExpr(*this);
+}
+
+std::unique_ptr<Expr> TernaryExpr::clone() const {
+    return std::make_unique<TernaryExpr>(
+        condition->clone(), thenBranch->clone(), elseBranch->clone()
+    );
+}
+
 }

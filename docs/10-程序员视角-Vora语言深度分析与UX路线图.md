@@ -102,7 +102,6 @@ Vora 处于 **"教学语言"与"实用脚本语言"的交叉地带**。它目前
 - `indexExpr` 仅支持数组索引。字符串索引（`"hello"[1]`）会抛 RuntimeError。
 - 没有 `break` / `continue`。
 - 没有垃圾回收。`shared_ptr` 的引用计数可以处理大多数情况，但**循环引用会导致内存泄漏**（例如对象属性引用自身）。
-- `ObjectConstructor` 类（`src/runtime/object_constructor.h`）是独立定义的，但解释器中实际使用的是内嵌的 `ObjectConstructorCallable`——有两套构造函数逻辑，容易分裂。
 
 ### 2.6 Runtime（运行时系统）—— 评分：B+
 
@@ -638,15 +637,7 @@ std::string asString(const Value& v);
 
 这样不仅代码更可读，也为未来添加 `int64` 类型留出空间。
 
-#### 6.1.2 分离 ObjectConstructor 实现
-
-当前代码有两套构造函数逻辑：
-1. `src/runtime/object_constructor.h/cpp` — 独立类，但未被使用
-2. `src/interpreter/interpreter.cpp:763-791` — 内嵌 `ObjectConstructorCallable`
-
-建议删除其一，将最终方案提取为独立的 `.h/.cpp` 文件。内嵌 struct 适合原型阶段，但不适合长期维护。
-
-#### 6.1.3 Environment 的 const_cast 问题
+#### 6.1.2 Environment 的 const_cast 问题
 
 `Environment::assign()` 第 77 行使用 `const_cast` 移除父环境的 const。这是因为 `snapshot()` 创建的闭包环境是 const 的。建议：
 

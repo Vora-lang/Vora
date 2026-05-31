@@ -196,6 +196,21 @@ public:
 
 **Vora 用法**：`this`（在对象方法中使用）
 
+### TernaryExpr — 三元条件表达式
+
+```cpp
+class TernaryExpr : public Expr {
+public:
+    std::unique_ptr<Expr> condition;   // 条件表达式
+    std::unique_ptr<Expr> thenBranch;  // 条件为真时的分支
+    std::unique_ptr<Expr> elseBranch;  // 条件为假时的分支
+};
+```
+
+**Vora 用法**：`x > 0 ? "positive" : "negative"`
+
+**求值规则**：短路求值——先求值 `condition`，为真则只求值 `thenBranch`，为假则只求值 `elseBranch`。右结合：`a ? b : c ? d : e` → `a ? b : (c ? d : e)`。
+
 ## 语句节点（Stmt）
 
 基类：
@@ -360,6 +375,60 @@ Obj Student(name, age) {
 
 > Parser 在解析 Obj 块时，会将 `FuncStmt` 归入 `methods`，其他语句归入 `body`。
 
+### BreakStmt / ContinueStmt — 循环控制
+
+```cpp
+class BreakStmt : public Stmt {
+public:
+    Token keyword;
+};
+class ContinueStmt : public Stmt {
+public:
+    Token keyword;
+};
+```
+
+**Vora 用法**：`break`、`continue`（在 `while` / `for` 循环中使用）
+
+### TryStmt — 异常处理
+
+```cpp
+class TryStmt : public Stmt {
+public:
+    std::unique_ptr<Stmt> tryBlock;      // try 块
+    std::string catchVar;                // catch 变量名（空 = 无 catch）
+    std::unique_ptr<Stmt> catchBlock;    // catch 块（nullptr = 无 catch）
+    std::unique_ptr<Stmt> finallyBlock;  // finally 块（nullptr = 无 finally）
+};
+```
+
+**Vora 用法**：
+```vora
+try {
+    let x = 1 / 0
+} catch (e) {
+    print("Error: ${e}")
+} finally {
+    print("Done")
+}
+```
+
+**执行规则**：`finally` 块始终执行（无论 try 正常完成 / 抛错 / return / break / continue）。`catch` 捕获 `ThrowSignal`（用户值）和 `RuntimeError`（转换为字符串）。
+
+### ThrowStmt — 抛出异常
+
+```cpp
+class ThrowStmt : public Stmt {
+public:
+    std::unique_ptr<Expr> value;  // 被抛出的表达式
+    Token keyword;                 // throw 关键字 Token
+};
+```
+
+**Vora 用法**：`throw "error message"`、`throw ValidationError("msg")`
+
+**执行规则**：求值 `value` 表达式，以 `ThrowSignal{value}` 抛出，被最近的 `catch` 块捕获。
+
 ## Program — 程序根节点
 
 ```cpp
@@ -405,10 +474,14 @@ Program
       │               body: Stmt
       ├── ForStmt ─── iterable: Expr
       │               body: Stmt
-      ├── FuncStmt ── body: BlockStmt
-      ├── ObjStmt ─── methods: vector<Stmt>
-      │               body: BlockStmt
-      └── ReturnStmt ─ value: Expr
+      ├── FuncStmt ──── body: BlockStmt
+      ├── ObjStmt ───── methods: vector<Stmt>
+      │                 body: BlockStmt
+      ├── ReturnStmt ── value: Expr
+      ├── BreakStmt
+      ├── ContinueStmt
+      ├── TryStmt ───── tryBlock: Stmt, catchBlock: Stmt, finallyBlock: Stmt
+      └── ThrowStmt ─── value: Expr
 
 Expr
  ├── LiteralExpr
@@ -422,7 +495,9 @@ Expr
  ├── IndexExpr ────── array: Expr, index: Expr
  ├── PropertyExpr ─── object: Expr
  ├── PropertyAssignmentExpr ── object: Expr, value: Expr
- └── ThisExpr
+ ├── ThisExpr
+ ├── IncDecExpr ───── target: Expr
+ └── TernaryExpr ──── condition: Expr, thenBranch: Expr, elseBranch: Expr
 ```
 
 ## 扩展指南

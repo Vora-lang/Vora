@@ -1,0 +1,90 @@
+// try/catch/finally tests
+
+// --- Basic try/catch ---
+print("=== Test 1: Basic try/catch ===")
+try {
+    let x = 1 / 0
+    print("this should not print")
+} catch (e) {
+    print("Caught error:", e)
+}
+
+// --- try/catch/finally ---
+print("=== Test 2: try/catch/finally ===")
+try {
+    let arr = [1, 2, 3]
+    let bad = arr[10]  // out of bounds
+} catch (e) {
+    print("Caught:", e)
+} finally {
+    print("Finally block executed")
+}
+
+// --- try/finally (no catch) — error propagates ---
+print("=== Test 3: try/finally, error propagates ===")
+func testTryFinally() {
+    try {
+        let y = 1 / 0
+    } finally {
+        print("Finally in function ran")
+    }
+    print("Should not reach here")
+}
+
+// Wrap in another try/catch to catch the propagated error
+try {
+    testTryFinally()
+} catch (e) {
+    print("Caught propagated error:", e)
+}
+
+// --- finally executes on normal path ---
+print("=== Test 4: finally on normal path ===")
+try {
+    print("Inside try, no error")
+} catch (e) {
+    print("Should not run:", e)
+} finally {
+    print("Finally on normal path")
+}
+
+// --- finally executes before return ---
+print("=== Test 5: finally before return ===")
+func testReturn() {
+    try {
+        print("Inside try before return")
+        return "return value"
+    } finally {
+        print("Finally before return")
+    }
+    print("Should not reach here")
+}
+
+let result = testReturn()
+print("Returned:", result)
+
+// --- catch without finally ---
+print("=== Test 6: catch without finally ===")
+try {
+    let z = null
+    let bad2 = z + 1
+} catch (e) {
+    print("Caught error without finally:", e)
+}
+
+// --- Nested try/catch ---
+print("=== Test 7: Nested try/catch ===")
+try {
+    try {
+        let w = 1 / 0
+    } catch (inner) {
+        print("Inner catch:", inner)
+    }
+    print("After inner catch")
+} catch (outer) {
+    print("Outer catch (should not run):", outer)
+} finally {
+    print("Outer finally")
+}
+
+print("=== All try/catch/finally tests passed ===")

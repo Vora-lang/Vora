@@ -17,6 +17,10 @@ namespace vora {
         {"this", TokenType::THIS},
         {"break", TokenType::BREAK},
         {"continue", TokenType::CONTINUE},
+        {"try", TokenType::TRY},
+        {"catch", TokenType::CATCH},
+        {"finally", TokenType::FINALLY},
+        {"throw", TokenType::THROW},
         {"true", TokenType::TRUE},
         {"false", TokenType::FALSE},
         {"null", TokenType::NULL_TOKEN},
@@ -200,6 +204,10 @@ namespace vora {
 
         case ':':
             addToken(TokenType::COLON);
+            break;
+
+        case '?':
+            addToken(TokenType::QUESTION);
             break;
 
         case ';':

@@ -47,4 +47,12 @@ void ContinueStmt::accept(StmtVisitor& visitor) const {
     visitor.visitContinueStmt(*this);
 }
 
+void TryStmt::accept(StmtVisitor& visitor) const {
+    visitor.visitTryStmt(*this);
+}
+
+void ThrowStmt::accept(StmtVisitor& visitor) const {
+    visitor.visitThrowStmt(*this);
+}
+
 }

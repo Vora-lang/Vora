@@ -86,6 +86,7 @@ private:
     Value visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) override;
     Value visitThisExpr(const ThisExpr& expr) override;
     Value visitIncDecExpr(const IncDecExpr& expr) override;
+    Value visitTernaryExpr(const TernaryExpr& expr) override;
 
     // --- StmtVisitor overrides ---
     void visitExprStmt(const ExprStmt& stmt) override;
@@ -99,6 +100,8 @@ private:
     void visitObjStmt(const ObjStmt& stmt) override;
     void visitBreakStmt(const BreakStmt& stmt) override;
     void visitContinueStmt(const ContinueStmt& stmt) override;
+    void visitTryStmt(const TryStmt& stmt) override;
+    void visitThrowStmt(const ThrowStmt& stmt) override;
 
     void pushScope();
 

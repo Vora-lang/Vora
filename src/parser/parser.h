@@ -63,6 +63,10 @@ private:
 
     std::unique_ptr<Stmt> continueStatement();
 
+    std::unique_ptr<Stmt> tryStatement();
+
+    std::unique_ptr<Stmt> throwStatement();
+
 private:
     bool isAtEnd() const;
 

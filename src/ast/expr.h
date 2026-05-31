@@ -264,4 +264,24 @@ public:
     bool isPrefix;      // true = ++x, false = x++
 };
 
+class TernaryExpr : public Expr {
+public:
+    TernaryExpr(
+        std::unique_ptr<Expr> condition,
+        std::unique_ptr<Expr> thenBranch,
+        std::unique_ptr<Expr> elseBranch
+    )
+        : condition(std::move(condition)),
+          thenBranch(std::move(thenBranch)),
+          elseBranch(std::move(elseBranch)) {
+    }
+
+    Value accept(ExprVisitor& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::unique_ptr<Expr> condition;
+    std::unique_ptr<Expr> thenBranch;
+    std::unique_ptr<Expr> elseBranch;
+};
+
 }

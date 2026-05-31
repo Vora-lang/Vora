@@ -164,11 +164,13 @@ class ObjStmt : public Stmt {
 public:
     ObjStmt(
         std::string name,
+        std::string parentName,
         std::vector<std::string> params,
         std::vector<std::unique_ptr<Stmt>> methods,
         std::shared_ptr<BlockStmt> body
     )
         : name(std::move(name)),
+          parentName(std::move(parentName)),
           params(std::move(params)),
           methods(std::move(methods)),
           body(std::move(body)) {
@@ -177,6 +179,8 @@ public:
     void accept(StmtVisitor& visitor) const override;
 
     std::string name;
+
+    std::string parentName;  // empty = no inheritance
 
     std::vector<std::string> params;
 
@@ -205,6 +209,44 @@ public:
     void accept(StmtVisitor& visitor) const override;
 
     Token keyword;
+};
+
+class ThrowStmt : public Stmt {
+public:
+    explicit ThrowStmt(
+        std::unique_ptr<Expr> value,
+        Token keyword
+    )
+        : value(std::move(value)),
+          keyword(std::move(keyword)) {
+    }
+
+    void accept(StmtVisitor& visitor) const override;
+
+    std::unique_ptr<Expr> value;
+    Token keyword;
+};
+
+class TryStmt : public Stmt {
+public:
+    TryStmt(
+        std::unique_ptr<Stmt> tryBlock,
+        std::string catchVar,
+        std::unique_ptr<Stmt> catchBlock,
+        std::unique_ptr<Stmt> finallyBlock
+    )
+        : tryBlock(std::move(tryBlock)),
+          catchVar(std::move(catchVar)),
+          catchBlock(std::move(catchBlock)),
+          finallyBlock(std::move(finallyBlock)) {
+    }
+
+    void accept(StmtVisitor& visitor) const override;
+
+    std::unique_ptr<Stmt> tryBlock;
+    std::string catchVar;               // empty = no catch clause
+    std::unique_ptr<Stmt> catchBlock;   // nullptr if no catch
+    std::unique_ptr<Stmt> finallyBlock; // nullptr if no finally
 };
 
 }

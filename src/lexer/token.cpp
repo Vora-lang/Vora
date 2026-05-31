@@ -28,6 +28,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::COMMA: return "COMMA";
         case TokenType::DOT: return "DOT";
         case TokenType::COLON: return "COLON";
+        case TokenType::QUESTION: return "QUESTION";
         case TokenType::SEMICOLON: return "SEMICOLON";
         case TokenType::EQUAL: return "EQUAL";
         case TokenType::LESS: return "LESS";
@@ -55,6 +56,10 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::THIS: return "THIS";
         case TokenType::BREAK: return "BREAK";
         case TokenType::CONTINUE: return "CONTINUE";
+        case TokenType::TRY: return "TRY";
+        case TokenType::CATCH: return "CATCH";
+        case TokenType::FINALLY: return "FINALLY";
+        case TokenType::THROW: return "THROW";
 
         case TokenType::PLUS_EQUAL: return "PLUS_EQUAL";
         case TokenType::MINUS_EQUAL: return "MINUS_EQUAL";

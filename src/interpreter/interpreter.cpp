@@ -20,6 +20,10 @@ struct BreakSignal {};
 
 struct ContinueSignal {};
 
+struct ThrowSignal {
+    Value value;
+};
+
 } // anonymous namespace
 
 Interpreter::Interpreter(
@@ -379,6 +383,12 @@ Value Interpreter::callFunction(
         popScope();
 
         return signal.value;
+    }
+    catch (...) {
+
+        popScope();
+
+        throw;
     }
 
     popScope();
@@ -745,41 +755,46 @@ Value Interpreter::visitPropertyExpr(const PropertyExpr& expr) {
     }
 
     if (instance->classDefinition) {
-        auto methodIt = instance->classDefinition->methods.find(expr.property);
-        if (methodIt != instance->classDefinition->methods.end()) {
-            // Return a bound method that sets 'this' when called
-            struct BoundMethodCallable : public Callable {
-                std::shared_ptr<VoraFunction> method;
-                std::shared_ptr<ObjectInstance> instance;
+        // Walk the class hierarchy (current class → parent → ...)
+        ObjectClass* cls = instance->classDefinition.get();
+        while (cls) {
+            auto methodIt = cls->methods.find(expr.property);
+            if (methodIt != cls->methods.end()) {
+                // Return a bound method that sets 'this' when called
+                struct BoundMethodCallable : public Callable {
+                    std::shared_ptr<VoraFunction> method;
+                    std::shared_ptr<ObjectInstance> instance;
 
-                BoundMethodCallable(std::shared_ptr<VoraFunction> m, std::shared_ptr<ObjectInstance> inst)
-                    : method(std::move(m)), instance(std::move(inst)) {}
+                    BoundMethodCallable(std::shared_ptr<VoraFunction> m, std::shared_ptr<ObjectInstance> inst)
+                        : method(std::move(m)), instance(std::move(inst)) {}
 
-                Value call(Interpreter& interpreter, const std::vector<Value>& arguments) override {
-                    interpreter.pushScope(method->closure().get());
+                    Value call(Interpreter& interpreter, const std::vector<Value>& arguments) override {
+                        interpreter.pushScope(method->closure().get());
 
-                    for (size_t i = 0; i < method->params().size(); ++i) {
-                        interpreter.getEnvironment().define(
-                            method->params()[i],
-                            arguments[i]
-                        );
-                    }
+                        for (size_t i = 0; i < method->params().size(); ++i) {
+                            interpreter.getEnvironment().define(
+                                method->params()[i],
+                                arguments[i]
+                            );
+                        }
 
-                    interpreter.getEnvironment().define("this", instance);
+                        interpreter.getEnvironment().define("this", instance);
 
-                    try {
-                        interpreter.executeBlock(method->body()->statements);
-                    } catch (const ReturnSignal& signal) {
+                        try {
+                            interpreter.executeBlock(method->body()->statements);
+                        } catch (const ReturnSignal& signal) {
+                            interpreter.popScope();
+                            return signal.value;
+                        }
+
                         interpreter.popScope();
-                        return signal.value;
+                        return nullptr;
                     }
+                };
 
-                    interpreter.popScope();
-                    return nullptr;
-                }
-            };
-
-            return std::make_shared<BoundMethodCallable>(methodIt->second, instance);
+                return std::make_shared<BoundMethodCallable>(methodIt->second, instance);
+            }
+            cls = cls->parentClass.get();
         }
     }
 
@@ -821,6 +836,16 @@ Value Interpreter::visitThisExpr(const ThisExpr& expr) {
             "Cannot use 'this' outside of object method",
             expr.keyword
         );
+    }
+}
+
+Value Interpreter::visitTernaryExpr(const TernaryExpr& expr) {
+    Value condition = evaluate(expr.condition.get());
+
+    if (isTruthy(condition)) {
+        return evaluate(expr.thenBranch.get());
+    } else {
+        return evaluate(expr.elseBranch.get());
     }
 }
 
@@ -983,6 +1008,29 @@ void Interpreter::visitObjStmt(const ObjStmt& stmt) {
     objClass->className = stmt.name;
     objClass->params = stmt.params;
     objClass->body = stmt.body;
+    objClass->parentClassName = stmt.parentName;
+
+    // Resolve parent class at runtime
+    if (!stmt.parentName.empty()) {
+        Token nameToken(TokenType::IDENTIFIER, stmt.name, 0);
+        try {
+            Value parentVal = environment.get(stmt.parentName, nameToken);
+            if (auto* callablePtr = std::get_if<std::shared_ptr<Callable>>(&parentVal)) {
+                objClass->parentClass = (*callablePtr)->getClassDef();
+            }
+            if (!objClass->parentClass) {
+                throw RuntimeError(
+                    "'" + stmt.parentName + "' is not a valid parent class",
+                    nameToken
+                );
+            }
+        } catch (const RuntimeError&) {
+            throw RuntimeError(
+                "Parent class not found: " + stmt.parentName,
+                nameToken
+            );
+        }
+    }
 
     for (const auto& methodStmt : stmt.methods) {
         if (auto funcStmt = dynamic_cast<const FuncStmt*>(methodStmt.get())) {
@@ -1012,6 +1060,10 @@ void Interpreter::visitObjStmt(const ObjStmt& stmt) {
             std::shared_ptr<VoraFunction> f
         ) : classDef(c), constructorFn(f) {}
 
+        std::shared_ptr<ObjectClass> getClassDef() const override {
+            return classDef;
+        }
+
         Value call(
             Interpreter& interpreter,
             const std::vector<Value>& arguments
@@ -1019,6 +1071,22 @@ void Interpreter::visitObjStmt(const ObjStmt& stmt) {
             auto instance = std::make_shared<ObjectInstance>();
             instance->className = classDef->className;
             instance->classDefinition = classDef;
+
+            // Call parent constructors root-first (top of chain to direct parent)
+            if (classDef->parentClass) {
+                std::vector<ObjectClass*> parentChain;
+                for (ObjectClass* p = classDef->parentClass.get(); p; p = p->parentClass.get()) {
+                    parentChain.insert(parentChain.begin(), p);
+                }
+                for (auto* parent : parentChain) {
+                    interpreter.executeBlockWithThis(
+                        parent->body->statements,
+                        instance,
+                        parent->params,
+                        arguments
+                    );
+                }
+            }
 
             interpreter.executeBlockWithThis(
                 constructorFn->body()->statements,
@@ -1043,6 +1111,72 @@ void Interpreter::visitBreakStmt(const BreakStmt& /*stmt*/) {
 
 void Interpreter::visitContinueStmt(const ContinueStmt& /*stmt*/) {
     throw ContinueSignal{};
+}
+
+void Interpreter::visitThrowStmt(const ThrowStmt& stmt) {
+    Value value = evaluate(stmt.value.get());
+    throw ThrowSignal{std::move(value)};
+}
+
+void Interpreter::visitTryStmt(const TryStmt& stmt) {
+    // Helper: execute finally if present
+    auto runFinally = [&]() {
+        if (stmt.finallyBlock) {
+            execute(stmt.finallyBlock.get());
+        }
+    };
+
+    try {
+        execute(stmt.tryBlock.get());
+    } catch (const ThrowSignal& thrown) {
+        // User-thrown value — attempt to catch it
+        if (stmt.catchBlock) {
+            pushScope();
+            environment.define(stmt.catchVar, thrown.value);
+            try {
+                execute(stmt.catchBlock.get());
+            } catch (...) {
+                popScope();
+                runFinally();
+                throw;
+            }
+            popScope();
+        } else {
+            runFinally();
+            throw;
+        }
+    } catch (const RuntimeError& err) {
+        // Built-in runtime error — attempt to catch it
+        if (stmt.catchBlock) {
+            pushScope();
+            // Bind error message as a string to the catch variable
+            environment.define(stmt.catchVar, std::string(err.what()));
+            try {
+                execute(stmt.catchBlock.get());
+            } catch (...) {
+                popScope();
+                runFinally();
+                throw;
+            }
+            popScope();
+        } else {
+            // No catch clause — run finally then re-throw
+            runFinally();
+            throw;
+        }
+    } catch (const ReturnSignal&) {
+        runFinally();
+        throw;
+    } catch (const BreakSignal&) {
+        runFinally();
+        throw;
+    } catch (const ContinueSignal&) {
+        runFinally();
+        throw;
+    }
+
+    // Normal completion — run finally
+    runFinally();
 }
 
 void Interpreter::visitLetStmt(const LetStmt& stmt) {
@@ -1079,11 +1213,11 @@ void Interpreter::executeBlock(
             execute(stmt.get());
         }
     }
-    catch (const ReturnSignal& signal) {
+    catch (...) {
 
         popScope();
 
-        throw signal;
+        throw;
     }
 
     popScope();
@@ -1147,11 +1281,19 @@ std::string Interpreter::interpolateString(
                             }
 
                             if (instance->classDefinition) {
-                                auto methodIt = instance->classDefinition->methods.find(prop);
-                                if (methodIt != instance->classDefinition->methods.end()) {
-                                    val = methodIt->second;
-                                    continue;
+                                // Walk the class hierarchy
+                                ObjectClass* cls = instance->classDefinition.get();
+                                bool methodFound = false;
+                                while (cls) {
+                                    auto methodIt = cls->methods.find(prop);
+                                    if (methodIt != cls->methods.end()) {
+                                        val = methodIt->second;
+                                        methodFound = true;
+                                        break;
+                                    }
+                                    cls = cls->parentClass.get();
                                 }
+                                if (methodFound) continue;
                             }
 
                             found = false;

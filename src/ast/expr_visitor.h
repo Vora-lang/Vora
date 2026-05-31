@@ -27,6 +27,7 @@ public:
     virtual Value visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) = 0;
     virtual Value visitThisExpr(const ThisExpr& expr) = 0;
     virtual Value visitIncDecExpr(const IncDecExpr& expr) = 0;
+    virtual Value visitTernaryExpr(const TernaryExpr& expr) = 0;
 };
 
 }
