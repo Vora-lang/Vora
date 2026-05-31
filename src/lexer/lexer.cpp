@@ -47,7 +47,8 @@ namespace vora {
     }
 
     bool Lexer::isAlpha(char c) const {
-        return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
+        return std::isalpha(static_cast<unsigned char>(c)) || c == '_' ||
+            static_cast<unsigned char>(c) > 127;  // Unicode (UTF-8 multi-byte)
     }
 
     bool Lexer::isAlphaNumeric(char c) const {
