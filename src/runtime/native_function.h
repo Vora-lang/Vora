@@ -27,6 +27,9 @@ public:
         const std::vector<Value>& arguments
     ) override;
 
+    // VM-friendly call without Interpreter& dependency.
+    Value callDirectly(const std::vector<Value>& arguments) const;
+
     const std::string& name() const;
 
     int arity() const;

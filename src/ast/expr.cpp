@@ -11,6 +11,10 @@ Value LiteralExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitLiteralExpr(*this);
 }
 
+void LiteralExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitLiteralExpr(*this);
+}
+
 std::string LiteralExpr::accept(ExprVisitor<std::string>& visitor) const {
     return visitor.visitLiteralExpr(*this);
 }
@@ -25,6 +29,10 @@ std::unique_ptr<Expr> LiteralExpr::clone() const {
 
 Value BinaryExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitBinaryExpr(*this);
+}
+
+void BinaryExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitBinaryExpr(*this);
 }
 
 std::string BinaryExpr::accept(ExprVisitor<std::string>& visitor) const {
@@ -45,6 +53,10 @@ Value GroupingExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitGroupingExpr(*this);
 }
 
+void GroupingExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitGroupingExpr(*this);
+}
+
 std::string GroupingExpr::accept(ExprVisitor<std::string>& visitor) const {
     return visitor.visitGroupingExpr(*this);
 }
@@ -59,6 +71,10 @@ std::unique_ptr<Expr> GroupingExpr::clone() const {
 
 Value UnaryExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitUnaryExpr(*this);
+}
+
+void UnaryExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitUnaryExpr(*this);
 }
 
 std::string UnaryExpr::accept(ExprVisitor<std::string>& visitor) const {
@@ -77,6 +93,10 @@ Value VariableExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitVariableExpr(*this);
 }
 
+void VariableExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitVariableExpr(*this);
+}
+
 std::string VariableExpr::accept(ExprVisitor<std::string>& visitor) const {
     return visitor.visitVariableExpr(*this);
 }
@@ -91,6 +111,10 @@ std::unique_ptr<Expr> VariableExpr::clone() const {
 
 Value AssignmentExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitAssignmentExpr(*this);
+}
+
+void AssignmentExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitAssignmentExpr(*this);
 }
 
 std::string AssignmentExpr::accept(ExprVisitor<std::string>& visitor) const {
@@ -109,6 +133,10 @@ std::unique_ptr<Expr> AssignmentExpr::clone() const {
 
 Value CallExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitCallExpr(*this);
+}
+
+void CallExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitCallExpr(*this);
 }
 
 std::string CallExpr::accept(ExprVisitor<std::string>& visitor) const {
@@ -133,6 +161,10 @@ Value ArrayExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitArrayExpr(*this);
 }
 
+void ArrayExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitArrayExpr(*this);
+}
+
 std::string ArrayExpr::accept(ExprVisitor<std::string>& visitor) const {
     return visitor.visitArrayExpr(*this);
 }
@@ -155,6 +187,10 @@ Value IndexExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitIndexExpr(*this);
 }
 
+void IndexExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitIndexExpr(*this);
+}
+
 std::string IndexExpr::accept(ExprVisitor<std::string>& visitor) const {
     return visitor.visitIndexExpr(*this);
 }
@@ -171,6 +207,10 @@ std::unique_ptr<Expr> IndexExpr::clone() const {
 
 Value PropertyExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitPropertyExpr(*this);
+}
+
+void PropertyExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitPropertyExpr(*this);
 }
 
 std::string PropertyExpr::accept(ExprVisitor<std::string>& visitor) const {
@@ -191,6 +231,10 @@ Value PropertyAssignmentExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitPropertyAssignmentExpr(*this);
 }
 
+void PropertyAssignmentExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitPropertyAssignmentExpr(*this);
+}
+
 std::string PropertyAssignmentExpr::accept(ExprVisitor<std::string>& visitor) const {
     return visitor.visitPropertyAssignmentExpr(*this);
 }
@@ -209,6 +253,10 @@ Value ThisExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitThisExpr(*this);
 }
 
+void ThisExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitThisExpr(*this);
+}
+
 std::string ThisExpr::accept(ExprVisitor<std::string>& visitor) const {
     return visitor.visitThisExpr(*this);
 }
@@ -223,6 +271,10 @@ std::unique_ptr<Expr> ThisExpr::clone() const {
 
 Value IncDecExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitIncDecExpr(*this);
+}
+
+void IncDecExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitIncDecExpr(*this);
 }
 
 std::string IncDecExpr::accept(ExprVisitor<std::string>& visitor) const {
@@ -241,6 +293,10 @@ std::unique_ptr<Expr> IncDecExpr::clone() const {
 
 Value TernaryExpr::accept(ExprVisitor<Value>& visitor) const {
     return visitor.visitTernaryExpr(*this);
+}
+
+void TernaryExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitTernaryExpr(*this);
 }
 
 std::string TernaryExpr::accept(ExprVisitor<std::string>& visitor) const {

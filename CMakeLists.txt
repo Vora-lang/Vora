@@ -26,6 +26,10 @@ add_executable(Vora
     src/runtime/runtime_error.cpp
 
     src/interpreter/interpreter.cpp
+
+    src/vm/chunk.cpp
+    src/vm/compiler.cpp
+    src/vm/vm.cpp
 )
 
 target_include_directories(

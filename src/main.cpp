@@ -1,4 +1,6 @@
-﻿#include <fstream>
+﻿#include <chrono>
+#include <ctime>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -11,6 +13,11 @@
 #include "interpreter/interpreter.h"
 #include "runtime/runtime_config.h"
 #include "runtime/runtime_error.h"
+
+#include "vm/compiler.h"
+#include "vm/vm.h"
+
+#include <ctime>
 
 using namespace vora;
 
@@ -40,7 +47,8 @@ static std::string readFile(
 static void runScript(
     const std::string& source,
     bool printAst,
-    bool printTokens
+    bool printTokens,
+    bool vmMode
 ) {
     Lexer lexer(source);
     auto tokens = lexer.scanTokens();
@@ -62,6 +70,75 @@ static void runScript(
     if (printAst) {
         ASTPrinter printer;
         std::cout << printer.print(program.get()) << std::endl;
+    }
+
+    if (vmMode) {
+        // Bytecode VM path
+        Compiler compiler;
+        Chunk chunk = compiler.compile(program.get());
+        VM vm;
+
+        // Register builtins
+        vm.defineNative("print", -1,
+            [](const std::vector<Value>& arguments) -> Value {
+                for (size_t i = 0; i < arguments.size(); ++i) {
+                    if (i > 0) std::cout << ' ';
+                    printValue(arguments[i]);
+                }
+                std::cout << std::endl;
+                return nullptr;
+            });
+        vm.defineNative("clock", 0,
+            [](const std::vector<Value>&) -> Value {
+                auto now = std::chrono::system_clock::now().time_since_epoch();
+                auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+                return static_cast<double>(millis) / 1000.0;
+            });
+        vm.defineNative("assert", -1,
+            [](const std::vector<Value>& arguments) -> Value {
+                if (arguments.empty()) return nullptr;
+                if (!VM::isTruthy(arguments[0])) {
+                    std::string msg = "Assertion failed";
+                    if (arguments.size() >= 2 && std::holds_alternative<std::string>(arguments[1])) {
+                        msg = std::get<std::string>(arguments[1]);
+                    }
+                    std::cerr << "VM AssertionError: " << msg << std::endl;
+                    std::exit(1);
+                }
+                return nullptr;
+            });
+        vm.defineNative("int", 1,
+            [](const std::vector<Value>& arguments) -> Value {
+                const auto& arg = arguments[0];
+                if (std::holds_alternative<double>(arg))
+                    return std::trunc(std::get<double>(arg));
+                if (std::holds_alternative<std::string>(arg))
+                    return std::trunc(std::stod(std::get<std::string>(arg)));
+                if (std::holds_alternative<bool>(arg))
+                    return std::get<bool>(arg) ? 1.0 : 0.0;
+                return nullptr;
+            });
+        vm.defineNative("float", 1,
+            [](const std::vector<Value>& arguments) -> Value {
+                const auto& arg = arguments[0];
+                if (std::holds_alternative<double>(arg)) return arg;
+                if (std::holds_alternative<std::string>(arg))
+                    return std::stod(std::get<std::string>(arg));
+                if (std::holds_alternative<bool>(arg))
+                    return std::get<bool>(arg) ? 1.0 : 0.0;
+                return nullptr;
+            });
+
+        // Print bytecode disassembly if requested
+        if (printTokens) {
+            chunk.disassemble("VM Bytecode");
+        }
+
+        InterpretResult result = vm.interpret(chunk);
+        if (result != InterpretResult::OK) {
+            std::exit(1);
+        }
+        return;
     }
 
     Interpreter interpreter(RuntimeConfig{RuntimeMode::Script});
@@ -115,6 +192,7 @@ int main(
     bool printAst = false;
     bool printTokens = false;
     bool repl = false;
+    bool vmMode = false;
     std::string path;
 
     for (int i = 1; i < argc; i++) {
@@ -132,6 +210,11 @@ int main(
 
         if (arg == "--repl") {
             repl = true;
+            continue;
+        }
+
+        if (arg == "--vm") {
+            vmMode = true;
             continue;
         }
 
@@ -159,6 +242,8 @@ int main(
             << "  vora <file>\n"
             << "  vora <file> --ast-printer\n"
             << "  vora <file> --tokens\n"
+            << "  vora <file> --vm\n"
+            << "  vora <file> --vm --tokens\n"
             << "  vora --repl\n";
 
         return 1;
@@ -175,7 +260,7 @@ int main(
     }
 
     try {
-        runScript(source, printAst, printTokens);
+        runScript(source, printAst, printTokens, vmMode);
     }
     catch (const RuntimeError& error) {
         std::cerr

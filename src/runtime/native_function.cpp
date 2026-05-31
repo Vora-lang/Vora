@@ -20,6 +20,10 @@ Value NativeFunction::call(
     return function_(arguments);
 }
 
+Value NativeFunction::callDirectly(const std::vector<Value>& arguments) const {
+    return function_(arguments);
+}
+
 const std::string& NativeFunction::name() const {
     return name_;
 }

@@ -20,6 +20,7 @@ public:
     // with a new R, add a new pure-virtual overload here and implement it
     // in each concrete subclass (expr.cpp).
     virtual Value        accept(ExprVisitor<Value>& visitor)        const = 0;
+    virtual void         accept(ExprVisitor<void>& visitor)         const = 0;
     virtual std::string  accept(ExprVisitor<std::string>& visitor)  const = 0;
 
     virtual std::unique_ptr<Expr> clone() const = 0;
@@ -35,6 +36,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -54,6 +56,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -73,6 +76,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -90,6 +94,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -109,6 +114,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -130,6 +136,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -153,6 +160,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -174,6 +182,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -195,6 +204,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -216,6 +226,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -239,6 +250,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -257,6 +269,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -276,6 +289,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
@@ -297,6 +311,7 @@ public:
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
     std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
