@@ -2,28 +2,53 @@
 
 ## 概述
 
-AST 是词法分析和解释执行之间的中间表示。Vora 使用 C++ 类继承体系表示 AST 节点，通过 `dynamic_cast` 实现访问者模式的分发。
+AST 是词法分析和解释执行之间的中间表示。Vora 使用 **模板化 Visitor 模式** 实现多层双分派（double dispatch），支持不同返回类型的 AST 遍历。
 
-- **相关文件**：`src/ast/expr.h`、`src/ast/stmt.h`、`src/ast/program.h`、`src/ast/ast_printer.h`、`src/ast/ast_printer.cpp`
+- **相关文件**：`src/ast/expr.h`（14 种表达式）、`src/ast/stmt.h`（13 种语句）、`src/ast/program.h`（根节点）、`src/ast/expr_visitor.h`（泛型表达式 Visitor）、`src/ast/stmt_visitor.h`（泛型语句 Visitor）、`src/ast/ast_printer.h/.cpp`（S-expression 调试输出）、`src/ast/expr.cpp`、`src/ast/stmt.cpp`
 - **命名空间**：`vora`
 
 ## 设计原则
 
-1. **所有权**：AST 节点使用 `std::unique_ptr` 管理子节点，确保单一所有权
-2. **多态分发**：解释器通过 `dynamic_cast` 判断节点类型（非 visitor 模式）
-3. **不可变性**：AST 节点在构建后不修改，仅供读取和求值
-4. **头文件内联**：`expr.cpp`、`stmt.cpp`、`program.cpp` 为空文件，所有定义在 `.h` 中
+1. **所有权**：AST 节点使用 `std::unique_ptr` 管理子节点，确保单一所有权。闭包/共享场景使用 `std::shared_ptr`
+2. **模板化 Visitor 模式**：`ExprVisitor<R>` 和 `StmtVisitor<R>` 按返回类型 `R` 参数化——同一接口定义服务于所有 pass（`R=Value` → 解释器；`R=void` → 编译器/解释器语句执行；`R=std::string` → AST Printer）。添加新 pass 只需新增一个 `accept()` 重载
+3. **不可变性**：AST 节点在构建后不修改，仅供读取
+4. **Visitor 分发**：每个 Expr/Stmt 子类为每个使用的返回类型提供 `accept()` 重载（当前 Expr: `Value`/`void`/`std::string`；Stmt: `void`/`std::string`；Program 使用非虚模板 `accept<R>()`）
 
 ## 表达式节点（Expr）
 
-基类：
+基类支持按返回类型多路分派：
 
 ```cpp
 class Expr {
 public:
     virtual ~Expr() = default;
+    virtual Value        accept(ExprVisitor<Value>& visitor)        const = 0;
+    virtual void         accept(ExprVisitor<void>& visitor)         const = 0;
+    virtual std::string  accept(ExprVisitor<std::string>& visitor)  const = 0;
+    virtual std::unique_ptr<Expr> clone() const = 0;
 };
 ```
+
+共 **14 种**表达式子类。
+
+### Visitor 接口
+
+```cpp
+template <typename R>
+class ExprVisitor {
+public:
+    virtual R visitLiteralExpr(const LiteralExpr& expr) = 0;
+    virtual R visitBinaryExpr(const BinaryExpr& expr) = 0;
+    // ... 其余 12 个 visit* 方法
+};
+```
+
+**当前使用的特化**：
+| 特化 | 用途 |
+|------|------|
+| `ExprVisitor<Value>` | 解释器求值（返回运行时值） |
+| `ExprVisitor<void>` | 字节码编译器（副作用式 emit） |
+| `ExprVisitor<std::string>` | AST Printer（返回 S-expression 字符串） |
 
 ### LiteralExpr — 字面量
 
@@ -196,6 +221,21 @@ public:
 
 **Vora 用法**：`this`（在对象方法中使用）
 
+### IncDecExpr — 自增/自减表达式
+
+```cpp
+class IncDecExpr : public Expr {
+public:
+    Token op;                       // PLUS_PLUS 或 MINUS_MINUS
+    std::unique_ptr<Expr> target;   // VariableExpr 或 PropertyExpr
+    bool isPrefix;                  // true = ++x, false = x++
+};
+```
+
+**Vora 用法**：`++x`（前缀）、`x--`（后缀）、`++obj.prop`
+
+**求值规则**：前缀返回新值，后缀返回旧值。支持变量和属性两种目标。
+
 ### TernaryExpr — 三元条件表达式
 
 ```cpp
@@ -213,12 +253,28 @@ public:
 
 ## 语句节点（Stmt）
 
-基类：
+基类支持 Visitor 模式：
 
 ```cpp
 class Stmt {
 public:
     virtual ~Stmt() = default;
+    virtual void         accept(StmtVisitor<void>& visitor)         const = 0;
+    virtual std::string  accept(StmtVisitor<std::string>& visitor)  const = 0;
+};
+```
+
+共 **13 种**语句子类。
+
+### Visitor 接口
+
+```cpp
+template <typename R>
+class StmtVisitor {
+public:
+    virtual R visitExprStmt(const ExprStmt& stmt) = 0;
+    virtual R visitLetStmt(const LetStmt& stmt) = 0;
+    // ... 其余 11 个 visit* 方法
 };
 ```
 
@@ -239,11 +295,14 @@ public:
 class LetStmt : public Stmt {
 public:
     std::string name;
-    std::unique_ptr<Expr> initializer;  // 初始值表达式
+    std::unique_ptr<Expr> initializer;   // 初始值表达式
+    std::string typeAnnotation;          // 空 = 无标注
 };
 ```
 
-**Vora 用法**：`let x = 10`
+**Vora 用法**：`let x = 10`、`let x:int = 42`、`let y:float = 3.14`
+
+类型标注（`:int`/`:float`）当前仅作文档用途，运行时不强制校验。
 
 ### BlockStmt — 代码块
 
@@ -374,7 +433,7 @@ Obj Student(name, age) {
 }
 ```
 
-> Parser 在解析 Obj 块时，会将 `FuncStmt` 归入 `methods`，其他语句归入 `body`。
+> Parser 在解析 Obj 块时，会将 `FuncStmt` 归入 `methods`，其他语句归入 `body`。`ObjStmt` 支持 `parentName` 实现单继承（`Obj Child : Parent`）。
 
 ### BreakStmt / ContinueStmt — 循环控制
 
@@ -433,22 +492,33 @@ public:
 ## Program — 程序根节点
 
 ```cpp
+template <typename R>
+class ProgramVisitor {
+public:
+    virtual R visitProgram(const Program& program) = 0;
+};
+
 class Program {
 public:
-    std::vector<std::unique_ptr<Stmt>> statements;  // 顶层语句列表
+    std::vector<std::unique_ptr<Stmt>> statements;
+
+    // 非虚模板 accept()——Program 无子类，无需虚分派
+    template <typename R>
+    R accept(ProgramVisitor<R>& visitor) const {
+        return visitor.visitProgram(*this);
+    }
 };
 ```
 
 ## ASTPrinter — AST 调试输出
 
 ```cpp
-class ASTPrinter {
+class ASTPrinter : public ExprVisitor<std::string>,
+                   public StmtVisitor<std::string>,
+                   public ProgramVisitor<std::string> {
 public:
-    std::string print(const Expr*);    // 打印表达式
-    std::string print(const Stmt*);    // 打印语句
-    std::string print(const Program*); // 打印程序
-private:
-    std::parenthesize(name, vector<Expr*>);  // 辅助：生成 S-expression
+    std::string print(const Program* program);
+    // visit* 方法直接返回 std::string（无副作用成员变量）
 };
 ```
 
@@ -506,14 +576,20 @@ Expr
 
 ### 添加新的表达式类型
 
-1. 在 `expr.h` 中创建新的子类，继承 `Expr`
-2. 添加必要的字段（`unique_ptr<Expr>`、`Token`、`string` 等）
-3. 在 `parser.cpp` 的相应位置生成该节点
-4. 在 `interpreter.cpp` 的 `evaluate()` 中添加 `dynamic_cast` 分支
-5. 在 `ast_printer.cpp` 的 `print(const Expr*)` 中添加输出逻辑
+1. 在 `expr.h` 中创建新的子类，继承 `Expr`，声明所有 `accept()` 重载（`Value`/`void`/`std::string`）和 `clone()`
+2. 在 `expr_visitor.h` 的 `ExprVisitor<R>` 模板中添加纯虚 `visit*` 方法
+3. 在 `expr.cpp` 中实现所有 `accept()` 重载（每行一个委托）和 `clone()`
+4. 在 `parser.cpp` 的相应位置生成该节点
+5. 在 `interpreter.h/.cpp` 中覆盖新的 `visit*` 方法（继承 `ExprVisitor<Value>`）
+6. 在 `ast_printer.h/.cpp` 中覆盖新的 `visit*` 方法（继承 `ExprVisitor<std::string>`）
+7. 在 `vm/compiler.h/.cpp` 中覆盖新的 `visit*` 方法（继承 `ExprVisitor<void>`）
 
 ### 添加新的语句类型
 
-1. 在 `stmt.h` 中创建新的子类，继承 `Stmt`
-2. 在 `parser.cpp` 的 `statement()` 中添加解析逻辑
-3. 在 `interpreter.cpp` 的 `execute()` 中添加执行逻辑
+1. 在 `stmt.h` 中创建新的子类，继承 `Stmt`，声明 `accept()` 重载
+2. 在 `stmt_visitor.h` 的 `StmtVisitor<R>` 模板中添加纯虚 `visit*` 方法
+3. 在 `stmt.cpp` 中实现 `accept()` 重载
+4. 在 `parser.cpp` 的 `statement()` 中添加解析逻辑
+5. 在 `interpreter.h/.cpp` 中覆盖（继承 `StmtVisitor<void>`）
+6. 在 `ast_printer.h/.cpp` 中覆盖（继承 `StmtVisitor<std::string>`）
+7. 在 `vm/compiler.h/.cpp` 中覆盖（继承 `StmtVisitor<void>`）

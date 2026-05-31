@@ -32,19 +32,19 @@
 
 Vora 处于 **"教学语言"与"实用脚本语言"的交叉地带**。解释器代码清晰、可读性强，适合学习语言实现原理；同时对象系统、异常处理、闭包等特性已超越玩具语言范畴。
 
-**一句话概括**：Vora 是一门类 JavaScript 语法、Lua 级简单性、Wren 式面向对象的动态类型脚本语言，处于 AST 解释器原型阶段，正快速向实用化演进。
+**一句话概括**：Vora 是一门类 JavaScript 语法、Lua 级简单性、Wren 式面向对象的动态类型脚本语言，拥有双后端执行架构（树遍历解释器 + 字节码 VM Phase 1），正快速向实用化演进。
 
 ---
 
 ## 二、实现架构质量评估
 
-### 2.1 整体印象：**B+ 级代码**（~5500 行 C++17）
+### 2.1 整体印象：**B+ 级代码**（~6500 行 C++17）
 
-模块边界清晰，单一人维护下工程质量良好。零外部依赖，纯 C++17 + STL。
+模块边界清晰，单一人维护下工程质量良好。零外部依赖，纯 C++17 + STL。双后端架构（解释器 + 字节码 VM）已就位。
 
 ### 2.2 Lexer（词法分析器）—— 评分：A-
 
-**文件**：`src/lexer/lexer.cpp`（397 行）、`lexer.h`（60 行）、`token.h`（103 行）
+**文件**：`src/lexer/lexer.cpp`（321 行）、`lexer.h`（60 行）、`token.h`（103 行）
 
 **亮点**：
 - 经典手写词法分析器，单遍扫描，代码简洁。
@@ -63,7 +63,7 @@ Vora 处于 **"教学语言"与"实用脚本语言"的交叉地带**。解释器
 
 ### 2.3 Parser（语法分析器）—— 评分：B+
 
-**文件**：`src/parser/parser.cpp`（1097 行）、`parser.h`（86 行）
+**文件**：`src/parser/parser.cpp`（816 行）、`parser.h`（71 行）
 
 **亮点**：
 - **Pratt 解析器**（优先级爬升法）实现正确，优先级表在 `getPrecedence()` 中集中管理，共 7 级。
@@ -78,24 +78,20 @@ Vora 处于 **"教学语言"与"实用脚本语言"的交叉地带**。解释器
 - `objStatement()` 的方法/语句区分依赖于 `dynamic_cast<FuncStmt*>`——`FuncStmt` 归入 `methods`，其他语句归入构造函数 `body`。这个隐式约定缺乏文档。
 - 错误信息格式简陋：`[line N] Error: message`，无列号、无源码行展示。
 
-### 2.4 AST（抽象语法树）—— 评分：B+
+### 2.4 AST（抽象语法树）—— 评分：A-
 
-**文件**：`src/ast/expr.h`（287 行，14 种 Expr）、`stmt.h`（252 行，14 种 Stmt）、`ast_printer.cpp`（421 行）
+**文件**：`src/ast/expr.h`（309 行，14 种 Expr）、`stmt.h`（271 行，13 种 Stmt）、`ast_printer.cpp`（345 行）、`expr_visitor.h`（41 行）、`stmt_visitor.h`（35 行）
 
 **亮点**：
-- Visitor 模式分离数据结构与操作。`ExprVisitor`（返回 `Value`）和 `StmtVisitor`（返回 `void`）作为独立接口，比 Lox 原版的泛型模板更直观。
+- **模板化 Visitor 模式**：`ExprVisitor<R>` 和 `StmtVisitor<R>` 按返回类型参数化——同一接口同时服务于解释器（`R=Value`/`void`）、字节码编译器（`R=void`）和 AST Printer（`R=string`）。添加新 pass 只需新增 `accept()` 重载，Visitor 接口无需复制。
 - Expr 类型覆盖全面：Literal、Binary、Grouping、Unary、Variable、Assignment、Call、Array、Index、Property、PropertyAssignment、This、IncDec、Ternary——共 **14 种**。
-- Stmt 类型覆盖全面：ExprStmt、LetStmt、BlockStmt、ReturnStmt、IfStmt、WhileStmt、ForStmt、FuncStmt、ObjStmt、BreakStmt、ContinueStmt、ThrowStmt、TryStmt——共 **13 种**（Program 不计入）。
+- Stmt 类型覆盖全面：ExprStmt、LetStmt、BlockStmt、ReturnStmt、IfStmt、WhileStmt、ForStmt、FuncStmt、ObjStmt、BreakStmt、ContinueStmt、ThrowStmt、TryStmt——共 **13 种**。
+- `Program::accept<R>()` 为非虚模板——Program 无子类无需虚分派，模板自动为所有 `R` 实例化。
 - `LetStmt` 携带 `typeAnnotation`（`:int`/`:float`），语法上已为类型系统预留空间。
-
-**缺陷**：
-- Visitor 返回类型硬编码——未来加字节码编译器（需返回 `Chunk`）必须定义新 visitor 接口。
-- `ASTPrinter` 强制返回 `Value`（只需 `string`），类型污染。
-- `Program` 未实现 visitor 模式，与其余 AST 节点不一致。
 
 ### 2.5 Interpreter（解释器）—— 评分：B+
 
-**文件**：`src/interpreter/interpreter.cpp`（~1410 行）、`interpreter.h`（140 行）
+**文件**：`src/interpreter/interpreter.cpp`（1477 行）、`interpreter.h`（145 行）
 
 **亮点**：
 - 正确实现词法作用域 + 闭包。`captureClosure()` 使用 `Environment::snapshot()` 深拷贝环境链。
@@ -472,16 +468,25 @@ print(math.PI)
 
 ### P3 — 长期工程（3-6 个月+）
 
-#### 5.13 字节码虚拟机
+#### 5.13 字节码虚拟机 ✅ Phase 1 已完成
 
 AST 解释器 → 字节码编译器 + 栈式 VM：
-- 新增 `OpCode` 指令集（~30 条）
-- 新增 `Compiler`：AST → `Chunk`（字节码 + 常量池）
-- 新增 `VM`：指令 dispatch 循环
 
-**优势**：消除 `dynamic_cast`/虚函数开销，为 JIT 打基础。
+- ✅ `OpCode` 指令集（32 条指令）
+- ✅ `Compiler`：AST → `Chunk`（字节码 + 常量池），实现 `ExprVisitor<void>` + `StmtVisitor<void>` + `ProgramVisitor<void>`
+- ✅ `VM`：指令 dispatch 循环，固定大小 Value 栈（1024 槽位），全局变量表
+- ✅ 跳转回填：`emitJump()`/`patchJump()`/`emitLoop()` 两遍式
+- ✅ 原生函数调用：`callDirectly()` 绕过 `Interpreter&` 依赖
+- ✅ 10 个内建函数全部在 VM 中注册
+- ✅ `--vm` 标志选择 VM 后端，`--vm --tokens` 输出字节码反汇编
 
-**工作量**：2-3 周核心 + 持续优化
+**Phase 2（规划中）**：局部变量（编译时栈槽位）、函数 + 调用帧、闭包 + upvalue、break/continue、for-in、try/catch/throw
+
+**Phase 3（规划中）**：对象系统（class/method/inheritance）、VM 替代解释器成为默认后端
+
+**优势**：消除虚函数/`dynamic_cast` 开销，为 JIT 打基础。
+
+**工作量**：Phase 1 已完成（~1000 行新增 C++），Phase 2/3 各约 1 周
 
 #### 5.14 标记-清除垃圾回收器
 
@@ -586,21 +591,22 @@ class ErrorReporter {
 
 | 模块 | 评价 |
 |------|------|
-| Lexer | 简洁高效（397 行），转义/Unicode/嵌套注释/错误恢复已就位，缺列号 |
-| Parser | Pratt 实现优雅（1097 行），有 panic-mode 恢复，14+14 种节点 |
-| AST | Visitor 模式标准，类型体系完整（28 种节点） |
-| Interpreter | 功能充实（1410 行）：全运算符、短路求值、闭包、继承、异常 |
-| Value | `std::variant` 类型安全，缺少查询接口 |
+| Lexer | 简洁高效（321 行），转义/Unicode/嵌套注释/错误恢复/0x/0o/0b 数字前缀就位 |
+| Parser | Pratt 实现优雅（816 行），有 panic-mode 恢复，14 Expr + 13 Stmt 种节点 |
+| AST | 模板化 Visitor 模式，类型体系完整（27 种节点），接口支持 3 种返回类型 |
+| Interpreter | 功能充实（1477 行）：全运算符、短路求值、闭包、继承、异常 |
+| Compiler+VM | 字节码后端 Phase 1 完成（~1000 行新增）：32 条指令、栈式 VM、跳转回填 |
+| Value | `std::variant` 类型安全，7 种运行时类型 |
 | Environment | 作用域链 + 快照闭包正确，`const_cast` 隐患 |
-| 测试 | 11 个 `.va` 测试文件 + 2 个 runner，缺少 C++ 单元测试 |
+| 测试 | 13 个 `.va` 测试文件 + 2 个 runner（支持 `-VM` 参数），VM 模式 8/13 通过 |
 
 ### 7.2 Vora 的差异化定位
 
 | 维度 | Lua | Python | JavaScript | Vora (当前) |
 |------|-----|--------|------------|-------------|
-| 实现复杂度 | ⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
+| 实现复杂度 | ⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
 | 语言简单性 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐ |
-| 性能 | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐ | ⭐ |
+| 性能 | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐ (VM 后端) |
 | OOP 模型 | 原型式 | 类式 | 原型式 | 类式(轻量+继承) |
 | 标准库 | 极小 | 庞大 | 中等 | 无 |
 | 嵌入友好 | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ |
@@ -611,15 +617,16 @@ class ErrorReporter {
 
 1. **先修 P0**（`len`、`type`、数组/字符串方法、错误信息）——改动小、影响大
 2. **再补 P1**（默认参数、`super`、`switch`）
-3. **然后搭基础设施**（C++ 单元测试 + CI + 标准库起步）
-4. **最后做架构升级**（模块系统 → 字节码 VM → GC）
+3. **然后继续 VM Phase 2**（函数/闭包/局部变量）——Phase 1 已验证架构
+4. **搭基础设施**（C++ 单元测试 + CI + 标准库起步）
+5. **最后做架构升级**（模块系统 → VM Phase 3 对象 → GC）
 
 ---
 
-> **后记**：Vora 目前约 5500 行 C++ 代码，零外部依赖。对于一个单文件脚本语言项目来说代码量克制。相比 Lox，Vora 在对象系统（继承）、字符串插值、异常处理、Pratt 解析（错误恢复）方面更先进；相比 Wren，它更简单、更容易理解。P0 问题解决后，Vora 可以成为一个非常好的嵌入式脚本引擎。
+> **后记**：Vora 目前约 6500 行 C++ 代码，零外部依赖。对于一个双后端脚本语言项目来说代码量克制。相比 Lox，Vora 在对象系统（继承）、字符串插值、异常处理、Pratt 解析（错误恢复）、字节码 VM 方面更先进；相比 Wren，它更简单、更容易理解。P0 问题解决后，Vora 可以成为一个非常好的嵌入式脚本引擎。
 
 ---
 
 *分析日期：2026-05-31*
 
-*基于 Vora 源码分支 `main`，~5500 行 C++17*
+*基于 Vora 源码分支 `main`，~6500 行 C++17*
