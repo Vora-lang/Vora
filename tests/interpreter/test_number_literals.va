@@ -1,0 +1,46 @@
+// Hex, octal, binary literals + bin/oct/hex builtins
+// === Literals ===
+
+// Binary
+assert(0b101 == 5, "0b101 should be 5")
+assert(0b0 == 0, "0b0 should be 0")
+assert(0b1111 == 15, "0b1111 should be 15")
+
+// Octal
+assert(0o12 == 10, "0o12 should be 10")
+assert(0o0 == 0, "0o0 should be 0")
+assert(0o77 == 63, "0o77 should be 63")
+
+// Hexadecimal
+assert(0x1A == 26, "0x1A should be 26")
+assert(0x0 == 0, "0x0 should be 0")
+assert(0xFF == 255, "0xFF should be 255")
+assert(0Xa == 10, "0Xa should be 10")    // uppercase X
+
+// === Built-in functions ===
+
+// bin()
+assert(bin(26) == "0b11010", "bin(26) should be 0b11010")
+assert(bin(0) == "0b0", "bin(0) should be 0b0")
+assert(bin(5) == "0b101", "bin(5) should be 0b101")
+
+// oct()
+assert(oct(10) == "0o12", "oct(10) should be 0o12")
+assert(oct(0) == "0o0", "oct(0) should be 0o0")
+assert(oct(63) == "0o77", "oct(63) should be 0o77")
+
+// hex()
+assert(hex(26) == "0x1a", "hex(26) should be 0x1a")
+assert(hex(0) == "0x0", "hex(0) should be 0x0")
+assert(hex(255) == "0xff", "hex(255) should be 0xff")
+
+// === Round-trip: literal → builtin matches ===
+assert(bin(0b101) == "0b101", "round-trip bin")
+assert(oct(0o12) == "0o12", "round-trip oct")
+assert(hex(0x1A) == "0x1a", "round-trip hex")
+
+// === Large values ===
+assert(0xFFFF == 65535, "0xFFFF should be 65535")
+assert(bin(255) == "0b11111111", "bin(255) should be 8 bits")
+
+print("Hex/oct/bin literals + builtins: PASS")

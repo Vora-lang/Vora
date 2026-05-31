@@ -1,6 +1,7 @@
 ﻿#include "lexer.h"
 
 #include <cctype>
+#include <iostream>
 
 namespace vora {
 
@@ -80,12 +81,44 @@ namespace vora {
         return true;
     }
 
+    void Lexer::error(const std::string& message) {
+        std::cerr << "[line " << line << "] Lexer error: " << message << "\n";
+    }
+
     void Lexer::addToken(TokenType type) {
         std::string text = source.substr(start, current - start);
         tokens.emplace_back(type, text, line);
     }
 
     void Lexer::number() {
+        // Handle 0x / 0o / 0b prefixes (hex, octal, binary)
+        if (source[start] == '0' && current - start == 1) {
+            if (peek() == 'x' || peek() == 'X') {
+                advance(); // consume 'x'
+                while (std::isxdigit(static_cast<unsigned char>(peek()))) {
+                    advance();
+                }
+                addToken(TokenType::NUMBER);
+                return;
+            }
+            if (peek() == 'o' || peek() == 'O') {
+                advance(); // consume 'o'
+                while (peek() >= '0' && peek() <= '7') {
+                    advance();
+                }
+                addToken(TokenType::NUMBER);
+                return;
+            }
+            if (peek() == 'b' || peek() == 'B') {
+                advance(); // consume 'b'
+                while (peek() == '0' || peek() == '1') {
+                    advance();
+                }
+                addToken(TokenType::NUMBER);
+                return;
+            }
+        }
+
         while (std::isdigit(static_cast<unsigned char>(peek()))) {
             advance();
         }
@@ -131,8 +164,8 @@ namespace vora {
 
             if (c == '\\') {
                 if (isAtEnd()) {
-                    addToken(TokenType::INVALID);
-                    return;
+                    error("Unterminated escape sequence in string");
+                    break;  // emit what we have so far
                 }
 
                 char escaped = advance();
@@ -156,7 +189,9 @@ namespace vora {
         }
 
         if (isAtEnd()) {
-            addToken(TokenType::INVALID);
+            error("Unterminated string");
+            // Best-effort: emit what we have so far
+            tokens.emplace_back(TokenType::STRING, value, line);
             return;
         }
 
@@ -316,7 +351,7 @@ namespace vora {
                 addToken(TokenType::AND);
             }
             else {
-                addToken(TokenType::INVALID);
+                error("Unexpected character: '&' (did you mean '&&'?)");
             }
             break;
 
@@ -325,7 +360,7 @@ namespace vora {
                 addToken(TokenType::OR);
             }
             else {
-                addToken(TokenType::INVALID);
+                error("Unexpected character: '|' (did you mean '||'?)");
             }
             break;
 
@@ -354,7 +389,7 @@ namespace vora {
                 identifier();
             }
             else {
-                addToken(TokenType::INVALID);
+                error("Unexpected character: '" + std::string(1, c) + "'");
             }
             break;
         }

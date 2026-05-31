@@ -218,6 +218,67 @@ Interpreter::Interpreter(
             return nullptr;
         }
     );
+
+    defineNative(
+        "bin",
+        1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<double>(arguments[0]))
+                throw RuntimeError("bin() expects a number", Token(TokenType::IDENTIFIER, "bin", 0));
+            double val = std::get<double>(arguments[0]);
+            int64_t n = static_cast<int64_t>(std::trunc(val));
+            if (n == 0) return std::string("0b0");
+            bool neg = n < 0;
+            uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
+            std::string bits;
+            while (u > 0) {
+                bits = (u & 1 ? '1' : '0') + bits;
+                u >>= 1;
+            }
+            return (neg ? std::string("-0b") : std::string("0b")) + bits;
+        }
+    );
+
+    defineNative(
+        "oct",
+        1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<double>(arguments[0]))
+                throw RuntimeError("oct() expects a number", Token(TokenType::IDENTIFIER, "oct", 0));
+            double val = std::get<double>(arguments[0]);
+            int64_t n = static_cast<int64_t>(std::trunc(val));
+            if (n == 0) return std::string("0o0");
+            bool neg = n < 0;
+            uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
+            std::string digits;
+            while (u > 0) {
+                digits = static_cast<char>('0' + (u & 7)) + digits;
+                u >>= 3;
+            }
+            return (neg ? std::string("-0o") : std::string("0o")) + digits;
+        }
+    );
+
+    defineNative(
+        "hex",
+        1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<double>(arguments[0]))
+                throw RuntimeError("hex() expects a number", Token(TokenType::IDENTIFIER, "hex", 0));
+            double val = std::get<double>(arguments[0]);
+            int64_t n = static_cast<int64_t>(std::trunc(val));
+            if (n == 0) return std::string("0x0");
+            bool neg = n < 0;
+            uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
+            const char* hexChars = "0123456789abcdef";
+            std::string digits;
+            while (u > 0) {
+                digits = hexChars[u & 0xF] + digits;
+                u >>= 4;
+            }
+            return (neg ? std::string("-0x") : std::string("0x")) + digits;
+        }
+    );
 }
 
 void Interpreter::defineNative(

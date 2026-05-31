@@ -631,8 +631,28 @@ std::unique_ptr<Expr> Parser::primary() {
     }
 
     if (match(TokenType::NUMBER)) {
-        double value =
-            std::stod(previous().lexeme);
+        double value;
+        const std::string& lexeme = previous().lexeme;
+
+        // Handle hex, octal, binary prefixes
+        if (lexeme.size() >= 2 && lexeme[0] == '0') {
+            switch (lexeme[1]) {
+                case 'x': case 'X':
+                    value = static_cast<double>(std::stoul(lexeme, nullptr, 16));
+                    break;
+                case 'o': case 'O':
+                    value = static_cast<double>(std::stoul(lexeme.substr(2), nullptr, 8));
+                    break;
+                case 'b': case 'B':
+                    value = static_cast<double>(std::stoul(lexeme.substr(2), nullptr, 2));
+                    break;
+                default:
+                    value = std::stod(lexeme);
+                    break;
+            }
+        } else {
+            value = std::stod(lexeme);
+        }
 
         return std::make_unique<LiteralExpr>(
             value

@@ -57,9 +57,9 @@ Vora 处于 **"教学语言"与"实用脚本语言"的交叉地带**。解释器
 - ✅ 单引号字符串 `'...'` 与双引号等价。
 
 **缺陷**：
-- **零错误恢复**——遇到非法字符直接产生 `INVALID` token，下游 Parser 大概率崩溃。（注：Parser 端已有 `synchronize()`，但 Lexer 端仍是 fail-fast。）
-- 不支持十六进制/八进制/二进制数字字面量。
 - Token 仅记录行号，无列号——错误定位精度受限。
+- ✅ 错误恢复：非法字符报错后跳过继续扫描，不再产生 `INVALID` token 阻断解析。
+- ✅ 十六进制/八进制/二进制数字字面量：`0x1A`、`0o12`、`0b101`，以及 `bin()`/`oct()`/`hex()` 转换函数。
 
 ### 2.3 Parser（语法分析器）—— 评分：B+
 
@@ -108,7 +108,7 @@ Vora 处于 **"教学语言"与"实用脚本语言"的交叉地带**。解释器
 - ✅ `++`/`--`：前缀/后缀，支持变量和属性。
 - ✅ `? :`：三元条件，短路求值。
 - ✅ Obj 单继承：`Obj Child : Parent` 语法，构造函数链根→叶执行，方法沿继承链查找。
-- ✅ 7 个内建函数：`print`、`clock`、`input`、`int`、`float`、`range`、`assert`。
+- ✅ 10 个内建函数：`print`、`clock`、`input`、`int`、`float`、`range`、`assert`、`bin`、`oct`、`hex`。 
 
 **缺陷**：
 - `isTruthy` 当前对引用类型（数组、函数、对象）始终返回 `true`——无法表达"空数组/空对象为假"（但这与主流脚本语言一致）。
@@ -229,7 +229,7 @@ print("${undefined_var}")         // 保留原文，不报错
 
 在 `LiteralExpr` 求值时完成插值。
 
-### 3.7 内建函数（7 个）
+### 3.7 内建函数（10 个）
 
 | 函数 | 参数 | 说明 |
 |------|------|------|
@@ -240,6 +240,11 @@ print("${undefined_var}")         // 保留原文，不报错
 | `float(value)` | 1 | 转浮点数，接受 number/string/bool |
 | `range(...)` | 变参 | `range(stop)` / `range(start,stop)` / `range(start,stop,step)` |
 | `assert(...)` | 变参 | `assert(condition, message?)` — 失败抛出 RuntimeError |
+| `bin(num)` | 1 | 数字转二进制字符串 `"0b..."` |
+| `oct(num)` | 1 | 数字转八进制字符串 `"0o..."` |
+| `hex(num)` | 1 | 数字转十六进制字符串 `"0x..."` |
+
+数字字面量支持 `0b`（二进制）、`0o`（八进制）、`0x`（十六进制）前缀。
 
 ### 3.8 数组
 
@@ -530,7 +535,8 @@ std/
 | `try`/`catch`/`finally` | `TryStmt` + `ThrowSignal`，finally 始终执行 |
 | `throw` 自定义错误 | `ThrowSignal{Value}`，catch 绑定原值 |
 | 测试框架 | `assert()` + 11 个 `.va` 测试文件 + runner |
-| 内建函数 | `print`、`clock`、`input`、`int`、`float`、`range`、`assert` |
+| 内建函数 | `print`、`clock`、`input`、`int`、`float`、`range`、`assert`、`bin`、`oct`、`hex` |
+| 数字字面量 | `0x`/`0o`/`0b` 前缀（十六进制/八进制/二进制） |
 
 ---
 
@@ -580,7 +586,7 @@ class ErrorReporter {
 
 | 模块 | 评价 |
 |------|------|
-| Lexer | 简洁高效（397 行），转义/Unicode/嵌套注释已就位，缺列号 |
+| Lexer | 简洁高效（397 行），转义/Unicode/嵌套注释/错误恢复已就位，缺列号 |
 | Parser | Pratt 实现优雅（1097 行），有 panic-mode 恢复，14+14 种节点 |
 | AST | Visitor 模式标准，类型体系完整（28 种节点） |
 | Interpreter | 功能充实（1410 行）：全运算符、短路求值、闭包、继承、异常 |

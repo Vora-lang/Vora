@@ -52,6 +52,8 @@ private:
 
     bool match(char expected);
 
+    void error(const std::string& message);
+
     void lineComment();
 
     void blockComment();
