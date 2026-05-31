@@ -1,148 +1,225 @@
 # Vora
 
+Vora 是一门动态类型脚本语言，类 JavaScript 语法、Lua 级简单性、Wren 式面向对象。
 
-## Progress
+当前为 **AST 树遍历解释器**（第一版），~5500 行 C++17，零外部依赖。
 
-> Source → Token ✔
-
-> Token → AST ✔
-
-> AST → Runtime / Interpreter ✔
-
-## Base
-
-| 项目     | 名字      |
-| :------- | --------- |
-| 语言     | `Vora`    |
-| 文件     | `.va`     |
-| 解释器   | `vora`    |
-| VM       | `Vora VM` |
-| 包管理器 | `vpm`    |
-
-## Aim
-
-### 第一版 ✔
-
-> AST Interpreter
-
-> 不要 VM。
-
-------
-
-### 第二版
-
-> Bytecode VM
-
-------
-
-### 第三版
-
-> 优化/JIT
-
-## Feature
-
-### v0.01
-Literal + Expression
-
-支持：
 ```vora
-1 + 2 * 3
-"hello"
-TRUE
-NULL
-```
-目标：
-```vora
-Expression Parser
-```
-### v0.02
-Variable + Scope
+func greet(name) {
+    return "Hello, " + name + "!"
+}
 
-支持：
-```vora
-let a = 10
-{
-    let b = 20
+let names = ["World", "Vora", "你"]
+for name in names {
+    print(greet(name))
 }
 ```
-目标：
-```vora
-Environment / Scope
+
+## 快速开始
+
+```powershell
+# 构建（Windows / CMake）
+.\build.ps1
+
+# 运行脚本
+./build/Debug/Vora.exe examples/main.va
+
+# REPL 模式
+./build/Debug/Vora.exe --repl
+
+# 打印 AST
+./build/Debug/Vora.exe examples/main.va --ast-printer
+
+# 打印 Token 流
+./build/Debug/Vora.exe examples/main.va --tokens
 ```
 
-### v0.03
-Function
+## 语言概览
 
-支持：
+### 类型
+
+```vora
+let n = 42           // Number (double)
+let f = 3.14
+let b = true         // Boolean
+let s = "hello"      // String
+let a = [1, 2, 3]    // Array
+let nothing = null
+```
+
+数字支持 `0x`/`0o`/`0b` 前缀：
+```vora
+0xFF    // 255（十六进制）
+0o77    // 63（八进制）
+0b101   // 5（二进制）
+```
+
+### 运算符
+
+算术 `+` `-` `*` `/` `%` `**` · 比较 `<` `<=` `>` `>=` `==` `!=` · 逻辑 `&&` `||` `!`（短路求值）· 三元 `? :` · 自增 `++` `--` · 复合赋值 `+=` `-=` `*=` `/=` `%=`
+
+`+` 同时支持字符串拼接、数组合并/追加。
+
+### 变量与作用域
+
+```vora
+let x = 10           // 声明
+x = 20               // 赋值（词法作用域链查找）
+{ let x = 30 }       // 块作用域遮蔽
+```
+
+### 控制流
+
+```vora
+if (x > 0) {
+    print("positive")
+} else {
+    print("non-positive")
+}
+
+while (n > 0) {
+    n = n - 1
+}
+
+for item in [1, 2, 3] { print(item) }
+for ch in "Vora"       { print(ch) }
+for i in range(5)      { print(i) }  // 0..4
+```
+
+`break` / `continue` 有效。
+
+### 函数与闭包
+
 ```vora
 func add(a, b) {
     return a + b
 }
-```
-目标：
-```
-Call Frame
+
+func makeCounter() {
+    let count = 0
+    return func() { count = count + 1; return count }
+}
+let c = makeCounter()
+print(c())  // 1
+print(c())  // 2
 ```
 
-### v0.04
-Control Flow
+### 对象（含继承）
 
-支持：
 ```vora
-if
-while
-for
-break
-continue
+Obj Animal(name) {
+    this.name = name
+    func speak() { print("...") }
+}
+
+Obj Dog : Animal (name, breed) {
+    this.breed = breed
+    func speak() { print("Woof! I'm " + this.name) }
+}
+
+let d = Dog("Rex", "Husky")
+d.speak()      // "Woof! I'm Rex"
+print(d.name)  // "Rex"
 ```
-目标：
+
+### 异常处理
+
 ```vora
-Jump / Branch
+try {
+    throw "something went wrong"
+} catch (e) {
+    print("Caught: " + e)
+} finally {
+    print("Cleanup")
+}
 ```
 
-### v0.05
-Object + Array
+### 字符串插值
 
-支持：
 ```vora
-Obj Student(){}
-[]
-```
-目标：
-```vora
-Heap Object
+let name = "World"
+print("Hello ${name}!")  // "Hello World!"
 ```
 
-### v0.06
-Closure
+### 内建函数
 
-支持闭包。
+| 函数 | 说明 |
+|------|------|
+| `print(...)` | 变参输出，空格分隔 |
+| `clock()` | Unix 时间戳（秒） |
+| `input(prompt?)` | 读取 stdin 一行 |
+| `int(value)` | 转整数（截断） |
+| `float(value)` | 转浮点数 |
+| `range(stop)` / `range(start, stop, step)` | 生成数字数组 |
+| `assert(cond, msg?)` | 断言 |
+| `bin(num)` | → `"0b..."` |
+| `oct(num)` | → `"0o..."` |
+| `hex(num)` | → `"0x..."` |
 
-目标：
-```vora
-Captured Environment
+## 项目结构
+
 ```
-### v0.07
-Exception
-
-支持：
-```vora
-try catch finally
+Vora/
+├── src/
+│   ├── lexer/       词法分析器（397 行）
+│   ├── ast/          AST 节点 + Visitor 接口 + AST Printer
+│   ├── parser/       Pratt 解析器（1097 行）
+│   ├── interpreter/  树遍历解释器（~1480 行）
+│   └── runtime/      值系统 / 作用域 / 可调用对象 / 错误
+├── examples/         24 个示例文件（按特性编号）
+├── tests/            13 个测试文件 + 运行脚本
+├── docs/             开发文档（10 篇，中文）
+├── std/              标准库（规划中）
+├── build.ps1         构建脚本
+└── CMakeLists.txt
 ```
 
-### v0.08
-Module System
+## 进度
 
-支持：
-```vora
-import "math"
+| 版本 | 特性 | 状态 |
+|------|------|------|
+| v0.01 | 字面量 + 表达式 | ✅ |
+| v0.02 | 变量 + 作用域 | ✅ |
+| v0.03 | 函数 | ✅ |
+| v0.04 | 控制流（if/while/for/break/continue） | ✅ |
+| v0.05 | 对象 + 数组 + 继承 | ✅ |
+| v0.06 | 闭包 | ✅ |
+| v0.07 | 异常（try/catch/finally/throw） | ✅ |
+| v0.08 | 模块系统（import/export） | ⏳ |
+| v0.1 | 字节码 VM | 第二版 |
+| v0.2 | 优化 / JIT | 第三版 |
+
+## 测试
+
+```powershell
+# 运行全部测试
+.\tests\run_tests.ps1
+
+# 单个测试
+./build/Debug/Vora.exe tests/interpreter/test_logical.va
 ```
-## Perfer
 
-> [目录 · Crafting Interpreters](https://zaslee.github.io/craftinginterpreters/contents.html)
+## 文档
+
+| 文档 | 内容 |
+|------|------|
+| `docs/01-简介.md` | 项目简介 |
+| `docs/02-项目结构.md` | 项目结构 |
+| `docs/03-词法分析器开发文档.md` | Lexer 设计 |
+| `docs/04-AST开发文档.md` | AST 节点设计 |
+| `docs/05-语法分析器开发文档.md` | Pratt Parser 设计 |
+| `docs/06-解释器开发文档.md` | Interpreter 设计 |
+| `docs/07-运行时系统开发文档.md` | Value / Environment / Callable |
+| `docs/08-已实现功能总结.md` | 功能总结 |
+| `docs/09-后续优化建议.md` | 优化路线图 |
+| `docs/10-程序员视角-Vora语言深度分析与UX路线图.md` | 深度分析 + UX 路线图 |
+
+## 参考
+
+> [Crafting Interpreters](https://craftinginterpreters.com/)
 >
-> [Lua 5.4 source code](https://www.lua.org/source/5.4/)
+> [Lua 5.4](https://www.lua.org/source/5.4/)
 >
-> [– Wren](https://wren.io/)
+> [Wren](https://wren.io/)
 >
 > [CPython](https://github.com/python/cpython)
