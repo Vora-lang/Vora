@@ -1,0 +1,27 @@
+// lexer/test_tokens.va — Token recognition tests
+// Run: vora tests/lexer/test_tokens.va
+
+print("=== Lexer: Token Tests ===")
+
+// Numbers
+assert(42 == 42, "integer literal")
+assert(3.14 == 3.14, "float literal")
+assert(-1 == -1, "negative number")
+
+// Strings
+assert("hello" == "hello", "string literal")
+assert("" == "", "empty string")
+
+// Booleans
+assert(true == true, "true literal")
+assert(false == false, "false literal")
+assert(true != false, "true vs false")
+
+// Null
+assert(null == null, "null literal")
+
+// Identifiers
+let x = 10
+assert(x == 10, "identifier binding")
+
+print("Lexer token tests: PASS")

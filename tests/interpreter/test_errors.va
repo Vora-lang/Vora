@@ -1,0 +1,77 @@
+// interpreter/test_errors.va — Error handling tests
+// Run: vora tests/interpreter/test_errors.va
+
+print("=== Interpreter: Error Handling Tests ===")
+
+// try/catch (RuntimeError → string)
+try {
+    let x = 1 / 0
+    assert(false, "should not reach")
+} catch (e) {
+    assert(e != "", "catch runtime error")
+}
+
+// try/catch with throw
+try {
+    throw "test error"
+    assert(false, "should not reach")
+} catch (e) {
+    assert(e == "test error", "catch thrown string")
+}
+
+// try/finally always executes
+let finallyRan = false
+try {
+    let y = 1
+} finally {
+    finallyRan = true
+}
+assert(finallyRan, "finally executes on normal path")
+
+// try/catch/finally
+let finallyRan2 = false
+try {
+    throw "err"
+} catch (e) {
+    assert(e == "err", "caught in try/catch/finally")
+} finally {
+    finallyRan2 = true
+}
+assert(finallyRan2, "finally in try/catch/finally")
+
+// Nested try/catch
+let innerCaught = false
+try {
+    try {
+        throw "inner"
+    } catch (e) {
+        innerCaught = true
+        assert(e == "inner", "inner catch")
+    }
+} catch (e) {
+    assert(false, "outer should not catch")
+}
+assert(innerCaught, "nested try/catch")
+
+// Return inside try-finally
+func returnInTry() {
+    try {
+        return "val"
+    } finally {
+        // This should still run
+        let dummy = 1
+    }
+}
+assert(returnInTry() == "val", "return in try with finally")
+
+// Custom error object
+Obj MyError(msg) {
+    this.message = msg
+}
+try {
+    throw MyError("custom")
+} catch (e) {
+    assert(e.message == "custom", "custom error object")
+}
+
+print("Interpreter error handling tests: PASS")

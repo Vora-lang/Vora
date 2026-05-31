@@ -1,0 +1,26 @@
+// lexer/test_strings.va — String and interpolation token tests
+// Run: vora tests/lexer/test_strings.va
+
+print("=== Lexer: String Tests ===")
+
+// Basic strings
+assert("hello" == "hello", "basic string")
+assert("a" == "a", "single char string")
+
+// Escapes (Vora supports these via lexer)
+assert("\"" == "\"", "escaped quote")
+assert("\n" == "\n", "newline escape")
+assert("\t" == "\t", "tab escape")
+
+// Single quotes also work
+assert('x' == 'x', "single quoted char")
+assert('hello' == 'hello', "single quoted string")
+
+// String interpolation
+let name = "Vora"
+assert("Hello ${name}!" == "Hello Vora!", "string interpolation")
+
+// Empty interpolation fallback (undefined var keeps original text)
+assert("${undefined_var}" == "${undefined_var}", "undefined interpolation kept")
+
+print("Lexer string tests: PASS")

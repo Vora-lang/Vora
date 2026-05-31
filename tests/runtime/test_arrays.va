@@ -1,0 +1,45 @@
+// runtime/test_arrays.va — Array tests
+// Run: vora tests/runtime/test_arrays.va
+
+print("=== Runtime: Array Tests ===")
+
+// Array creation
+let arr = [1, 2, 3]
+assert(arr[0] == 1, "array index 0")
+assert(arr[1] == 2, "array index 1")
+assert(arr[2] == 3, "array index 2")
+
+// Empty array
+let empty = []
+assert(empty != null, "empty array not null")
+
+// Mixed types
+let mixed = [1, "hello", true, null]
+assert(mixed[0] == 1, "array number")
+assert(mixed[1] == "hello", "array string")
+assert(mixed[2] == true, "array bool")
+assert(mixed[3] == null, "array null")
+
+// Nested arrays
+let nested = [[1, 2], [3, 4]]
+assert(nested[0][0] == 1, "nested array")
+assert(nested[1][1] == 4, "nested array 2")
+
+// Array concat with +=
+let a = [1, 2]
+a += [3, 4]
+assert(a[0] == 1, "concat index 0")
+assert(a[2] == 3, "concat index 2")
+
+// Array assignment
+arr[0] = 10
+assert(arr[0] == 10, "array element assign")
+
+// For-in over array
+let sum = 0
+for item in [10, 20, 30] {
+    sum += item
+}
+assert(sum == 60, "for-in array sum")
+
+print("Runtime array tests: PASS")

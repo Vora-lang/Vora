@@ -189,6 +189,35 @@ Interpreter::Interpreter(
             return arr;
         }
     );
+
+    defineNative(
+        "assert",
+        -1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (arguments.empty()) {
+                throw RuntimeError(
+                    "assert() expects at least 1 argument",
+                    Token(TokenType::IDENTIFIER, "assert", 0)
+                );
+            }
+
+            bool condition = Interpreter::isTruthy(arguments[0]);
+            if (!condition) {
+                std::string message = "Assertion failed";
+                if (arguments.size() >= 2 && std::holds_alternative<std::string>(arguments[1])) {
+                    message = std::get<std::string>(arguments[1]);
+                } else if (arguments.size() >= 2) {
+                    message = valueToString(arguments[1]);
+                }
+                throw RuntimeError(
+                    message,
+                    Token(TokenType::IDENTIFIER, "assert", 0)
+                );
+            }
+
+            return nullptr;
+        }
+    );
 }
 
 void Interpreter::defineNative(
@@ -657,6 +686,33 @@ Value Interpreter::visitBinaryExpr(const BinaryExpr& expr) {
         }
     }
 
+    // --- equality (all types) ---
+    if (expr.op.type == TokenType::EQUAL_EQUAL || expr.op.type == TokenType::NOT_EQUAL) {
+
+        auto doCompare = [](const Value& a, const Value& b) -> bool {
+            // Same type
+            if (a.index() != b.index()) return false;
+
+            if (std::holds_alternative<std::nullptr_t>(a)) return true;
+            if (std::holds_alternative<double>(a)) return std::get<double>(a) == std::get<double>(b);
+            if (std::holds_alternative<bool>(a)) return std::get<bool>(a) == std::get<bool>(b);
+            if (std::holds_alternative<std::string>(a)) return std::get<std::string>(a) == std::get<std::string>(b);
+
+            // Reference types — compare by pointer identity
+            if (std::holds_alternative<std::shared_ptr<Array>>(a))
+                return std::get<std::shared_ptr<Array>>(a) == std::get<std::shared_ptr<Array>>(b);
+            if (std::holds_alternative<std::shared_ptr<Callable>>(a))
+                return std::get<std::shared_ptr<Callable>>(a) == std::get<std::shared_ptr<Callable>>(b);
+            if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(a))
+                return std::get<std::shared_ptr<ObjectInstance>>(a) == std::get<std::shared_ptr<ObjectInstance>>(b);
+
+            return false;
+        };
+
+        bool equal = doCompare(left, right);
+        return expr.op.type == TokenType::EQUAL_EQUAL ? equal : !equal;
+    }
+
     // --- numeric operations ---
     if (
         std::holds_alternative<double>(left)
@@ -713,12 +769,6 @@ Value Interpreter::visitBinaryExpr(const BinaryExpr& expr) {
 
         case TokenType::GREATER_EQUAL:
             return l >= r;
-
-        case TokenType::EQUAL_EQUAL:
-            return l == r;
-
-        case TokenType::NOT_EQUAL:
-            return l != r;
 
         default:
             break;

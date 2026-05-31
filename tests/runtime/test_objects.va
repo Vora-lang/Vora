@@ -1,0 +1,86 @@
+// runtime/test_objects.va — Object system tests
+// Run: vora tests/runtime/test_objects.va
+
+print("=== Runtime: Object Tests ===")
+
+// Basic object
+Obj Point(x, y) {
+    this.x = x
+    this.y = y
+
+    func distance() {
+        return this.x + this.y
+    }
+}
+let p = Point(3, 4)
+assert(p.x == 3, "property read")
+assert(p.y == 4, "property y")
+assert(p.distance() == 7, "method call")
+
+// Property assignment
+p.x = 10
+assert(p.x == 10, "property write")
+
+// This binding
+Obj Counter(init) {
+    this.val = init
+    func get() { return this.val }
+    func inc() { this.val += 1; return this.val }
+}
+let c = Counter(0)
+assert(c.get() == 0, "this get")
+assert(c.inc() == 1, "this inc")
+assert(c.inc() == 2, "this inc again")
+
+// Multiple instances
+let c1 = Counter(100)
+let c2 = Counter(200)
+assert(c1.get() == 100, "instance 1 independent")
+assert(c2.get() == 200, "instance 2 independent")
+
+// Inheritance - basic
+Obj Animal(name) {
+    this.name = name
+    func speak() { return "generic" }
+}
+Obj Dog : Animal (name, breed) {
+    this.breed = breed
+    func speak() { return "woof" }
+    func getBreed() { return this.breed }
+}
+let d = Dog("Rex", "Husky")
+assert(d.name == "Rex", "inherited property")
+assert(d.breed == "Husky", "own property")
+assert(d.speak() == "woof", "method override")
+assert(d.getBreed() == "Husky", "own method")
+
+// Inheritance - multi-level
+Obj Puppy : Dog (name, breed, toy) {
+    this.toy = toy
+    func speak() { return "yip" }
+}
+let pup = Puppy("Max", "Golden", "ball")
+assert(pup.name == "Max", "multi-level prop")
+assert(pup.breed == "Golden", "mid-level prop")
+assert(pup.toy == "ball", "leaf prop")
+assert(pup.speak() == "yip", "leaf override")
+
+// Object with only methods (no params)
+Obj Logger() {
+    func log(msg) {
+        return "LOG: " + msg
+    }
+}
+let log = Logger()
+assert(log.log("test") == "LOG: test", "method-only object")
+
+// Multiple methods
+Obj Calc() {
+    func double(x) { return x * 2 }
+    func triple(x) { return x * 3 }
+}
+let calc = Calc()
+assert(calc.double(5) == 10, "multi-method 1")
+assert(calc.triple(5) == 15, "multi-method 2")
+
+print("Runtime object tests: PASS")

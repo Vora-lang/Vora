@@ -1,0 +1,44 @@
+// parser/test_expressions.va — Expression parsing tests
+// Run: vora tests/parser/test_expressions.va
+
+print("=== Parser: Expression Tests ===")
+
+// Arithmetic
+assert(1 + 2 == 3, "addition")
+assert(5 - 3 == 2, "subtraction")
+assert(3 * 4 == 12, "multiplication")
+assert(10 / 3 == 10.0 / 3.0, "division")
+assert(10 % 3 == 1, "modulo")
+assert(2 ** 3 == 8, "power")
+assert(2 ** 3 ** 2 == 512, "power right-assoc")  // 2 ** (3 ** 2) = 2**9
+
+// Comparison
+assert(1 < 2, "less than")
+assert(2 > 1, "greater than")
+assert(1 <= 1, "less equal")
+assert(2 >= 2, "greater equal")
+assert(1 != 2, "not equal")
+assert(1 == 1, "equal")
+
+// Logical (not)
+assert(!false, "not false")
+assert(!true == false, "not true")
+
+// Grouping
+assert((1 + 2) * 3 == 9, "grouping")
+
+// Ternary
+assert((true ? "yes" : "no") == "yes", "ternary true")
+assert((false ? "yes" : "no") == "no", "ternary false")
+// Right-associativity: a ? b : c ? d : e  ==  a ? b : (c ? d : e)
+let t = true ? "a" : false ? "b" : "c"
+assert(t == "a", "ternary right-assoc")
+
+// Unary
+assert(-(3) == -3, "negation")
+assert(!false == true, "not false")
+
+// Concat
+assert("a" + "b" == "ab", "string concat")
+
+print("Parser expression tests: PASS")
