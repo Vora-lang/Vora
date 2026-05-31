@@ -512,11 +512,16 @@ bool Interpreter::isTruthy(
 void Interpreter::interpret(
     const Program* program
 ) {
+    program->accept(*this);
+}
 
+void Interpreter::visitProgram(
+    const Program& program
+) {
     try {
 
         for (const auto& stmt :
-            program->statements) {
+            program.statements) {
 
             execute(stmt.get());
         }

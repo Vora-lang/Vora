@@ -184,7 +184,7 @@ std::unique_ptr<Stmt> Parser::letStatement() {
     );
 }
 
-std::unique_ptr<Stmt> Parser::blockStatement() {
+std::unique_ptr<BlockStmt> Parser::blockStatement() {
 
     std::vector<std::unique_ptr<Stmt>> statements;
 
@@ -347,28 +347,16 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
         return nullptr;
     }
 
-    auto bodyStmt = blockStatement();
+    auto body = blockStatement();
 
-    if (!bodyStmt) {
-        return nullptr;
-    }
-
-    auto* block =
-        dynamic_cast<BlockStmt*>(bodyStmt.get());
-
-    if (!block) {
-
-                    error("Expected block body\n");
-
+    if (!body) {
         return nullptr;
     }
 
     return std::make_unique<FuncStmt>(
         name,
         std::move(params),
-        std::shared_ptr<BlockStmt>(
-            dynamic_cast<BlockStmt*>(bodyStmt.release())
-        )
+        std::shared_ptr<BlockStmt>(std::move(body))
     );
 }
 
@@ -434,6 +422,15 @@ std::unique_ptr<Stmt> Parser::objStatement() {
         return nullptr;
     }
 
+    // Object body members are classified by statement type:
+    // - FuncStmt nodes (from `func` keyword) → methods vector
+    // - All other statements → constructor body (bodyStmts)
+    // This convention means that `func` declarations inside an obj
+    // are automatically treated as methods, while `let`, `if`,
+    // `while`, expression-statements, etc. run in the constructor.
+    // The separation relies on the parser dispatch in statement():
+    // `func` → funcStatement() returns FuncStmt; everything else
+    // returns a different Stmt subclass.
     std::vector<std::unique_ptr<Stmt>> methods;
     std::vector<std::unique_ptr<Stmt>> bodyStmts;
 

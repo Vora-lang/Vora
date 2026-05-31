@@ -8,12 +8,18 @@
 
 namespace vora {
 
+template <typename R>
 class StmtVisitor;
 
 class Stmt {
 public:
     virtual ~Stmt() = default;
-    virtual void accept(StmtVisitor& visitor) const = 0;
+
+    // One accept() overload per return type in use. When adding a new pass
+    // with a new R, add a new pure-virtual overload here and implement it
+    // in each concrete subclass (stmt.cpp).
+    virtual void         accept(StmtVisitor<void>& visitor)         const = 0;
+    virtual std::string  accept(StmtVisitor<std::string>& visitor)  const = 0;
 };
 
 class ExprStmt : public Stmt {
@@ -24,7 +30,8 @@ public:
         : expression(std::move(expression)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::unique_ptr<Expr> expression;
 };
@@ -41,7 +48,8 @@ public:
           typeAnnotation(std::move(typeAnnotation)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::string name;
 
@@ -58,7 +66,8 @@ public:
         : statements(std::move(statements)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::vector<std::unique_ptr<Stmt>> statements;
 };
@@ -71,7 +80,8 @@ public:
         : value(std::move(value)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::unique_ptr<Expr> value;
 };
@@ -88,7 +98,8 @@ public:
           elseBranch(std::move(elseBranch)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::unique_ptr<Expr> condition;
 
@@ -107,7 +118,8 @@ public:
           body(std::move(body)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::unique_ptr<Expr> condition;
 
@@ -128,7 +140,8 @@ public:
           forToken(std::move(forToken)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::string variable;
 
@@ -151,7 +164,8 @@ public:
           body(std::move(body)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::string name;
 
@@ -176,7 +190,8 @@ public:
           body(std::move(body)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::string name;
 
@@ -195,7 +210,8 @@ public:
         : keyword(std::move(keyword)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     Token keyword;
 };
@@ -206,7 +222,8 @@ public:
         : keyword(std::move(keyword)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     Token keyword;
 };
@@ -221,7 +238,8 @@ public:
           keyword(std::move(keyword)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::unique_ptr<Expr> value;
     Token keyword;
@@ -241,7 +259,8 @@ public:
           finallyBlock(std::move(finallyBlock)) {
     }
 
-    void accept(StmtVisitor& visitor) const override;
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::unique_ptr<Stmt> tryBlock;
     std::string catchVar;               // empty = no catch clause

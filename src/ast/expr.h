@@ -9,12 +9,19 @@
 
 namespace vora {
 
+template <typename R>
 class ExprVisitor;
 
 class Expr {
 public:
     virtual ~Expr() = default;
-    virtual Value accept(ExprVisitor& visitor) const = 0;
+
+    // One accept() overload per return type in use. When adding a new pass
+    // with a new R, add a new pure-virtual overload here and implement it
+    // in each concrete subclass (expr.cpp).
+    virtual Value        accept(ExprVisitor<Value>& visitor)        const = 0;
+    virtual std::string  accept(ExprVisitor<std::string>& visitor)  const = 0;
+
     virtual std::unique_ptr<Expr> clone() const = 0;
 };
 
@@ -27,7 +34,8 @@ public:
         : value(std::move(value)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     Value value;
@@ -45,7 +53,8 @@ public:
           right(std::move(right)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     std::unique_ptr<Expr> left;
@@ -63,7 +72,8 @@ public:
         : expression(std::move(expression)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     std::unique_ptr<Expr> expression;
@@ -79,7 +89,8 @@ public:
           right(std::move(right)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     Token op;
@@ -97,7 +108,8 @@ public:
           nameToken(std::move(nameToken)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     std::string name;
@@ -117,7 +129,8 @@ public:
           nameToken(std::move(nameToken)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     std::string name;
@@ -139,7 +152,8 @@ public:
           paren(std::move(paren)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     std::unique_ptr<Expr> callee;
@@ -159,7 +173,8 @@ public:
           leftBracket(std::move(leftBracket)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     std::vector<std::unique_ptr<Expr>> elements;
@@ -179,7 +194,8 @@ public:
           bracket(std::move(bracket)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     std::unique_ptr<Expr> array;
@@ -199,7 +215,8 @@ public:
           dot(std::move(dot)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     std::unique_ptr<Expr> object;
@@ -221,7 +238,8 @@ public:
           dot(std::move(dot)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     std::unique_ptr<Expr> object;
@@ -238,7 +256,8 @@ public:
         : keyword(std::move(keyword)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     Token keyword;
@@ -256,7 +275,8 @@ public:
           isPrefix(isPrefix) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     Token op;           // PLUS_PLUS or MINUS_MINUS
@@ -276,7 +296,8 @@ public:
           elseBranch(std::move(elseBranch)) {
     }
 
-    Value accept(ExprVisitor& visitor) const override;
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
     std::unique_ptr<Expr> clone() const override;
 
     std::unique_ptr<Expr> condition;

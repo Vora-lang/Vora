@@ -4,30 +4,38 @@
 
 namespace vora {
 
-// ExprVisitor: processes expression AST nodes via double dispatch.
-// Each visit method returns a Value — the result of evaluating that expression.
+// ExprVisitor<R>: processes expression AST nodes via double dispatch.
 //
-// Future passes that need different return types (e.g., void for a bytecode
-// compiler) should define their own visitor interface and add a corresponding
-// accept() overload to the Expr base class.
+// Template parameter R is the return type of each visit* method.
+//   - ExprVisitor<Value>       → Interpreter (evaluates to a runtime value)
+//   - ExprVisitor<std::string> → ASTPrinter (pretty-prints as S-expression)
+//   - ExprVisitor<Chunk>       → future bytecode compiler
+//
+// To add a new pass with a new return type:
+//   1. Add a new accept() overload to Expr (expr.h) + all subclasses (expr.cpp).
+//   2. Implement ExprVisitor<NewType> in your pass class.
+// The visitor interface itself stays generic — no duplication needed.
+template <typename R>
 class ExprVisitor {
 public:
+    using ReturnType = R;
+
     virtual ~ExprVisitor() = default;
 
-    virtual Value visitLiteralExpr(const LiteralExpr& expr) = 0;
-    virtual Value visitBinaryExpr(const BinaryExpr& expr) = 0;
-    virtual Value visitGroupingExpr(const GroupingExpr& expr) = 0;
-    virtual Value visitUnaryExpr(const UnaryExpr& expr) = 0;
-    virtual Value visitVariableExpr(const VariableExpr& expr) = 0;
-    virtual Value visitAssignmentExpr(const AssignmentExpr& expr) = 0;
-    virtual Value visitCallExpr(const CallExpr& expr) = 0;
-    virtual Value visitArrayExpr(const ArrayExpr& expr) = 0;
-    virtual Value visitIndexExpr(const IndexExpr& expr) = 0;
-    virtual Value visitPropertyExpr(const PropertyExpr& expr) = 0;
-    virtual Value visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) = 0;
-    virtual Value visitThisExpr(const ThisExpr& expr) = 0;
-    virtual Value visitIncDecExpr(const IncDecExpr& expr) = 0;
-    virtual Value visitTernaryExpr(const TernaryExpr& expr) = 0;
+    virtual R visitLiteralExpr(const LiteralExpr& expr) = 0;
+    virtual R visitBinaryExpr(const BinaryExpr& expr) = 0;
+    virtual R visitGroupingExpr(const GroupingExpr& expr) = 0;
+    virtual R visitUnaryExpr(const UnaryExpr& expr) = 0;
+    virtual R visitVariableExpr(const VariableExpr& expr) = 0;
+    virtual R visitAssignmentExpr(const AssignmentExpr& expr) = 0;
+    virtual R visitCallExpr(const CallExpr& expr) = 0;
+    virtual R visitArrayExpr(const ArrayExpr& expr) = 0;
+    virtual R visitIndexExpr(const IndexExpr& expr) = 0;
+    virtual R visitPropertyExpr(const PropertyExpr& expr) = 0;
+    virtual R visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) = 0;
+    virtual R visitThisExpr(const ThisExpr& expr) = 0;
+    virtual R visitIncDecExpr(const IncDecExpr& expr) = 0;
+    virtual R visitTernaryExpr(const TernaryExpr& expr) = 0;
 };
 
 }

@@ -8,26 +8,28 @@
 namespace vora {
 
 // =========================================================================
-// Entry points — delegate via double dispatch, return accumulated result
+// Entry points — delegate via double dispatch
 // =========================================================================
 
 std::string ASTPrinter::print(const Expr* expr) {
-    expr->accept(*this);
-    return result_;
+    return expr->accept(*this);
 }
 
 std::string ASTPrinter::print(const Stmt* stmt) {
-    stmt->accept(*this);
-    return result_;
+    return stmt->accept(*this);
+}
+
+std::string ASTPrinter::print(const Program* program) {
+    return program->accept(*this);
 }
 
 // =========================================================================
-// ExprVisitor — visit methods
+// ExprVisitor<std::string> — visit methods return strings directly
 // =========================================================================
 
-Value ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
+std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
 
-    result_ = std::visit([](auto&& arg) -> std::string {
+    return std::visit([](auto&& arg) -> std::string {
 
         using T = std::decay_t<decltype(arg)>;
 
@@ -65,54 +67,41 @@ Value ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
         }
 
     }, expr.value);
-
-    return nullptr;
 }
 
-Value ASTPrinter::visitVariableExpr(const VariableExpr& expr) {
-
-    result_ = expr.name;
-    return nullptr;
+std::string ASTPrinter::visitVariableExpr(const VariableExpr& expr) {
+    return expr.name;
 }
 
-Value ASTPrinter::visitBinaryExpr(const BinaryExpr& expr) {
-
-    result_ = parenthesize(
+std::string ASTPrinter::visitBinaryExpr(const BinaryExpr& expr) {
+    return parenthesize(
         expr.op.lexeme,
         { expr.left.get(), expr.right.get() }
     );
-    return nullptr;
 }
 
-Value ASTPrinter::visitGroupingExpr(const GroupingExpr& expr) {
-
-    result_ = parenthesize(
+std::string ASTPrinter::visitGroupingExpr(const GroupingExpr& expr) {
+    return parenthesize(
         "group",
         { expr.expression.get() }
     );
-    return nullptr;
 }
 
-Value ASTPrinter::visitUnaryExpr(const UnaryExpr& expr) {
-
-    result_ = parenthesize(
+std::string ASTPrinter::visitUnaryExpr(const UnaryExpr& expr) {
+    return parenthesize(
         expr.op.lexeme,
         { expr.right.get() }
     );
-    return nullptr;
 }
 
-Value ASTPrinter::visitAssignmentExpr(const AssignmentExpr& expr) {
-
-    result_ = parenthesize(
+std::string ASTPrinter::visitAssignmentExpr(const AssignmentExpr& expr) {
+    return parenthesize(
         "assign " + expr.name,
         { expr.value.get() }
     );
-    return nullptr;
 }
 
-Value ASTPrinter::visitCallExpr(const CallExpr& expr) {
-
+std::string ASTPrinter::visitCallExpr(const CallExpr& expr) {
     std::stringstream ss;
 
     ss << "(call ";
@@ -124,13 +113,10 @@ Value ASTPrinter::visitCallExpr(const CallExpr& expr) {
     }
 
     ss << ")";
-
-    result_ = ss.str();
-    return nullptr;
+    return ss.str();
 }
 
-Value ASTPrinter::visitArrayExpr(const ArrayExpr& expr) {
-
+std::string ASTPrinter::visitArrayExpr(const ArrayExpr& expr) {
     std::stringstream ss;
 
     ss << "[";
@@ -143,87 +129,71 @@ Value ASTPrinter::visitArrayExpr(const ArrayExpr& expr) {
     }
 
     ss << "]";
-
-    result_ = ss.str();
-    return nullptr;
+    return ss.str();
 }
 
-Value ASTPrinter::visitIndexExpr(const IndexExpr& expr) {
-
-    result_ = parenthesize(
+std::string ASTPrinter::visitIndexExpr(const IndexExpr& expr) {
+    return parenthesize(
         "index",
         { expr.array.get(), expr.index.get() }
     );
-    return nullptr;
 }
 
-Value ASTPrinter::visitPropertyExpr(const PropertyExpr& expr) {
-
-    result_ = parenthesize(
+std::string ASTPrinter::visitPropertyExpr(const PropertyExpr& expr) {
+    return parenthesize(
         "property " + expr.property,
         { expr.object.get() }
     );
-    return nullptr;
 }
 
-Value ASTPrinter::visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) {
-
-    result_ = parenthesize(
+std::string ASTPrinter::visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) {
+    return parenthesize(
         "property-assign " + expr.property,
         { expr.object.get(), expr.value.get() }
     );
-    return nullptr;
 }
 
-Value ASTPrinter::visitThisExpr(const ThisExpr& /*expr*/) {
-
-    result_ = "this";
-    return nullptr;
+std::string ASTPrinter::visitThisExpr(const ThisExpr& /*expr*/) {
+    return "this";
 }
 
-Value ASTPrinter::visitIncDecExpr(const IncDecExpr& expr) {
+std::string ASTPrinter::visitIncDecExpr(const IncDecExpr& expr) {
     std::stringstream ss;
     if (expr.isPrefix) {
         ss << "(" << expr.op.lexeme << " " << print(expr.target.get()) << ")";
     } else {
         ss << "(" << print(expr.target.get()) << " " << expr.op.lexeme << ")";
     }
-    result_ = ss.str();
-    return nullptr;
+    return ss.str();
 }
 
-Value ASTPrinter::visitTernaryExpr(const TernaryExpr& expr) {
-    result_ = parenthesize(
+std::string ASTPrinter::visitTernaryExpr(const TernaryExpr& expr) {
+    return parenthesize(
         "?:",
         { expr.condition.get(), expr.thenBranch.get(), expr.elseBranch.get() }
     );
-    return nullptr;
 }
 
 // =========================================================================
-// StmtVisitor — visit methods
+// StmtVisitor<std::string> — visit methods return strings directly
 // =========================================================================
 
-void ASTPrinter::visitExprStmt(const ExprStmt& stmt) {
-
-    result_ = print(stmt.expression.get());
+std::string ASTPrinter::visitExprStmt(const ExprStmt& stmt) {
+    return print(stmt.expression.get());
 }
 
-void ASTPrinter::visitLetStmt(const LetStmt& stmt) {
-
+std::string ASTPrinter::visitLetStmt(const LetStmt& stmt) {
     std::string label = "let " + stmt.name;
     if (!stmt.typeAnnotation.empty()) {
         label += ":" + stmt.typeAnnotation;
     }
-
-    result_ = parenthesize(
+    return parenthesize(
         label,
         { stmt.initializer.get() }
     );
 }
 
-void ASTPrinter::visitFuncStmt(const FuncStmt& stmt) {
-
+std::string ASTPrinter::visitFuncStmt(const FuncStmt& stmt) {
     std::stringstream ss;
 
     ss << "(func " << stmt.name;
@@ -233,16 +203,13 @@ void ASTPrinter::visitFuncStmt(const FuncStmt& stmt) {
     }
 
     ss << " ";
-
     ss << print(stmt.body.get());
-
     ss << ")";
 
-    result_ = ss.str();
+    return ss.str();
 }
 
-void ASTPrinter::visitBlockStmt(const BlockStmt& stmt) {
-
+std::string ASTPrinter::visitBlockStmt(const BlockStmt& stmt) {
     std::stringstream ss;
 
     ss << "(block";
@@ -254,27 +221,22 @@ void ASTPrinter::visitBlockStmt(const BlockStmt& stmt) {
 
     ss << ")";
 
-    result_ = ss.str();
+    return ss.str();
 }
 
-void ASTPrinter::visitReturnStmt(const ReturnStmt& stmt) {
-
-    result_ = parenthesize(
+std::string ASTPrinter::visitReturnStmt(const ReturnStmt& stmt) {
+    return parenthesize(
         "return",
         { stmt.value.get() }
     );
 }
 
-void ASTPrinter::visitIfStmt(const IfStmt& stmt) {
-
+std::string ASTPrinter::visitIfStmt(const IfStmt& stmt) {
     std::stringstream ss;
 
     ss << "(if ";
-
     ss << print(stmt.condition.get());
-
     ss << " ";
-
     ss << print(stmt.thenBranch.get());
 
     if (stmt.elseBranch) {
@@ -284,28 +246,22 @@ void ASTPrinter::visitIfStmt(const IfStmt& stmt) {
 
     ss << ")";
 
-    result_ = ss.str();
+    return ss.str();
 }
 
-void ASTPrinter::visitWhileStmt(const WhileStmt& stmt) {
-
+std::string ASTPrinter::visitWhileStmt(const WhileStmt& stmt) {
     std::stringstream ss;
 
     ss << "(while ";
-
     ss << print(stmt.condition.get());
-
     ss << " ";
-
     ss << print(stmt.body.get());
-
     ss << ")";
 
-    result_ = ss.str();
+    return ss.str();
 }
 
-void ASTPrinter::visitForStmt(const ForStmt& stmt) {
-
+std::string ASTPrinter::visitForStmt(const ForStmt& stmt) {
     std::stringstream ss;
 
     ss << "(for ";
@@ -316,11 +272,10 @@ void ASTPrinter::visitForStmt(const ForStmt& stmt) {
     ss << print(stmt.body.get());
     ss << ")";
 
-    result_ = ss.str();
+    return ss.str();
 }
 
-void ASTPrinter::visitObjStmt(const ObjStmt& stmt) {
-
+std::string ASTPrinter::visitObjStmt(const ObjStmt& stmt) {
     std::stringstream ss;
 
     ss << "(obj " << stmt.name;
@@ -334,7 +289,6 @@ void ASTPrinter::visitObjStmt(const ObjStmt& stmt) {
     }
 
     ss << " ";
-
     ss << print(stmt.body.get());
 
     for (const auto& method : stmt.methods) {
@@ -344,18 +298,18 @@ void ASTPrinter::visitObjStmt(const ObjStmt& stmt) {
 
     ss << ")";
 
-    result_ = ss.str();
+    return ss.str();
 }
 
-void ASTPrinter::visitBreakStmt(const BreakStmt& /*stmt*/) {
-    result_ = "(break)";
+std::string ASTPrinter::visitBreakStmt(const BreakStmt& /*stmt*/) {
+    return "(break)";
 }
 
-void ASTPrinter::visitContinueStmt(const ContinueStmt& /*stmt*/) {
-    result_ = "(continue)";
+std::string ASTPrinter::visitContinueStmt(const ContinueStmt& /*stmt*/) {
+    return "(continue)";
 }
 
-void ASTPrinter::visitTryStmt(const TryStmt& stmt) {
+std::string ASTPrinter::visitTryStmt(const TryStmt& stmt) {
     std::stringstream ss;
     ss << "(try " << print(stmt.tryBlock.get());
 
@@ -368,30 +322,28 @@ void ASTPrinter::visitTryStmt(const TryStmt& stmt) {
     }
 
     ss << ")";
-    result_ = ss.str();
+    return ss.str();
 }
 
-void ASTPrinter::visitThrowStmt(const ThrowStmt& stmt) {
-    result_ = parenthesize("throw", { stmt.value.get() });
+std::string ASTPrinter::visitThrowStmt(const ThrowStmt& stmt) {
+    return parenthesize("throw", { stmt.value.get() });
 }
 
 // =========================================================================
-// Program (top-level container — no visitor needed)
+// ProgramVisitor<std::string>
 // =========================================================================
 
-std::string ASTPrinter::print(const Program* program) {
-
+std::string ASTPrinter::visitProgram(const Program& program) {
     std::stringstream ss;
 
     ss << "(program";
 
-    for (const auto& stmt : program->statements) {
+    for (const auto& stmt : program.statements) {
         ss << " ";
         ss << print(stmt.get());
     }
 
     ss << ")";
-
     return ss.str();
 }
 
@@ -403,7 +355,6 @@ std::string ASTPrinter::parenthesize(
     const std::string& name,
     const std::vector<const Expr*>& exprs
 ) {
-
     std::stringstream ss;
 
     ss << "(" << name;

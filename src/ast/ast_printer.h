@@ -11,53 +11,53 @@
 
 namespace vora {
 
-class ASTPrinter : public ExprVisitor, public StmtVisitor {
+class ASTPrinter : public ExprVisitor<std::string>,
+                   public StmtVisitor<std::string>,
+                   public ProgramVisitor<std::string> {
 public:
     std::string print(const Expr* expr);
     std::string print(const Stmt* stmt);
     std::string print(const Program* program);
 
 private:
-    // Accumulator for the string representation being built.
-    // Each visit* method stores its result here; print() returns it
-    // immediately after calling accept().
-    std::string result_;
-
     std::string parenthesize(
         const std::string& name,
         const std::vector<const Expr*>& exprs
     );
 
-    // --- ExprVisitor overrides ---
-    Value visitLiteralExpr(const LiteralExpr& expr) override;
-    Value visitBinaryExpr(const BinaryExpr& expr) override;
-    Value visitGroupingExpr(const GroupingExpr& expr) override;
-    Value visitUnaryExpr(const UnaryExpr& expr) override;
-    Value visitVariableExpr(const VariableExpr& expr) override;
-    Value visitAssignmentExpr(const AssignmentExpr& expr) override;
-    Value visitCallExpr(const CallExpr& expr) override;
-    Value visitArrayExpr(const ArrayExpr& expr) override;
-    Value visitIndexExpr(const IndexExpr& expr) override;
-    Value visitPropertyExpr(const PropertyExpr& expr) override;
-    Value visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) override;
-    Value visitThisExpr(const ThisExpr& expr) override;
-    Value visitIncDecExpr(const IncDecExpr& expr) override;
-    Value visitTernaryExpr(const TernaryExpr& expr) override;
+    // --- ExprVisitor<std::string> overrides ---
+    std::string visitLiteralExpr(const LiteralExpr& expr) override;
+    std::string visitBinaryExpr(const BinaryExpr& expr) override;
+    std::string visitGroupingExpr(const GroupingExpr& expr) override;
+    std::string visitUnaryExpr(const UnaryExpr& expr) override;
+    std::string visitVariableExpr(const VariableExpr& expr) override;
+    std::string visitAssignmentExpr(const AssignmentExpr& expr) override;
+    std::string visitCallExpr(const CallExpr& expr) override;
+    std::string visitArrayExpr(const ArrayExpr& expr) override;
+    std::string visitIndexExpr(const IndexExpr& expr) override;
+    std::string visitPropertyExpr(const PropertyExpr& expr) override;
+    std::string visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) override;
+    std::string visitThisExpr(const ThisExpr& expr) override;
+    std::string visitIncDecExpr(const IncDecExpr& expr) override;
+    std::string visitTernaryExpr(const TernaryExpr& expr) override;
 
-    // --- StmtVisitor overrides ---
-    void visitExprStmt(const ExprStmt& stmt) override;
-    void visitLetStmt(const LetStmt& stmt) override;
-    void visitBlockStmt(const BlockStmt& stmt) override;
-    void visitReturnStmt(const ReturnStmt& stmt) override;
-    void visitIfStmt(const IfStmt& stmt) override;
-    void visitWhileStmt(const WhileStmt& stmt) override;
-    void visitForStmt(const ForStmt& stmt) override;
-    void visitFuncStmt(const FuncStmt& stmt) override;
-    void visitObjStmt(const ObjStmt& stmt) override;
-    void visitBreakStmt(const BreakStmt& stmt) override;
-    void visitContinueStmt(const ContinueStmt& stmt) override;
-    void visitTryStmt(const TryStmt& stmt) override;
-    void visitThrowStmt(const ThrowStmt& stmt) override;
+    // --- StmtVisitor<std::string> overrides ---
+    std::string visitExprStmt(const ExprStmt& stmt) override;
+    std::string visitLetStmt(const LetStmt& stmt) override;
+    std::string visitBlockStmt(const BlockStmt& stmt) override;
+    std::string visitReturnStmt(const ReturnStmt& stmt) override;
+    std::string visitIfStmt(const IfStmt& stmt) override;
+    std::string visitWhileStmt(const WhileStmt& stmt) override;
+    std::string visitForStmt(const ForStmt& stmt) override;
+    std::string visitFuncStmt(const FuncStmt& stmt) override;
+    std::string visitObjStmt(const ObjStmt& stmt) override;
+    std::string visitBreakStmt(const BreakStmt& stmt) override;
+    std::string visitContinueStmt(const ContinueStmt& stmt) override;
+    std::string visitTryStmt(const TryStmt& stmt) override;
+    std::string visitThrowStmt(const ThrowStmt& stmt) override;
+
+    // --- ProgramVisitor<std::string> override ---
+    std::string visitProgram(const Program& program) override;
 };
 
 }

@@ -45,7 +45,7 @@ private:
 
     std::unique_ptr<Stmt> letStatement();
 
-    std::unique_ptr<Stmt> blockStatement();
+    std::unique_ptr<BlockStmt> blockStatement();
 
     std::unique_ptr<Stmt> returnStatement();
 

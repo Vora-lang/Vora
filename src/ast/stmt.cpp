@@ -3,56 +3,160 @@
 
 namespace vora {
 
-void ExprStmt::accept(StmtVisitor& visitor) const {
+// =========================================================================
+// ExprStmt
+// =========================================================================
+
+void ExprStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitExprStmt(*this);
 }
 
-void LetStmt::accept(StmtVisitor& visitor) const {
+std::string ExprStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitExprStmt(*this);
+}
+
+// =========================================================================
+// LetStmt
+// =========================================================================
+
+void LetStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitLetStmt(*this);
 }
 
-void BlockStmt::accept(StmtVisitor& visitor) const {
+std::string LetStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitLetStmt(*this);
+}
+
+// =========================================================================
+// BlockStmt
+// =========================================================================
+
+void BlockStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitBlockStmt(*this);
 }
 
-void ReturnStmt::accept(StmtVisitor& visitor) const {
+std::string BlockStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitBlockStmt(*this);
+}
+
+// =========================================================================
+// ReturnStmt
+// =========================================================================
+
+void ReturnStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitReturnStmt(*this);
 }
 
-void IfStmt::accept(StmtVisitor& visitor) const {
+std::string ReturnStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitReturnStmt(*this);
+}
+
+// =========================================================================
+// IfStmt
+// =========================================================================
+
+void IfStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitIfStmt(*this);
 }
 
-void WhileStmt::accept(StmtVisitor& visitor) const {
+std::string IfStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitIfStmt(*this);
+}
+
+// =========================================================================
+// WhileStmt
+// =========================================================================
+
+void WhileStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitWhileStmt(*this);
 }
 
-void ForStmt::accept(StmtVisitor& visitor) const {
+std::string WhileStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitWhileStmt(*this);
+}
+
+// =========================================================================
+// ForStmt
+// =========================================================================
+
+void ForStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitForStmt(*this);
 }
 
-void FuncStmt::accept(StmtVisitor& visitor) const {
+std::string ForStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitForStmt(*this);
+}
+
+// =========================================================================
+// FuncStmt
+// =========================================================================
+
+void FuncStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitFuncStmt(*this);
 }
 
-void ObjStmt::accept(StmtVisitor& visitor) const {
+std::string FuncStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitFuncStmt(*this);
+}
+
+// =========================================================================
+// ObjStmt
+// =========================================================================
+
+void ObjStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitObjStmt(*this);
 }
 
-void BreakStmt::accept(StmtVisitor& visitor) const {
+std::string ObjStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitObjStmt(*this);
+}
+
+// =========================================================================
+// BreakStmt
+// =========================================================================
+
+void BreakStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitBreakStmt(*this);
 }
 
-void ContinueStmt::accept(StmtVisitor& visitor) const {
+std::string BreakStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitBreakStmt(*this);
+}
+
+// =========================================================================
+// ContinueStmt
+// =========================================================================
+
+void ContinueStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitContinueStmt(*this);
 }
 
-void TryStmt::accept(StmtVisitor& visitor) const {
+std::string ContinueStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitContinueStmt(*this);
+}
+
+// =========================================================================
+// ThrowStmt
+// =========================================================================
+
+void ThrowStmt::accept(StmtVisitor<void>& visitor) const {
+    visitor.visitThrowStmt(*this);
+}
+
+std::string ThrowStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitThrowStmt(*this);
+}
+
+// =========================================================================
+// TryStmt
+// =========================================================================
+
+void TryStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitTryStmt(*this);
 }
 
-void ThrowStmt::accept(StmtVisitor& visitor) const {
-    visitor.visitThrowStmt(*this);
+std::string TryStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitTryStmt(*this);
 }
 
 }

@@ -22,7 +22,9 @@ namespace vora {
 
 class VoraFunction;
 
-class Interpreter : public ExprVisitor, public StmtVisitor {
+class Interpreter : public ExprVisitor<Value>,
+                     public StmtVisitor<void>,
+                     public ProgramVisitor<void> {
 public:
 
     explicit Interpreter(
@@ -102,6 +104,9 @@ private:
     void visitContinueStmt(const ContinueStmt& stmt) override;
     void visitTryStmt(const TryStmt& stmt) override;
     void visitThrowStmt(const ThrowStmt& stmt) override;
+
+    // --- ProgramVisitor<void> override ---
+    void visitProgram(const Program& program) override;
 
     void pushScope();
 
