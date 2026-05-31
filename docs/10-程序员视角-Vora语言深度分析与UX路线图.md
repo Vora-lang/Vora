@@ -98,7 +98,7 @@ Vora 处于 **"教学语言"与"实用脚本语言"的交叉地带**。它目前
 - `BoundMethodCallable` 和 `ObjectConstructorCallable` 以 inline lambda（实际上是内嵌 struct）方式实现，读代码时所有相关逻辑在一处。
 
 **缺陷**：
-- `+` 已支持 `string + string`、`array + array`、`array + value`、`string + any`。但 `&&`/`||` 逻辑运算符短路求值尚未实现（运算符已解析但求值会报错）。
+- `+` 已支持 `string + string`、`array + array`、`array + value`、`string + any`。`&&`/`||` 逻辑运算符短路求值已实现。
 - `for-in` 已支持数组、字符串、`range()`。`indexExpr` 已支持数组和字符串索引。
 - `break` / `continue` 已实现。
 - 没有垃圾回收。`shared_ptr` 的引用计数可以处理大多数情况，但**循环引用会导致内存泄漏**（例如对象属性引用自身）。
@@ -137,8 +137,8 @@ Vora Value = null | double | bool | string | Array | Callable | ObjectInstance
 |--------|--------|--------|------|
 | 0 | 无运算符 | - | - |
 | 1 | `=` | 右结合 | ✔ 已实现 |
-| 1 | `\|\|` `or` | 左结合 | ✔ 已实现 |
-| 2 | `&&` `and` | 左结合 | ✔ 已实现 |
+| 1 | `\|\|` `or` | 左结合 | ✔ 短路求值 |
+| 2 | `&&` `and` | 左结合 | ✔ 短路求值 |
 | 3 | `==` `!=` | 左结合 | ✔ 已实现 |
 | 4 | `<` `<=` `>` `>=` | 左结合 | ✔ 已实现 |
 | 5 | `+` `-` | 左结合 | ✔ 数字+字符串 |
@@ -267,7 +267,7 @@ print(arr[10])    // RuntimeError: Index out of bounds
 
 > ✅ 已修复（原清单中已解决的项）：字符串 `+` 拼接、`break`/`continue`、`for-in` 字符串/range、
 > 复合赋值 (`+=`/`-=`/`*=`/`/=`/`%=`)、三元运算符 `? :`、Obj 单继承、测试框架 (`assert()` + 10 测试文件)、
-> Unicode 标识符 (`isAlpha()` 现已接受 UTF-8 多字节字符)。
+> Unicode 标识符 (`isAlpha()` 现已接受 UTF-8 多字节字符)、`&&`/`||` 短路求值。
 > 以下仅列出**仍然存在的问题**。
 
 ### 4.1 🔴 致命级（阻碍基本使用）
@@ -305,26 +305,24 @@ print(arr[10])    // RuntimeError: Index out of bounds
 
 ### 4.3 🟡 中度级（限制语言表达能力）
 
-8. **没有 `&&` / `||` 短路求值**——运算符已解析，Pratt 优先级表已定义，但解释器 `visitBinaryExpr` 未处理 AND/OR，求值会抛 "Invalid binary operands"。
+8. **没有整数类型**——无法进行位运算或精确整数运算。所有数字统一为 `double`。
 
-9. **没有整数类型**——无法进行位运算或精确整数运算。所有数字统一为 `double`。
+9. **没有 `switch` / `match`**——多分支只能用 `if-else if` 链。
 
-10. **没有 `switch` / `match`**——多分支只能用 `if-else if` 链。
-
-11. **不支持默认参数**
+10. **不支持默认参数**
     ```vora
     func greet(name = "World") { ... }  // ❌
     ```
 
-12. **没有函数重载或可选参数检查**。
+11. **没有函数重载或可选参数检查**。
 
 ### 4.4 🟢 轻度级（影响生态和工程化）
 
-13. **没有模块系统**（`import`/`export`）——所有代码必须写在一个文件里。
+12. **没有模块系统**（`import`/`export`）——所有代码必须写在一个文件里。
 
-14. **REPL 不能多行输入**——无法在 REPL 中定义函数或类。
+13. **REPL 不能多行输入**——无法在 REPL 中定义函数或类。
 
-15. **没有标准库**——文件 IO、字符串操作、数学函数等都需要手写。`std/` 目录为空。
+14. **没有标准库**——文件 IO、字符串操作、数学函数等都需要手写。`std/` 目录为空。
 
 ---
 
@@ -428,16 +426,9 @@ defineNative("type", 1, [](const std::vector<Value>& args) -> Value {
 
 **工作量**：2-3 小时
 
-#### 5.7 `break` / `continue`
+#### 5.7 `break` / `continue` ✅ 已完成
 
-**影响**：补全循环控制流。
-
-**方案**：模仿 `ReturnSignal` 的异常模式。
-- 新增 `BreakSignal` 和 `ContinueSignal`
-- `WhileStmt` 和 `ForStmt` 中 try-catch 这两个信号
-- Parser 新增 `BreakStmt` 和 `ContinueStmt`（需要对应的 Token）
-
-**工作量**：3-4 小时
+`BreakStmt`/`ContinueStmt` 已实现，通过 `BreakSignal`/`ContinueSignal` 异常模式（与 `ReturnSignal` 一致）实现非局部跳转。`WhileStmt` 和 `ForStmt` 中 try-catch 捕获这两个信号。
 
 #### 5.8 解析器错误恢复（Panic Mode）
 
@@ -464,30 +455,21 @@ defineNative("type", 1, [](const std::vector<Value>& args) -> Value {
 
 ### P2 — 中期功能（2-3 个月）
 
-#### 5.10 复合赋值运算符
+#### 5.10 复合赋值运算符 ✅ 已完成
 
-新增 Token：`PLUS_EQUAL`, `MINUS_EQUAL`, `MULTIPLY_EQUAL`, `DIVIDE_EQUAL`, `MODULO_EQUAL`
+`+=`、`-=`、`*=`、`/=`、`%=` 均已实现。在 `AssignmentExpr` 中处理，等价于对应的二元运算 + 赋值。支持数字运算、字符串拼接 (`s += "!"`)、数组追加 (`arr += [3, 4]`)。
 
-在 Pratt 解析器中处理为语法糖：
-```vora
-x += 1   →   x = x + 1
-```
-
-**工作量**：2 小时（纯语法糖，解释器不需要变更）
-
-#### 5.11 三元运算符 `?:`
+#### 5.11 三元运算符 `?:` ✅ 已完成
 
 ```vora
 let result = condition ? value1 : value2
 ```
 
-**实现要点**：在 Pratt 解析器中新增中间优先级层（介于赋值和逻辑或之间），生成 `TernaryExpr` AST 节点。
-
-**工作量**：2 小时
+**实现**：`TernaryExpr` AST 节点，在 Pratt 解析器中作为中缀运算符（优先级 2，右结合），解释器短路求值（只求值被选中的分支）。
 
 #### 5.12 `int64` / `float64` 双数值类型
 
-**背景**：Git 提交历史显示 `026fb42` 已经尝试了 `int64 + float64 → float64` 的混合运算。
+**当前状态**：`int()` / `float()` 内建函数已完成（字符串→数字转换）。`let x:int` / `let x:float` 类型标注已解析但运行时不校验。`Value` variant 中仍只有 `double`，无独立 `int64_t` 类型。
 
 **方案**：在 `Value` variant 中增加 `int64_t`。算术运算遵循：
 - `int64 ±/* int64 → int64`
@@ -496,7 +478,7 @@ let result = condition ? value1 : value2
 
 **工作量**：4-6 小时（涉及所有二元/一元运算的分支更新）
 
-#### 5.13 `for-in` 支持字符串遍历
+#### 5.13 `for-in` 支持字符串遍历 ✅ 已完成
 
 ```vora
 for ch in "hello" {
@@ -504,16 +486,16 @@ for ch in "hello" {
 }
 ```
 
-**工作量**：30 分钟（在 `visitForStmt` 中增加 string 分支）
+`for-in` 现支持数组、字符串、`range()` 三种可迭代对象。
 
-#### 5.14 异常处理 `try` / `catch` / `finally`
+#### 5.14 异常处理 `try` / `catch` / `finally` ✅ 已完成
 
 **实现**：
-- 新增 `TryStmt` AST 节点（包含 `body`、`catchVar`、`catchBody`、`finallyBody`）
-- `throw` 语句——抛出 Vora 值（不限于 RuntimeError）
-- 在解释器中将 `RuntimeError` 和用户抛出的值统一处理
-
-**工作量**：6-8 小时
+- ✅ `TryStmt` AST 节点（tryBlock / catchVar / catchBlock / finallyBlock）
+- ✅ `ThrowSignal{Value}` — 携带任意 Vora 值
+- ✅ `catch (e)` 同时捕获 `ThrowSignal`（绑定原值）和 `RuntimeError`（绑定为字符串）
+- ✅ `finally` 始终执行（捕获所有控制流信号后重新抛出）
+- ✅ 支持 `try/catch`、`try/finally`、`try/catch/finally` 三种组合
 
 #### 5.15 模块系统 `import` / `export`
 
@@ -557,13 +539,13 @@ for ch in "hello" {
 
 **工作量**：1-2 周
 
-#### 5.18 测试基础设施
+#### 5.18 测试基础设施 ✅ 基础已完成
 
-- C++ 层：Google Test 框架测试 Lexer/Parser/Interpreter 各单元
-- Vora 层：`assert(condition, message)` 内建 + `.va` 测试文件 + 预期输出对比脚本
-- CI：GitHub Actions 自动化构建和测试
+- ✅ Vora 层：`assert(condition, message)` 内建 + 10 个 `.va` 测试文件覆盖 lexer/parser/runtime/interpreter + `run_tests.ps1`/`run_tests.sh` 运行器
+- ⏳ C++ 层：Google Test 框架测试 Lexer/Parser/Interpreter 各单元（待实现）
+- ⏳ CI：GitHub Actions 自动化构建和测试（待实现）
 
-**工作量**：1 周（搭建框架） + 持续编写用例
+**工作量**：1 周（C++ 框架搭建） + 持续编写用例
 
 #### 5.19 LSP 服务器
 
@@ -689,7 +671,7 @@ public:
 | Lexer | 简洁高效，但缺少转义序列是致命伤 |
 | Parser | Pratt 解析器实现优雅，但没有错误恢复 |
 | AST | Visitor 模式标准实现，类型体系完整 |
-| Interpreter | 功能正确但覆盖面窄（二元运算仅数字） |
+| Interpreter | 功能逐步充实：四则运算、字符串拼接、比较、数组/对象操作 |
 | Value | `std::variant` 是好的选择，缺少类型查询接口 |
 | Environment | 词法作用域 + 闭包正确，但 env snapshot 昂贵 |
 
@@ -697,8 +679,8 @@ public:
 
 如果你是第一次参与这个项目，建议按以下顺序贡献：
 
-1. **先修 P0 问题**（字符串转义、字符串拼接、`len`、`type`）——改动小、影响大、反馈快
-2. **再补 P1 问题**（数组/字符串方法、break/continue、错误恢复）
+1. **先修 P0 问题**（字符串转义、`len`、`type`）——改动小、影响大、反馈快
+2. **再补 P1 问题**（数组/字符串方法、错误恢复）
 3. **然后写测试**——没有测试的编程语言项目难以吸引贡献者
 4. **最后做模块系统**——这是从"玩具语言"到"工具语言"的转折点
 

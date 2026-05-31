@@ -1,0 +1,68 @@
+// interpreter/test_logical.va — && and || short-circuit tests
+// Run: vora tests/interpreter/test_logical.va
+
+print("=== Interpreter: Logical Operator Tests ===")
+
+// === && (logical AND) ===
+
+// Both truthy → returns right operand
+assert((true && 42) == 42, "true && 42")
+assert((1 && "hello") == "hello", "1 && hello")
+
+// First falsy → short-circuit, returns left operand
+assert((false && 99) == false, "false && 99 short-circuit")
+assert((null && 99) == null, "null && 99 short-circuit")
+assert((0 && 99) == 0, "0 && 99 short-circuit")
+assert(("" && 99) == "", "empty string && 99 short-circuit")
+
+// Verify short-circuit: right side never evaluated
+let sideEffect = false
+func setFlag() {
+    sideEffect = true
+    return true
+}
+let r1 = false && setFlag()
+assert(!sideEffect, "false && f() should NOT call f()")
+assert(!r1, "false && true == false")
+
+// === || (logical OR) ===
+
+// First truthy → short-circuit, returns left operand
+assert((true || 99) == true, "true || 99 short-circuit")
+assert((42 || 99) == 42, "42 || 99 short-circuit")
+assert(("hi" || "bye") == "hi", "'hi' || 'bye' short-circuit")
+
+// First falsy → evaluates right, returns right operand
+assert((false || 99) == 99, "false || 99")
+assert((null || "default") == "default", "null || default")
+assert((0 || 42) == 42, "0 || 42")
+
+// Verify short-circuit
+sideEffect = false
+let r2 = true || setFlag()
+assert(!sideEffect, "true || f() should NOT call f()")
+assert(r2, "true || false == true")
+
+// === Chaining ===
+assert((false || null || 42) == 42, "false || null || 42")
+assert((true && 1 && 2) == 2, "true && 1 && 2")
+assert((false && 1 && 2) == false, "false && 1 && 2 short-circuit")
+
+// === Mixed with comparisons ===
+let x = 10
+assert(x > 0 && x < 20, "10 > 0 && 10 < 20")
+assert(x < 0 || x > 5, "10 < 0 || 10 > 5")
+
+// === Keyword forms (and / or) ===
+assert((true and 1) == 1, "true and 1")
+assert((false or 42) == 42, "false or 42")
+
+// === isTruthy edge cases ===
+assert(!(0) == true, "!0 == true")             // 0 is falsy
+assert(!("") == true, "!'' == true")           // "" is falsy
+assert(!(null) == true, "!null == true")       // null is falsy
+assert(!(false) == true, "!false == true")     // false is falsy
+assert(!(1) == false, "!1 == false")           // non-zero is truthy
+assert(!("x") == false, "!'x' == false")       // non-empty is truthy
+
+print("Interpreter logical operator tests: PASS")

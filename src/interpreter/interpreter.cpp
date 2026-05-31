@@ -437,6 +437,14 @@ bool Interpreter::isTruthy(
         return std::get<bool>(value);
     }
 
+    if (std::holds_alternative<double>(value)) {
+        return std::get<double>(value) != 0.0;
+    }
+
+    if (std::holds_alternative<std::string>(value)) {
+        return !std::get<std::string>(value).empty();
+    }
+
     return true;
 }
 
@@ -630,6 +638,19 @@ Value Interpreter::visitUnaryExpr(const UnaryExpr& expr) {
 Value Interpreter::visitBinaryExpr(const BinaryExpr& expr) {
 
     Value left = evaluate(expr.left.get());
+
+    // --- logical short-circuit operators ---
+    if (expr.op.type == TokenType::AND) {
+        // a && b: if a is falsy, return a; else evaluate and return b
+        if (!isTruthy(left)) return left;
+        return evaluate(expr.right.get());
+    }
+
+    if (expr.op.type == TokenType::OR) {
+        // a || b: if a is truthy, return a; else evaluate and return b
+        if (isTruthy(left)) return left;
+        return evaluate(expr.right.get());
+    }
 
     Value right = evaluate(expr.right.get());
 
