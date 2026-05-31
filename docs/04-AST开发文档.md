@@ -353,6 +353,7 @@ func add(a, b) {
 class ObjStmt : public Stmt {
 public:
     std::string name;                           // 类名
+    std::string parentName;                     // 父类名（空 = 无继承）
     std::vector<std::string> params;            // 构造函数参数
     std::vector<std::unique_ptr<Stmt>> methods;  // 方法列表（FuncStmt）
     std::shared_ptr<BlockStmt> body;             // 构造函数体（非方法语句）
@@ -475,7 +476,8 @@ Program
       ├── ForStmt ─── iterable: Expr
       │               body: Stmt
       ├── FuncStmt ──── body: BlockStmt
-      ├── ObjStmt ───── methods: vector<Stmt>
+      ├── ObjStmt ───── parentName: string
+      │                 methods: vector<Stmt>
       │                 body: BlockStmt
       ├── ReturnStmt ── value: Expr
       ├── BreakStmt

@@ -97,10 +97,9 @@ Vora 处于 **"教学语言"与"实用脚本语言"的交叉地带**。它目前
 - `BoundMethodCallable` 和 `ObjectConstructorCallable` 以 inline lambda（实际上是内嵌 struct）方式实现，读代码时所有相关逻辑在一处。
 
 **缺陷**：
-- **二元运算仅支持 `double + double`**。`"hello" + " world"` 会抛 RuntimeError。字符串拼接、数组连接、混合类型运算都不支持。这是**最影响日常使用的缺陷之一**。
-- `for-in` 仅支持数组。字符串遍历、range 遍历都不支持。
-- `indexExpr` 仅支持数组索引。字符串索引（`"hello"[1]`）会抛 RuntimeError。
-- 没有 `break` / `continue`。
+- `+` 已支持 `string + string`、`array + array`、`array + value`、`string + any`。但 `&&`/`||` 逻辑运算符短路求值尚未实现（运算符已解析但求值会报错）。
+- `for-in` 已支持数组、字符串、`range()`。`indexExpr` 已支持数组和字符串索引。
+- `break` / `continue` 已实现。
 - 没有垃圾回收。`shared_ptr` 的引用计数可以处理大多数情况，但**循环引用会导致内存泄漏**（例如对象属性引用自身）。
 
 ### 2.6 Runtime（运行时系统）—— 评分：B+
@@ -141,12 +140,14 @@ Vora Value = null | double | bool | string | Array | Callable | ObjectInstance
 | 2 | `&&` `and` | 左结合 | ✔ 已实现 |
 | 3 | `==` `!=` | 左结合 | ✔ 已实现 |
 | 4 | `<` `<=` `>` `>=` | 左结合 | ✔ 已实现 |
-| 5 | `+` `-` | 左结合 | ✔ 仅数字 |
+| 5 | `+` `-` | 左结合 | ✔ 数字+字符串 |
 | 6 | `*` `/` `%` | 左结合 | ✔ 已实现 |
 | 7 | `**` | 右结合 | ✔ 已实现 |
-| - | `++` `--` | - | ❌ Token 已定义，语义未实现 |
+| - | `++` `--` | 前缀/后缀 | ✔ 已实现（变量和属性） |
+| - | `+=` `-=` `*=` `/=` `%=` | 右结合 | ✔ 已实现 |
+| - | `? :` | 右结合 | ✔ 三元条件，短路求值 |
 
-**程序员评价**：Pratt 解析器的优先级表设计良好。`**` 的右结合性正确处理。`++`/`--` 虽然 token 化了但解析器和解释器都不认识它们——目前是"幽灵运算符"。
+**程序员评价**：Pratt 解析器的优先级表设计良好。`**` 的右结合性正确处理。`? :` 作为特殊中缀运算符在 Pratt 循环内处理。
 
 ### 3.3 变量与作用域
 
@@ -206,11 +207,11 @@ p.age = 21               // 属性赋值
 3. 方法调用返回 `BoundMethodCallable`（绑定 `this` 到当前实例）
 4. 构造函数调用返回 `ObjectInstance`
 
-**程序员评价**：这是 Vora 最巧妙的 feature。Wren 风格的对象语法简洁有力。但有以下限制：
-- 没有原型链 / 继承
-- 没有类方法（静态方法）
-- 方法查找先查属性再查方法表，意味着属性可以 shadow 方法（可能是 feature 也可能是 bug）
-- `ObjectConstructorCallable` 是内嵌在 `visitObjStmt` 中的 struct，导致代码难以测试和复用
+**程序员评价**：这是 Vora 最巧妙的 feature。Wren 风格的对象语法简洁有力。
+- ✅ 单继承：`Obj Child : Parent (params) { ... }`，构造函数链从根到叶自动执行，方法沿继承链查找
+- ❌ 没有类方法（静态方法）
+- ❌ 方法查找先查属性再查方法表，意味着属性可以 shadow 方法（可能是 feature 也可能是 bug）
+- `ObjectConstructorCallable` 是内嵌在 `visitObjStmt` 中的 struct（现在通过 `getClassDef()` 虚方法暴露 classDef 供继承解析）
 
 ### 3.6 字符串插值
 
@@ -247,11 +248,15 @@ print(arr[10])    // RuntimeError: Index out of bounds
 
 | 函数 | 说明 | 实现位置 |
 |------|------|----------|
-| `print(...)` | 变参打印，空格分隔，末尾换行 | `interpreter.cpp:28-44` |
-| `clock()` | 返回 Unix 时间戳（秒，毫秒精度） | `interpreter.cpp:48-61` |
-| `input()` | 从 stdin 读取一行 | `interpreter.cpp:63-74` |
+| `print(...)` | 变参打印，空格分隔，末尾换行 | `interpreter.cpp` |
+| `clock()` | 返回 Unix 时间戳（秒，毫秒精度） | `interpreter.cpp` |
+| `input(...)` | 从 stdin 读取一行，可选 prompt | `interpreter.cpp` |
+| `int(value)` | 转为整数（截断）；接受 number/string/bool | `interpreter.cpp` |
+| `float(value)` | 转为浮点数；接受 number/string/bool | `interpreter.cpp` |
+| `range(...)` | `range(stop)` / `range(start,stop)` / `range(start,stop,step)` | `interpreter.cpp` |
+| `assert(...)` | `assert(condition, message?)` — 断言失败抛错 | `interpreter.cpp` |
 
-**程序员评价**：内建函数过少。没有 `type()`、`assert()`、`range()`、`len()`、`int()`、`str()` 等基本工具函数。`print` 是唯一能让你感知程序运行的窗口。
+**程序员评价**：内建函数已逐步充实。仍缺少 `type()`、`len()`、`toString()` 等实用函数，但日常使用的基本工具已就位。
 
 ---
 
@@ -304,27 +309,22 @@ print(arr[10])    // RuntimeError: Index out of bounds
 
 ### 4.3 🟡 中度级（限制语言表达能力）
 
-11. **没有 `+=` / `-=` / `*=` 等复合赋值**
-    ```vora
-    x = x + 1   // ✅ 可以工作
-    x += 1      // ❌ 语法错误
-    ```
+11. ✅ **复合赋值已实现**：`+=` / `-=` / `*=` / `/=` / `%=` 支持数字、字符串拼接和数组追加。
 
-12. **没有三元运算符**
-    ```vora
-    let label = status == 1 ? "ok" : "fail"  // ❌
-    ```
+12. ✅ **三元运算符已实现**：`condition ? a : b`，短路求值，右结合。
 
-13. **没有整数类型**——无法进行位运算或精确整数运算。
+13. **没有 `&&` / `||` 短路求值**——运算符已解析但求值会报错（需实现 AND/OR 二元运算）。
 
-14. **没有 `switch` / `match`**——多分支只能用 `if-else if` 链。
+14. **没有整数类型**——无法进行位运算或精确整数运算。
 
-15. **不支持默认参数**
+15. **没有 `switch` / `match`**——多分支只能用 `if-else if` 链。
+
+16. **不支持默认参数**
     ```vora
     func greet(name = "World") { ... }  // ❌
     ```
 
-16. **没有函数重载或可选参数检查**。
+17. **没有函数重载或可选参数检查**。
 
 ### 4.4 🟢 轻度级（影响生态和工程化）
 
