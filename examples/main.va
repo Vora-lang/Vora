@@ -1,6 +1,0 @@
-let a = [1,2,3]
-print(a)              // 输出: [1, 2, 3]
-let a = [4,5]
-for i in a {
-    print(i)          // 输出: 4, 5
-}
