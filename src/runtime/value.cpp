@@ -3,6 +3,7 @@
 #include "callable.h"
 #include "native_function.h"
 #include "vora_function.h"
+#include "../vm/compiler.h"
 
 #include <iostream>
 #include <sstream>
@@ -78,6 +79,24 @@ void printValue(const Value& value) {
                 << arg->className
                 << " object>";
 
+        } else if constexpr (
+            std::is_same_v<T, std::shared_ptr<FunctionPrototype>>
+        ) {
+
+            std::cout
+                << "<function prototype "
+                << arg->name
+                << ">";
+
+        } else if constexpr (
+            std::is_same_v<T, std::shared_ptr<ClassData>>
+        ) {
+
+            std::cout
+                << "<class "
+                << arg->name
+                << ">";
+
         } else {
 
             std::cout << arg;
@@ -115,6 +134,10 @@ std::string valueToString(const Value& value) {
             }
         } else if constexpr (std::is_same_v<T, std::shared_ptr<ObjectInstance>>) {
             oss << "<" << arg->className << " object>";
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<FunctionPrototype>>) {
+            oss << "<function prototype " << arg->name << ">";
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<ClassData>>) {
+            oss << "<class " << arg->name << ">";
         } else {
             // double, string
             oss << arg;

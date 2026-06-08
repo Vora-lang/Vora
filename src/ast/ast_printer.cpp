@@ -2,6 +2,7 @@
 #include "program.h"
 
 #include "../runtime/callable.h"
+#include "../vm/compiler.h"
 
 #include <sstream>
 
@@ -53,6 +54,8 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
                     else if constexpr (std::is_same_v<U, std::shared_ptr<Callable>>) return "<fn>";
                     else if constexpr (std::is_same_v<U, std::shared_ptr<Array>>) return "[array]";
                     else if constexpr (std::is_same_v<U, std::shared_ptr<ObjectInstance>>) return "<object>";
+                    else if constexpr (std::is_same_v<U, std::shared_ptr<FunctionPrototype>>) return "<proto>";
+                    else if constexpr (std::is_same_v<U, std::shared_ptr<ClassData>>) return "<class>";
                     else return std::to_string(inner);
                 }, arg->elements[i]);
             }
@@ -62,6 +65,10 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
             return "<fn>";
         } else if constexpr (std::is_same_v<T, std::shared_ptr<ObjectInstance>>) {
             return "<" + arg->className + " object>";
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<FunctionPrototype>>) {
+            return "<proto " + arg->name + ">";
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<ClassData>>) {
+            return "<class " + arg->name + ">";
         } else {
             return std::to_string(arg);
         }

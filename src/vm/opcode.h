@@ -34,6 +34,11 @@ enum class OpCode : uint8_t {
     OP_GREATER,     // a > b
     OP_GREATER_EQUAL, // a >= b
 
+    // Locals
+    OP_GET_LOCAL,      // push local var (operand: uint8_t slot index)
+    OP_SET_LOCAL,      // set local var, leave value on stack (operand: uint8_t slot index)
+    OP_POPN,           // pop N values from stack (operand: uint8_t count)
+
     // Globals
     OP_DEFINE_GLOBAL,  // define global var (operand: uint8_t name index)
     OP_GET_GLOBAL,     // push global var (operand: uint8_t name index)
@@ -42,20 +47,34 @@ enum class OpCode : uint8_t {
     // Control flow
     OP_JUMP,           // unconditional jump (operand: int16_t offset)
     OP_JUMP_IF_FALSE,  // pop + conditional jump (operand: int16_t offset)
+    OP_JUMP_IF_TRUE,   // peek + conditional jump if truthy (operand: int16_t offset)
     OP_LOOP,           // jump backward (operand: int16_t offset)
 
-    // Functions (Phase 2)
-    OP_CALL,        // call function (operand: uint8_t argCount)
-    OP_RETURN,      // return from function
+    // Functions
+    OP_CALL,           // call function (operand: uint8_t argCount)
+    OP_CLOSURE,        // create closure from function prototype (operand: uint8_t constIndex, then N upvalue pairs)
+    OP_RETURN,         // return from function
 
-    // Arrays (Phase 1+)
-    OP_ARRAY,       // create array from N stack values (operand: uint8_t count)
-    OP_INDEX,       // index access a[b] — pops index, pops target, pushes result
-    OP_SET_INDEX,   // index assignment a[b] = v — pops value, index, target, pushes value
+    // Upvalues (closures)
+    OP_GET_UPVALUE,    // push upvalue (operand: uint8_t upvalue index)
+    OP_SET_UPVALUE,    // set upvalue, leave value on stack (operand: uint8_t upvalue index)
+    OP_CLOSE_UPVALUE,  // move local to heap (operand: uint8_t local slot)
 
-    // Objects (Phase 3)
+    // Arrays
+    OP_ARRAY,          // create array from N stack values (operand: uint8_t count)
+    OP_INDEX,          // index access a[b] — pops index, pops target, pushes result
+    OP_SET_INDEX,      // index assignment a[b] = v — pops value, index, target, pushes value
+
+    // Objects
     OP_GET_PROPERTY,   // property access (operand: uint8_t name index)
     OP_SET_PROPERTY,   // property assignment (operand: uint8_t name index)
+    OP_CLASS,          // create class from prototype (operand: uint8_t constIndex)
+
+    // Exception handling
+    OP_PUSH_CATCH,     // push catch handler info (operand: uint16_t catch offset)
+    OP_POP_CATCH,      // pop catch handler
+    OP_THROW,          // throw exception (value on stack top)
+    OP_FINALLY_END,    // marker for finally block end
 };
 
 } // namespace vora

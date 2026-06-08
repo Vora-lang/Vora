@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "chunk.h"
 #include "opcode.h"
@@ -16,13 +17,37 @@
 
 namespace vora {
 
+// Upvalue descriptor: describes a captured variable.
+struct UpvalueDescriptor {
+    uint8_t index;   // local slot index (if isLocal) or enclosing upvalue index
+    bool isLocal;    // true = captured from immediate enclosing function's local
+};
+
+// Compiled function prototype stored in constant pool.
+struct FunctionPrototype {
+    std::string name;
+    int arity;
+    Chunk chunk;
+    std::vector<UpvalueDescriptor> upvalues;  // captured variables
+};
+
+// Class data stored in constant pool for OP_CLASS.
+struct ClassData {
+    std::string name;
+    std::string parentName;
+    std::vector<std::string> params;
+    std::shared_ptr<FunctionPrototype> ctor;
+    std::vector<std::shared_ptr<FunctionPrototype>> methods;
+};
+
 // Compiler: AST → bytecode (side-effectful emission into a Chunk).
 // Implements ExprVisitor<void> + StmtVisitor<void> + ProgramVisitor<void>.
 //
-// Phase 1 supports: expressions, global variables, if/else, while,
-// ternary, arrays, indexing, native function calls (print, clock, etc.).
-// Deferred to Phase 2+: functions/closures, local variables, objects,
-// break/continue, for-in, try/catch/throw.
+// Phase 1: expressions, global variables, if/else, while, ternary,
+//          arrays, indexing, native function calls.
+// Phase 2: local variables, break/continue, for-in, functions/closures,
+//          try/catch/throw.
+// Phase 3: objects (Obj), property access, inheritance.
 class Compiler : public ExprVisitor<void>,
                  public StmtVisitor<void>,
                  public ProgramVisitor<void> {
@@ -71,6 +96,50 @@ private:
     int currentLine = 1;
     int currentColumn = 1;
 
+    // =========================================================================
+    // Local variable tracking
+    // =========================================================================
+    struct Local {
+        std::string name;
+        int depth;       // scope depth where declared
+        bool captured;   // true if referenced by a nested closure
+    };
+    std::vector<Local> locals;
+    int scopeDepth = 0;
+    std::vector<int> scopeLocalCounts;  // #locals added per scope (parallel to scopes)
+
+    void beginScope();
+    void endScope();
+    void addLocal(const std::string& name);
+    int resolveLocal(const std::string& name) const;  // returns -1 if not found
+    int currentLocalCount() const;
+
+    // =========================================================================
+    // Loop context (break/continue back-patching)
+    // =========================================================================
+    struct LoopContext {
+        size_t loopStart;                   // offset to re-evaluate condition
+        size_t continueTarget;              // offset to jump for continue (increment section)
+        std::vector<size_t> breakJumps;     // OP_JUMP placeholders to patch (break)
+        std::vector<size_t> continueJumps;  // OP_JUMP placeholders to patch (continue)
+        int enclosingScopeDepth;            // scope depth at loop entry
+    };
+    std::vector<LoopContext> loopStack;
+
+    // =========================================================================
+    // Function context
+    // =========================================================================
+    Compiler* enclosing = nullptr;  // outer compiler (for closures)
+
+    // =========================================================================
+    // Upvalue tracking (closures)
+    // =========================================================================
+    std::vector<UpvalueDescriptor> upvalues;
+    int resolveUpvalue(Compiler* compiler, const std::string& name);
+
+    // =========================================================================
+    // Bytecode emission
+    // =========================================================================
     void emitByte(uint8_t byte);
     void emitBytes(uint8_t a, uint8_t b);
     void emitConstant(Value value);
@@ -79,9 +148,14 @@ private:
     void emitLoop(size_t loopStart);
     uint8_t makeConstant(Value value);
     uint8_t identifierConstant(const std::string& name);
+    uint8_t addFunctionPrototype(FunctionPrototype proto);
 
     // Compile an expression (convenience)
     void compileExpr(const Expr& expr);
+
+    // Compile a string with optional ${...} interpolation
+    void compileInterpolatedString(const std::string& str);
+    void compileVariableOrPropertyRef(const std::string& name);
 };
 
 } // namespace vora

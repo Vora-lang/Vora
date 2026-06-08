@@ -2,10 +2,11 @@
 #include "opcode.h"
 
 #include "../runtime/native_function.h"
+#include "../runtime/vora_function.h"
+#include "../vm/compiler.h"  // for FunctionPrototype, ClassData
 
 #include <cmath>
 #include <iostream>
-#include <stdexcept>
 
 namespace vora {
 
@@ -15,6 +16,7 @@ namespace vora {
 
 VM::VM() {
     resetStack();
+    frameBase = stack;
 }
 
 void VM::resetStack() {
@@ -41,8 +43,11 @@ uint16_t VM::readShort() {
     return result;
 }
 
+uint8_t VM::readByte() {
+    return *ip++;
+}
+
 void VM::runtimeError(const std::string& message) {
-    // Find the line at the current instruction pointer
     size_t offset = ip - currentChunk->code.data();
     int line = 0;
     size_t pos = 0;
@@ -60,6 +65,59 @@ void VM::runtimeError(const std::string& message) {
 
 void VM::runtimeError(const std::string& message, int line, int column) {
     std::cerr << "VM RuntimeError [" << line << ":" << column << "]: " << message << std::endl;
+}
+
+bool VM::runtimeErrorOrThrow(const std::string& message) {
+    if (throwException(message)) return true;  // caught by catch handler
+    runtimeError(message);
+    return false;  // not caught
+}
+
+std::shared_ptr<Value> VM::captureUpvalue(Value* slot) {
+    // Check if this slot already has an open upvalue
+    auto it = openUpvalues.find(slot);
+    if (it != openUpvalues.end()) {
+        return it->second;
+    }
+    // Create a new heap-allocated value copying the current stack value
+    auto uv = std::make_shared<Value>(*slot);
+    openUpvalues[slot] = uv;
+    return uv;
+}
+
+bool VM::throwException(const Value& value) {
+    // Walk up through catch handlers
+    while (!catchHandlers.empty()) {
+        auto handler = catchHandlers.back();
+        catchHandlers.pop_back();
+
+        // Unwind stack to handler's frame base
+        stackTop = handler.targetFrameBase;
+
+        // Push the thrown value
+        push(value);
+
+        // Jump to catch handler
+        ip = handler.targetIp;
+
+        // Restore chunk to the one where the catch was registered
+        // (the current chunk might be from a function call)
+        // Actually, we need to unwind frames too.
+        // For now, just reset frames to match the catch handler's context.
+        // The catch handler frame base corresponds to the frame at registration time.
+        // We pop function frames until the frame base matches.
+        while (!frames.empty() && frames.back().frameBase > handler.targetFrameBase) {
+            frames.pop_back();
+        }
+        if (!frames.empty()) {
+            frameBase = frames.back().frameBase;
+            // Restore chunk from the last remaining frame, or top-level
+        }
+
+        return true;  // caught
+    }
+
+    return false;  // not caught
 }
 
 // =========================================================================
@@ -80,7 +138,7 @@ bool VM::isTruthy(const Value& value) {
     if (std::holds_alternative<bool>(value)) return std::get<bool>(value);
     if (std::holds_alternative<double>(value)) return std::get<double>(value) != 0.0;
     if (std::holds_alternative<std::string>(value)) return !std::get<std::string>(value).empty();
-    return true; // arrays, callables, objects are always truthy
+    return true;
 }
 
 bool VM::valuesEqual(const Value& a, const Value& b) {
@@ -91,7 +149,6 @@ bool VM::valuesEqual(const Value& a, const Value& b) {
     if (std::holds_alternative<bool>(a)) return std::get<bool>(a) == std::get<bool>(b);
     if (std::holds_alternative<std::string>(a)) return std::get<std::string>(a) == std::get<std::string>(b);
 
-    // Reference types — pointer identity
     if (std::holds_alternative<std::shared_ptr<Array>>(a))
         return std::get<std::shared_ptr<Array>>(a) == std::get<std::shared_ptr<Array>>(b);
     if (std::holds_alternative<std::shared_ptr<Callable>>(a))
@@ -103,10 +160,8 @@ bool VM::valuesEqual(const Value& a, const Value& b) {
 }
 
 int VM::valuesCompare(const Value& a, const Value& b) {
-    // Returns -1 if a < b, 0 if equal, 1 if a > b
-    // Used for OP_LESS etc.
     if (!std::holds_alternative<double>(a) || !std::holds_alternative<double>(b)) {
-        return 0; // non-numeric comparison not supported; left to caller
+        return 0;
     }
     double da = std::get<double>(a);
     double db = std::get<double>(b);
@@ -116,17 +171,14 @@ int VM::valuesCompare(const Value& a, const Value& b) {
 }
 
 Value VM::addValues(const Value& a, const Value& b) {
-    // Number + number
     if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
         return std::get<double>(a) + std::get<double>(b);
     }
 
-    // String + string (concatenation)
     if (std::holds_alternative<std::string>(a) && std::holds_alternative<std::string>(b)) {
         return std::get<std::string>(a) + std::get<std::string>(b);
     }
 
-    // String + any / any + string
     if (std::holds_alternative<std::string>(a)) {
         return std::get<std::string>(a) + valueToString(b);
     }
@@ -134,7 +186,6 @@ Value VM::addValues(const Value& a, const Value& b) {
         return valueToString(a) + std::get<std::string>(b);
     }
 
-    // Array + array (merge)
     if (std::holds_alternative<std::shared_ptr<Array>>(a) && std::holds_alternative<std::shared_ptr<Array>>(b)) {
         auto result = std::make_shared<Array>();
         const auto& leftArr = std::get<std::shared_ptr<Array>>(a)->elements;
@@ -145,7 +196,6 @@ Value VM::addValues(const Value& a, const Value& b) {
         return result;
     }
 
-    // Array + value (append)
     if (std::holds_alternative<std::shared_ptr<Array>>(a)) {
         auto result = std::make_shared<Array>();
         const auto& leftArr = std::get<std::shared_ptr<Array>>(a)->elements;
@@ -155,7 +205,6 @@ Value VM::addValues(const Value& a, const Value& b) {
         return result;
     }
 
-    // Value + array (prepend)
     if (std::holds_alternative<std::shared_ptr<Array>>(b)) {
         auto result = std::make_shared<Array>();
         const auto& rightArr = std::get<std::shared_ptr<Array>>(b)->elements;
@@ -165,8 +214,86 @@ Value VM::addValues(const Value& a, const Value& b) {
         return result;
     }
 
-    runtimeError("Invalid operands for +");
+    runtimeErrorOrThrow("Invalid operands for +");
     return nullptr;
+}
+
+// =========================================================================
+// Call frame management
+// =========================================================================
+
+bool VM::callValue(const Value& callee, uint8_t argCount) {
+    if (std::holds_alternative<std::shared_ptr<Callable>>(callee)) {
+        auto callable = std::get<std::shared_ptr<Callable>>(callee);
+
+        // Native function
+        if (auto native = std::dynamic_pointer_cast<NativeFunction>(callable)) {
+            if (native->arity() >= 0 && argCount != static_cast<uint8_t>(native->arity())) {
+                runtimeErrorOrThrow("Wrong arity: expected " +
+                    std::to_string(native->arity()) + " but got " +
+                    std::to_string(argCount));
+                return false;
+            }
+
+            // Collect arguments from stack (in reverse)
+            std::vector<Value> arguments(argCount);
+            for (int i = argCount - 1; i >= 0; i--) {
+                arguments[static_cast<size_t>(i)] = pop();
+            }
+            pop(); // pop the callable itself
+
+            push(native->callDirectly(arguments));
+            return true;
+        }
+
+        // Vora function
+        if (auto voraFn = std::dynamic_pointer_cast<VoraFunction>(callable)) {
+            // Collect arguments from stack (in reverse)
+            std::vector<Value> arguments(argCount);
+            for (int i = argCount - 1; i >= 0; i--) {
+                arguments[static_cast<size_t>(i)] = pop();
+            }
+            pop(); // pop the callable itself
+
+            return callVoraFunction(voraFn, arguments) == InterpretResult::OK;
+        }
+    }
+
+    runtimeErrorOrThrow("Can only call functions");
+    return false;
+}
+
+InterpretResult VM::callVoraFunction(const std::shared_ptr<VoraFunction>& func,
+                                      const std::vector<Value>& args) {
+    // Check arity
+    if (static_cast<size_t>(func->arity()) != args.size()) {
+        runtimeErrorOrThrow("Wrong arity: expected " +
+            std::to_string(func->arity()) + " but got " +
+            std::to_string(args.size()));
+        return InterpretResult::RUNTIME_ERROR;
+    }
+
+    // Get the function's compiled prototype
+    const FunctionPrototype* proto = func->getPrototype();
+    if (!proto) {
+        runtimeErrorOrThrow("Function has no compiled body");
+        return InterpretResult::RUNTIME_ERROR;
+    }
+
+    // Push return address, caller chunk, and function onto call frame stack
+    frames.push_back({ip, frameBase, currentChunk, func});
+
+    // Switch to function's chunk
+    currentChunk = &proto->chunk;
+    ip = currentChunk->code.data();
+    frameBase = stackTop;  // locals start after the current stack top
+
+    // Bind parameters as locals at frameBase
+    for (size_t i = 0; i < args.size(); i++) {
+        push(args[i]);
+    }
+
+    return InterpretResult::OK;
 }
 
 // =========================================================================
@@ -177,6 +304,9 @@ InterpretResult VM::interpret(const Chunk& chunk) {
     currentChunk = &chunk;
     ip = chunk.code.data();
     resetStack();
+    frameBase = stack;
+    frames.clear();
+    catchHandlers.clear();
     return run();
 }
 
@@ -187,6 +317,13 @@ InterpretResult VM::interpret(const Chunk& chunk) {
 InterpretResult VM::run() {
 #define READ_BYTE() (*ip++)
 #define READ_CONSTANT() (currentChunk->constants[READ_BYTE()])
+#define RUNTIME_ERROR_OR_THROW(msg) \
+    do { \
+        std::string _errMsg = (msg); \
+        if (throwException(_errMsg)) { goto dispatch; } \
+        runtimeError(_errMsg); \
+        return InterpretResult::RUNTIME_ERROR; \
+    } while (false)
 #define BINARY_OP(op, opName) \
     do { \
         Value b = pop(); \
@@ -196,8 +333,7 @@ InterpretResult VM::run() {
             double db = std::get<double>(b); \
             push((da op db)); \
         } else { \
-            runtimeError("Invalid operands for " opName); \
-            return InterpretResult::RUNTIME_ERROR; \
+            RUNTIME_ERROR_OR_THROW("Invalid operands for " opName); \
         } \
     } while (false)
 
@@ -216,6 +352,24 @@ InterpretResult VM::run() {
 
             // --- Stack ---
             case OpCode::OP_POP: pop(); break;
+            case OpCode::OP_POPN: {
+                uint8_t count = READ_BYTE();
+                stackTop -= count;
+                break;
+            }
+
+            // --- Locals ---
+            case OpCode::OP_GET_LOCAL: {
+                uint8_t slot = READ_BYTE();
+                push(frameBase[slot]);
+                break;
+            }
+            case OpCode::OP_SET_LOCAL: {
+                uint8_t slot = READ_BYTE();
+                Value value = peek(0);
+                frameBase[slot] = value;
+                break;
+            }
 
             // --- Unary ---
             case OpCode::OP_NEGATE: {
@@ -223,8 +377,7 @@ InterpretResult VM::run() {
                 if (std::holds_alternative<double>(v)) {
                     push(-std::get<double>(pop()));
                 } else {
-                    runtimeError("Negation requires a number");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Negation requires a number");
                 }
                 break;
             }
@@ -248,13 +401,11 @@ InterpretResult VM::run() {
                 if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
                     double db = std::get<double>(b);
                     if (db == 0) {
-                        runtimeError("Division by zero");
-                        return InterpretResult::RUNTIME_ERROR;
+                        RUNTIME_ERROR_OR_THROW("Division by zero");
                     }
                     push(std::get<double>(a) / db);
                 } else {
-                    runtimeError("Invalid operands for division");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Invalid operands for division");
                 }
                 break;
             }
@@ -264,13 +415,11 @@ InterpretResult VM::run() {
                 if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
                     double db = std::get<double>(b);
                     if (db == 0) {
-                        runtimeError("Modulo by zero");
-                        return InterpretResult::RUNTIME_ERROR;
+                        RUNTIME_ERROR_OR_THROW("Modulo by zero");
                     }
                     push(std::fmod(std::get<double>(a), db));
                 } else {
-                    runtimeError("Invalid operands for modulo");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Invalid operands for modulo");
                 }
                 break;
             }
@@ -280,8 +429,7 @@ InterpretResult VM::run() {
                 if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
                     push(std::pow(std::get<double>(a), std::get<double>(b)));
                 } else {
-                    runtimeError("Invalid operands for power (**)");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Invalid operands for power (**)");
                 }
                 break;
             }
@@ -353,8 +501,7 @@ InterpretResult VM::run() {
                 if (it != globals.end()) {
                     push(it->second);
                 } else {
-                    runtimeError("Undefined variable '" + name + "'");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Undefined variable '" + name + "'");
                 }
                 break;
             }
@@ -365,8 +512,7 @@ InterpretResult VM::run() {
                 if (it != globals.end()) {
                     it->second = value;
                 } else {
-                    runtimeError("Undefined variable '" + name + "'");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Undefined variable '" + name + "'");
                 }
                 break;
             }
@@ -384,6 +530,13 @@ InterpretResult VM::run() {
                 }
                 break;
             }
+            case OpCode::OP_JUMP_IF_TRUE: {
+                uint16_t offset = readShort();
+                if (isTruthy(peek(0))) {
+                    ip += offset;
+                }
+                break;
+            }
             case OpCode::OP_LOOP: {
                 uint16_t offset = readShort();
                 ip -= offset;
@@ -393,31 +546,122 @@ InterpretResult VM::run() {
             // --- Functions ---
             case OpCode::OP_CALL: {
                 uint8_t argCount = READ_BYTE();
-                // Collect arguments in reverse order (they're on the stack)
-                std::vector<Value> arguments(argCount);
-                for (int i = argCount - 1; i >= 0; i--) {
-                    arguments[static_cast<size_t>(i)] = pop();
-                }
-                Value callee = pop();
-
-                if (auto native = std::dynamic_pointer_cast<NativeFunction>(
-                        std::get<std::shared_ptr<Callable>>(callee))) {
-                    if (native->arity() >= 0 && argCount != static_cast<uint8_t>(native->arity())) {
-                        runtimeError("Wrong arity: expected " +
-                            std::to_string(native->arity()) + " but got " +
-                            std::to_string(argCount));
-                        return InterpretResult::RUNTIME_ERROR;
-                    }
-                    push(native->callDirectly(arguments));
-                } else {
-                    runtimeError("Can only call native functions in VM Phase 1");
+                Value callee = peek(argCount);
+                if (!callValue(callee, argCount)) {
                     return InterpretResult::RUNTIME_ERROR;
                 }
                 break;
             }
+            case OpCode::OP_CLOSURE: {
+                uint8_t constIndex = READ_BYTE();
+                Value protoVal = currentChunk->constants[constIndex];
+                if (!std::holds_alternative<std::shared_ptr<FunctionPrototype>>(protoVal)) {
+                    RUNTIME_ERROR_OR_THROW("OP_CLOSURE: expected function prototype in constant pool");
+                }
+                auto protoPtr = std::get<std::shared_ptr<FunctionPrototype>>(protoVal);
+                auto function = std::make_shared<VoraFunction>(
+                    protoPtr->name, protoPtr->arity, protoPtr.get());
+
+                // Read upvalue descriptors and capture upvalues
+                uint8_t upvalueCount = READ_BYTE();
+                for (uint8_t u = 0; u < upvalueCount; u++) {
+                    uint8_t isLocal = READ_BYTE();
+                    uint8_t index = READ_BYTE();
+                    if (isLocal) {
+                        // Capture local from current frame's stack
+                        Value* slot = frameBase + index;
+                        auto uv = captureUpvalue(slot);
+                        function->upvalues.push_back(uv);
+                    } else {
+                        // Capture upvalue from enclosing function
+                        if (!frames.empty()) {
+                            auto& encFn = frames.back().function;
+                            if (encFn && index < encFn->upvalues.size()) {
+                                function->upvalues.push_back(encFn->upvalues[index]);
+                            } else {
+                                function->upvalues.push_back(
+                                    std::make_shared<Value>(nullptr));
+                            }
+                        } else {
+                            function->upvalues.push_back(
+                                std::make_shared<Value>(nullptr));
+                        }
+                    }
+                }
+
+                push(function);
+                break;
+            }
             case OpCode::OP_RETURN: {
-                // Exit the VM. In Phase 1, this just stops.
-                return InterpretResult::OK;
+                // Return from current function or top-level
+                if (frames.empty()) {
+                    // Top-level return
+                    return InterpretResult::OK;
+                }
+
+                // Get return value (top of stack)
+                Value returnValue = pop();
+
+                // Pop all locals by restoring stack to frame base
+                stackTop = frameBase;
+
+                // Clear any open upvalues for this frame (locals going out of scope)
+                for (auto it = openUpvalues.begin(); it != openUpvalues.end(); ) {
+                    if (it->first >= frameBase && it->first < frameBase + 256) {
+                        it = openUpvalues.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+
+                // Restore caller's frame
+                CallFrame frame = frames.back();
+                frames.pop_back();
+                ip = frame.returnIp;
+                frameBase = frame.frameBase;
+                currentChunk = frame.callerChunk;
+
+                // Push return value
+                push(returnValue);
+                break;
+            }
+
+            // --- Upvalues ---
+            case OpCode::OP_GET_UPVALUE: {
+                uint8_t idx = READ_BYTE();
+                std::shared_ptr<VoraFunction> fn;
+                if (!frames.empty()) {
+                    fn = frames.back().function;
+                }
+                if (fn && idx < fn->upvalues.size()) {
+                    push(*(fn->upvalues[idx]));
+                } else {
+                    RUNTIME_ERROR_OR_THROW("Invalid upvalue index");
+                }
+                break;
+            }
+            case OpCode::OP_SET_UPVALUE: {
+                uint8_t idx = READ_BYTE();
+                std::shared_ptr<VoraFunction> fn;
+                if (!frames.empty()) {
+                    fn = frames.back().function;
+                }
+                if (fn && idx < fn->upvalues.size()) {
+                    *(fn->upvalues[idx]) = peek(0);
+                } else {
+                    RUNTIME_ERROR_OR_THROW("Invalid upvalue index");
+                }
+                break;
+            }
+            case OpCode::OP_CLOSE_UPVALUE: {
+                uint8_t localSlot = READ_BYTE();
+                Value* slot = frameBase + localSlot;
+                auto it = openUpvalues.find(slot);
+                if (it != openUpvalues.end()) {
+                    // Sync current stack value to the heap-allocated upvalue
+                    *(it->second) = *slot;
+                }
+                break;
             }
 
             // --- Arrays ---
@@ -425,7 +669,6 @@ InterpretResult VM::run() {
                 uint8_t count = READ_BYTE();
                 auto arr = std::make_shared<Array>();
                 arr->elements.reserve(count);
-                // Elements are on the stack in push order, so pop in reverse
                 size_t startIdx = stackTop - stack - count;
                 for (uint8_t i = 0; i < count; i++) {
                     arr->elements.push_back(stack[startIdx + i]);
@@ -439,14 +682,12 @@ InterpretResult VM::run() {
                 Value target = pop();
 
                 if (!std::holds_alternative<double>(indexVal)) {
-                    runtimeError("Index must be a number");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Index must be a number");
                 }
 
                 double rawIndex = std::get<double>(indexVal);
                 if (rawIndex < 0 || std::floor(rawIndex) != rawIndex) {
-                    runtimeError("Index must be a non-negative integer");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Index must be a non-negative integer");
                 }
 
                 size_t index = static_cast<size_t>(rawIndex);
@@ -454,21 +695,18 @@ InterpretResult VM::run() {
                 if (std::holds_alternative<std::string>(target)) {
                     const auto& str = std::get<std::string>(target);
                     if (index >= str.size()) {
-                        runtimeError("Index out of bounds");
-                        return InterpretResult::RUNTIME_ERROR;
+                        RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
                     push(std::string(1, str[index]));
                 } else if (std::holds_alternative<std::shared_ptr<Array>>(target)) {
                     const auto& elements =
                         std::get<std::shared_ptr<Array>>(target)->elements;
                     if (index >= elements.size()) {
-                        runtimeError("Index out of bounds");
-                        return InterpretResult::RUNTIME_ERROR;
+                        RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
                     push(elements[index]);
                 } else {
-                    runtimeError("Indexing requires an array or string");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Indexing requires an array or string");
                 }
                 break;
             }
@@ -478,14 +716,12 @@ InterpretResult VM::run() {
                 Value target = pop();
 
                 if (!std::holds_alternative<double>(indexVal)) {
-                    runtimeError("Index must be a number");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Index must be a number");
                 }
 
                 double rawIndex = std::get<double>(indexVal);
                 if (rawIndex < 0 || std::floor(rawIndex) != rawIndex) {
-                    runtimeError("Index must be a non-negative integer");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Index must be a non-negative integer");
                 }
 
                 size_t index = static_cast<size_t>(rawIndex);
@@ -494,27 +730,228 @@ InterpretResult VM::run() {
                     auto& elements =
                         std::get<std::shared_ptr<Array>>(target)->elements;
                     if (index >= elements.size()) {
-                        runtimeError("Index out of bounds");
-                        return InterpretResult::RUNTIME_ERROR;
+                        RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
                     elements[index] = value;
                     push(value);
+                } else if (std::holds_alternative<std::string>(target)) {
+                    RUNTIME_ERROR_OR_THROW("Cannot assign to string index (strings are immutable)");
                 } else {
-                    runtimeError("Index assignment requires an array");
-                    return InterpretResult::RUNTIME_ERROR;
+                    RUNTIME_ERROR_OR_THROW("Index assignment requires an array");
                 }
                 break;
             }
 
-            case OpCode::OP_GET_PROPERTY:
-            case OpCode::OP_SET_PROPERTY:
-                runtimeError("Object properties not supported in VM Phase 1");
-                return InterpretResult::RUNTIME_ERROR;
+            // --- Objects ---
+            case OpCode::OP_GET_PROPERTY: {
+                uint8_t nameIndex = READ_BYTE();
+                std::string propName = std::get<std::string>(currentChunk->constants[nameIndex]);
+                Value obj = pop();
+
+                if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(obj)) {
+                    auto instance = std::get<std::shared_ptr<ObjectInstance>>(obj);
+                    // Check instance properties
+                    auto it = instance->properties.find(propName);
+                    if (it != instance->properties.end()) {
+                        push(it->second);
+                        break;
+                    }
+                    // Check class methods
+                    if (instance->classDefinition) {
+                        ObjectClass* cls = instance->classDefinition.get();
+                        while (cls) {
+                            auto methodIt = cls->methods.find(propName);
+                            if (methodIt != cls->methods.end()) {
+                                // Create bound method — wrap in a NativeFunction
+                                // that captures this instance and the method
+                                auto methodFn = methodIt->second;
+                                auto instancePtr = instance;
+                                auto bound = std::make_shared<NativeFunction>(
+                                    propName, methodFn->arity(),
+                                    [methodFn, instancePtr](const std::vector<Value>& args) -> Value {
+                                        // Execute the method with 'this' bound
+                                        // For now, use a simplified approach:
+                                        // create a temporary VM, set up call frame
+                                        VM tempVm;
+                                        const FunctionPrototype* mp = methodFn->getPrototype();
+                                        if (!mp) return nullptr; // interpreter-only function
+
+                                        // Save current state
+                                        const Chunk* savedChunk = tempVm.currentChunk;
+                                        const uint8_t* savedIp = tempVm.ip;
+                                        Value* savedFrameBase = tempVm.frameBase;
+
+                                        tempVm.currentChunk = &mp->chunk;
+                                        tempVm.ip = mp->chunk.code.data();
+                                        tempVm.frameBase = tempVm.stackTop;
+
+                                        // Push 'this' as slot 0
+                                        tempVm.push(instancePtr);
+                                        // Push args
+                                        for (const auto& a : args) {
+                                            tempVm.push(a);
+                                        }
+
+                                        // Run the method body
+                                        auto result = tempVm.run();
+
+                                        if (result == InterpretResult::OK) {
+                                            // Result is on top of stack
+                                            if (tempVm.stackTop > tempVm.stack) {
+                                                return tempVm.pop();
+                                            }
+                                        }
+                                        return nullptr;
+                                    });
+                                push(bound);
+                                break;
+                            }
+                            cls = cls->parentClass.get();
+                        }
+                        if (cls) break;  // found method
+                    }
+                    RUNTIME_ERROR_OR_THROW("Undefined property: " + propName);
+                } else {
+                    RUNTIME_ERROR_OR_THROW("Can only access properties on objects");
+                }
+                break;
+            }
+            case OpCode::OP_SET_PROPERTY: {
+                uint8_t nameIndex = READ_BYTE();
+                std::string propName = std::get<std::string>(currentChunk->constants[nameIndex]);
+                Value value = pop();
+                Value obj = pop();
+
+                if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(obj)) {
+                    auto instance = std::get<std::shared_ptr<ObjectInstance>>(obj);
+                    instance->properties[propName] = value;
+                    push(value);
+                } else {
+                    RUNTIME_ERROR_OR_THROW("Can only set properties on objects");
+                }
+                break;
+            }
+            case OpCode::OP_CLASS: {
+                uint8_t classIndex = READ_BYTE();
+                Value classDataVal = currentChunk->constants[classIndex];
+
+                if (!std::holds_alternative<std::shared_ptr<ClassData>>(classDataVal)) {
+                    RUNTIME_ERROR_OR_THROW("OP_CLASS: expected class data in constant pool");
+                }
+                auto cdPtr = std::get<std::shared_ptr<ClassData>>(classDataVal);
+                const auto& cd = *cdPtr;
+
+                // Build ObjectClass
+                auto objClass = std::make_shared<ObjectClass>();
+                objClass->className = cd.name;
+                objClass->params = cd.params;
+                objClass->ctorProto = cd.ctor;
+
+                // Resolve parent class from globals
+                if (!cd.parentName.empty()) {
+                    auto it = globals.find(cd.parentName);
+                    if (it != globals.end()) {
+                        if (auto callable = std::get_if<std::shared_ptr<Callable>>(&it->second)) {
+                            if (*callable) {
+                                objClass->parentClass = (*callable)->getClassDef();
+                            }
+                        }
+                    }
+                }
+
+                // Store method VoraFunctions
+                for (const auto& methodProto : cd.methods) {
+                    auto methodFn = std::make_shared<VoraFunction>(
+                        methodProto->name, methodProto->arity, methodProto.get());
+                    objClass->methods[methodProto->name] = methodFn;
+                }
+
+                // Create constructor VoraFunction
+                auto ctorFn = std::make_shared<VoraFunction>(
+                    cd.ctor->name, cd.ctor->arity, cd.ctor.get());
+
+                // The constructor callable that creates instances.
+                // Parent constructors are called root-first, then the child's
+                // constructor. Each parent gets args[0..parentParamCount].
+                auto ctorCallable = std::make_shared<NativeFunction>(
+                    cd.name, static_cast<int>(cd.params.size()),
+                    [objClass, ctorFn](const std::vector<Value>& args) -> Value {
+                        auto instance = std::make_shared<ObjectInstance>();
+                        instance->className = objClass->className;
+                        instance->classDefinition = objClass;
+
+                        // Helper: run a constructor prototype on the instance
+                        auto runCtor = [&instance](const FunctionPrototype* cp,
+                                                   const std::vector<Value>& ctorArgs) {
+                            if (!cp) return;
+                            VM tempVm;
+                            tempVm.currentChunk = &cp->chunk;
+                            tempVm.ip = cp->chunk.code.data();
+                            tempVm.frameBase = tempVm.stackTop;
+                            tempVm.push(instance);  // 'this' at slot 0
+                            for (const auto& a : ctorArgs) {
+                                tempVm.push(a);
+                            }
+                            tempVm.run();
+                        };
+
+                        // Run parent constructors root-first.
+                        // Each parent gets ALL arguments (it uses the params it needs).
+                        if (objClass->parentClass) {
+                            std::vector<ObjectClass*> chain;
+                            for (ObjectClass* p = objClass->parentClass.get(); p; p = p->parentClass.get()) {
+                                chain.insert(chain.begin(), p);
+                            }
+                            for (auto* parent : chain) {
+                                if (parent->ctorProto) {
+                                    runCtor(parent->ctorProto.get(), args);
+                                }
+                            }
+                        }
+
+                        // Run own constructor with all args
+                        if (ctorFn->getPrototype()) {
+                            runCtor(ctorFn->getPrototype(), args);
+                        }
+
+                        return instance;
+                    });
+
+                ctorCallable->setClassDef(objClass);
+                push(ctorCallable);
+                break;
+            }
+
+            // --- Exception handling ---
+            case OpCode::OP_PUSH_CATCH: {
+                uint16_t catchOffset = readShort();
+                catchHandlers.push_back({ip + catchOffset, frameBase});
+                break;
+            }
+            case OpCode::OP_POP_CATCH: {
+                if (!catchHandlers.empty()) {
+                    catchHandlers.pop_back();
+                }
+                break;
+            }
+            case OpCode::OP_THROW: {
+                Value thrown = peek(0);
+                if (!throwException(thrown)) {
+                    runtimeError("Uncaught exception: " + valueToString(thrown));
+                    return InterpretResult::RUNTIME_ERROR;
+                }
+                // throwException already set ip and stack, continue execution
+                goto dispatch;
+            }
+            case OpCode::OP_FINALLY_END: {
+                // Marker for finally block end — just continue
+                break;
+            }
 
             default:
-                runtimeError("Unknown opcode");
-                return InterpretResult::RUNTIME_ERROR;
+                RUNTIME_ERROR_OR_THROW("Unknown opcode");
         }
+        dispatch:;
     }
 
 #undef READ_BYTE

@@ -195,6 +195,20 @@ static void runScript(
                 return (neg ? std::string("-0x") : std::string("0x")) + digits;
             });
 
+        // Internal builtin used by for-in loop desugaring
+        vm.defineNative("_vora_len", 1,
+            [](const std::vector<Value>& arguments) -> Value {
+                const auto& arg = arguments[0];
+                if (std::holds_alternative<std::shared_ptr<Array>>(arg)) {
+                    return static_cast<double>(
+                        std::get<std::shared_ptr<Array>>(arg)->elements.size());
+                }
+                if (std::holds_alternative<std::string>(arg)) {
+                    return static_cast<double>(std::get<std::string>(arg).size());
+                }
+                return 0.0;
+            });
+
         // Print bytecode disassembly if requested
         if (printTokens) {
             chunk.disassemble("VM Bytecode");

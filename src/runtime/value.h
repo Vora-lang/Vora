@@ -13,6 +13,8 @@ class VoraFunction;
 class BlockStmt;
 struct Array;
 struct ObjectInstance;
+struct FunctionPrototype;
+struct ClassData;
 
 using Value = std::variant<
     std::nullptr_t,
@@ -21,7 +23,9 @@ using Value = std::variant<
     std::string,
     std::shared_ptr<Array>,
     std::shared_ptr<Callable>,
-    std::shared_ptr<ObjectInstance>
+    std::shared_ptr<ObjectInstance>,
+    std::shared_ptr<FunctionPrototype>,
+    std::shared_ptr<ClassData>
 >;
 
 struct Array {
@@ -35,6 +39,7 @@ struct ObjectClass {
     std::map<std::string, std::shared_ptr<VoraFunction>> methods;
     std::string parentClassName;              // empty = no parent
     std::shared_ptr<ObjectClass> parentClass;  // resolved at runtime
+    std::shared_ptr<FunctionPrototype> ctorProto;  // compiled constructor
 };
 
 struct ObjectInstance {

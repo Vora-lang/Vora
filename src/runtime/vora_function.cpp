@@ -1,6 +1,7 @@
 #include "vora_function.h"
 
 #include "../interpreter/interpreter.h"
+#include "../vm/compiler.h"  // for FunctionPrototype
 #include "environment.h"
 
 namespace vora {
@@ -13,8 +14,19 @@ VoraFunction::VoraFunction(
 )
     : name_(std::move(name)),
       params_(std::move(params)),
+      arity_(static_cast<int>(params_.size())),
       body_(std::move(body)),
       closure_(std::move(closure)) {
+}
+
+VoraFunction::VoraFunction(
+    std::string name,
+    int arity,
+    const FunctionPrototype* prototype
+)
+    : name_(std::move(name)),
+      arity_(arity),
+      prototype_(prototype) {
 }
 
 Value VoraFunction::call(

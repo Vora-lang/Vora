@@ -34,12 +34,18 @@ public:
 
     int arity() const;
 
+    void setClassDef(std::shared_ptr<ObjectClass> cd) { classDef_ = std::move(cd); }
+
+    std::shared_ptr<ObjectClass> getClassDef() const override { return classDef_; }
+
 private:
     std::string name_;
 
     int arity_;
 
     NativeFn function_;
+
+    std::shared_ptr<ObjectClass> classDef_;
 };
 
 }

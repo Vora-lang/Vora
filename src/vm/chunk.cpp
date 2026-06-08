@@ -1,5 +1,6 @@
 #include "chunk.h"
 #include "opcode.h"
+#include "compiler.h"
 
 #include <cstdio>
 #include <cmath>
@@ -17,6 +18,7 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_TRUE:           return "OP_TRUE";
         case OpCode::OP_FALSE:          return "OP_FALSE";
         case OpCode::OP_POP:            return "OP_POP";
+        case OpCode::OP_POPN:           return "OP_POPN";
         case OpCode::OP_NEGATE:         return "OP_NEGATE";
         case OpCode::OP_NOT:            return "OP_NOT";
         case OpCode::OP_ADD:            return "OP_ADD";
@@ -31,19 +33,28 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_LESS_EQUAL:     return "OP_LESS_EQUAL";
         case OpCode::OP_GREATER:        return "OP_GREATER";
         case OpCode::OP_GREATER_EQUAL:  return "OP_GREATER_EQUAL";
+        case OpCode::OP_GET_LOCAL:      return "OP_GET_LOCAL";
+        case OpCode::OP_SET_LOCAL:      return "OP_SET_LOCAL";
         case OpCode::OP_DEFINE_GLOBAL:  return "OP_DEFINE_GLOBAL";
         case OpCode::OP_GET_GLOBAL:     return "OP_GET_GLOBAL";
         case OpCode::OP_SET_GLOBAL:     return "OP_SET_GLOBAL";
         case OpCode::OP_JUMP:           return "OP_JUMP";
         case OpCode::OP_JUMP_IF_FALSE:  return "OP_JUMP_IF_FALSE";
+        case OpCode::OP_JUMP_IF_TRUE:   return "OP_JUMP_IF_TRUE";
         case OpCode::OP_LOOP:           return "OP_LOOP";
         case OpCode::OP_CALL:           return "OP_CALL";
+        case OpCode::OP_CLOSURE:        return "OP_CLOSURE";
         case OpCode::OP_RETURN:         return "OP_RETURN";
         case OpCode::OP_ARRAY:          return "OP_ARRAY";
         case OpCode::OP_INDEX:          return "OP_INDEX";
         case OpCode::OP_SET_INDEX:      return "OP_SET_INDEX";
         case OpCode::OP_GET_PROPERTY:   return "OP_GET_PROPERTY";
         case OpCode::OP_SET_PROPERTY:   return "OP_SET_PROPERTY";
+        case OpCode::OP_CLASS:          return "OP_CLASS";
+        case OpCode::OP_PUSH_CATCH:     return "OP_PUSH_CATCH";
+        case OpCode::OP_POP_CATCH:      return "OP_POP_CATCH";
+        case OpCode::OP_THROW:          return "OP_THROW";
+        case OpCode::OP_FINALLY_END:    return "OP_FINALLY_END";
     }
     return "OP_UNKNOWN";
 }
@@ -63,6 +74,12 @@ static std::string constantToString(const Value& value) {
     if (std::holds_alternative<std::string>(value)) {
         return "'" + std::get<std::string>(value) + "'";
     }
+    if (std::holds_alternative<std::shared_ptr<FunctionPrototype>>(value)) {
+        return "<proto " + std::get<std::shared_ptr<FunctionPrototype>>(value)->name + ">";
+    }
+    if (std::holds_alternative<std::shared_ptr<ClassData>>(value)) {
+        return "<class " + std::get<std::shared_ptr<ClassData>>(value)->name + ">";
+    }
     return "[object]";
 }
 
@@ -72,8 +89,8 @@ static std::string constantToString(const Value& value) {
 
 void Chunk::writeLineColumn(int line, int column) {
     if (lines.empty()) {
-        lines.push_back(1);       // run length
-        lines.push_back(line);    // line number
+        lines.push_back(1);
+        lines.push_back(line);
         columns.push_back(1);
         columns.push_back(column);
         lastLine = line;
@@ -83,11 +100,9 @@ void Chunk::writeLineColumn(int line, int column) {
     }
 
     if (line == lastLine && column == lastColumn) {
-        // Extend current run
         lines[lineRunStart]++;
         columns[lineRunStart]++;
     } else {
-        // Start new run
         lines.push_back(1);
         lines.push_back(line);
         columns.push_back(1);
@@ -117,7 +132,6 @@ void Chunk::writeAt(size_t offset, uint8_t byte) {
 }
 
 size_t Chunk::addConstant(Value value) {
-    // Deduplicate by value
     for (size_t i = 0; i < constants.size(); i++) {
         const auto& existing = constants[i];
         if (existing.index() != value.index()) continue;
@@ -153,7 +167,6 @@ void Chunk::disassemble(const std::string& name) const {
 size_t Chunk::disassembleInstruction(size_t offset) const {
     std::printf("%04zu ", offset);
 
-    // Print line number from RLE
     int line = 0;
     size_t pos = 0;
     for (size_t i = 0; i < lines.size(); i += 2) {
@@ -165,7 +178,6 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
         pos += runLen;
     }
     if (offset > 0) {
-        // Print line only if it changed
         int prevLine = 0;
         pos = 0;
         for (size_t i = 0; i < lines.size(); i += 2) {
@@ -196,6 +208,13 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             std::printf("'%s'\n", constantToString(constants[index]).c_str());
             return offset + 2;
         }
+        case OpCode::OP_GET_LOCAL:
+        case OpCode::OP_SET_LOCAL:
+        case OpCode::OP_POPN: {
+            uint8_t index = code[offset + 1];
+            std::printf("%-16s %4d\n", opcodeName(instruction), index);
+            return offset + 2;
+        }
         case OpCode::OP_DEFINE_GLOBAL:
         case OpCode::OP_GET_GLOBAL:
         case OpCode::OP_SET_GLOBAL:
@@ -210,12 +229,28 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             }
             return offset + 2;
         }
+        case OpCode::OP_CLOSURE:
+        case OpCode::OP_CLASS:
+        case OpCode::OP_CALL:
+        case OpCode::OP_ARRAY: {
+            uint8_t val = code[offset + 1];
+            std::printf("%-16s %4d\n", opcodeName(instruction), val);
+            return offset + 2;
+        }
         case OpCode::OP_JUMP:
-        case OpCode::OP_JUMP_IF_FALSE: {
+        case OpCode::OP_JUMP_IF_FALSE:
+        case OpCode::OP_JUMP_IF_TRUE: {
             uint16_t jumpOffset = static_cast<uint16_t>(code[offset + 1])
                                 | (static_cast<uint16_t>(code[offset + 2]) << 8);
             std::printf("%-16s %4d -> %zu\n", opcodeName(instruction),
                        jumpOffset, offset + 3 + jumpOffset);
+            return offset + 3;
+        }
+        case OpCode::OP_PUSH_CATCH: {
+            uint16_t catchOffset = static_cast<uint16_t>(code[offset + 1])
+                                  | (static_cast<uint16_t>(code[offset + 2]) << 8);
+            std::printf("%-16s %4d -> %zu\n", opcodeName(instruction),
+                       catchOffset, offset + 3 + catchOffset);
             return offset + 3;
         }
         case OpCode::OP_LOOP: {
@@ -224,16 +259,6 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             std::printf("%-16s %4d -> %zu\n", opcodeName(instruction),
                        loopOffset, offset + 3 - loopOffset);
             return offset + 3;
-        }
-        case OpCode::OP_CALL: {
-            uint8_t argCount = code[offset + 1];
-            std::printf("%-16s %4d\n", opcodeName(instruction), argCount);
-            return offset + 2;
-        }
-        case OpCode::OP_ARRAY: {
-            uint8_t count = code[offset + 1];
-            std::printf("%-16s %4d\n", opcodeName(instruction), count);
-            return offset + 2;
         }
         default:
             std::printf("%s\n", opcodeName(instruction));
