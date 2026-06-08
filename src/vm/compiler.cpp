@@ -1,5 +1,6 @@
 #include "compiler.h"
 
+#include <iostream>
 #include <variant>
 
 #include "../runtime/vora_function.h"
@@ -53,7 +54,13 @@ void Compiler::emitLoop(size_t loopStart) {
 }
 
 uint8_t Compiler::makeConstant(Value value) {
-    return static_cast<uint8_t>(chunk.addConstant(value));
+    size_t index = chunk.addConstant(value);
+    // Guard against constant pool overflow (> 256 entries)
+    if (index > UINT8_MAX) {
+        std::cerr << "Compiler error: constant pool overflow (" << index << " entries)" << std::endl;
+        std::exit(1);
+    }
+    return static_cast<uint8_t>(index);
 }
 
 uint8_t Compiler::identifierConstant(const std::string& name) {
@@ -136,27 +143,39 @@ int Compiler::resolveUpvalue(Compiler* compiler, const std::string& name) {
     // Walk up the enclosing compiler chain to find the variable
     if (compiler->enclosing == nullptr) return -1;
 
+    uint8_t resolvedIndex;
+    bool resolvedIsLocal;
+
     // Try to resolve as a local in the immediate enclosing function
     int localSlot = compiler->enclosing->resolveLocal(name);
     if (localSlot >= 0) {
         // Mark the local as captured in the enclosing function
         compiler->enclosing->locals[static_cast<size_t>(localSlot)].captured = true;
-        // Add upvalue to current compiler (isLocal = true)
-        int idx = static_cast<int>(upvalues.size());
-        upvalues.push_back({static_cast<uint8_t>(localSlot), true});
-        return idx;
+        resolvedIndex = static_cast<uint8_t>(localSlot);
+        resolvedIsLocal = true;
+    } else {
+        // Try to resolve as an upvalue in the immediate enclosing function
+        int upvalueIdx = compiler->enclosing->resolveUpvalue(compiler->enclosing, name);
+        if (upvalueIdx >= 0) {
+            resolvedIndex = static_cast<uint8_t>(upvalueIdx);
+            resolvedIsLocal = false;
+        } else {
+            return -1;
+        }
     }
 
-    // Try to resolve as an upvalue in the immediate enclosing function
-    int upvalueIdx = compiler->enclosing->resolveUpvalue(compiler->enclosing, name);
-    if (upvalueIdx >= 0) {
-        // Add upvalue to current compiler (isLocal = false — it's an enclosing upvalue)
-        int idx = static_cast<int>(upvalues.size());
-        upvalues.push_back({static_cast<uint8_t>(upvalueIdx), false});
-        return idx;
+    // Check if this upvalue is already captured (deduplicate)
+    for (int i = 0; i < static_cast<int>(upvalues.size()); i++) {
+        if (upvalues[i].index == resolvedIndex &&
+            upvalues[i].isLocal == resolvedIsLocal) {
+            return i;  // already captured, reuse existing index
+        }
     }
 
-    return -1;
+    // Add new upvalue descriptor
+    int idx = static_cast<int>(upvalues.size());
+    upvalues.push_back({resolvedIndex, resolvedIsLocal});
+    return idx;
 }
 
 // =========================================================================
@@ -284,11 +303,18 @@ void Compiler::compileVariableOrPropertyRef(const std::string& name) {
         emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
                   static_cast<uint8_t>(localSlot));
     } else {
+        // Use safe global lookup: if the global doesn't exist, push the
+        // literal ${...} text as a fallback (matching interpreter behavior).
         uint8_t nameIndex = identifierConstant(base);
-        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL), nameIndex);
+        std::string fallback = "${" + name + "}";
+        uint8_t fallbackIndex = identifierConstant(fallback);
+        emitByte(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL_SAFE));
+        emitByte(nameIndex);
+        emitByte(fallbackIndex);
+        return;  // property chains on safe globals not yet supported
     }
 
-    // Walk property chain
+    // Walk property chain (only reached for locals)
     while (dot != std::string::npos) {
         size_t start = dot + 1;
         dot = name.find('.', start);
@@ -467,43 +493,73 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
     double delta = (expr.op.type == TokenType::PLUS_PLUS) ? 1.0 : -1.0;
 
     if (auto var = dynamic_cast<const VariableExpr*>(expr.target.get())) {
-        // Get current value
+        // Get current value onto stack
         var->accept(*this);
 
+        // Resolve the variable's location once
+        int localSlot = resolveLocal(var->name);
+        bool isLocal = (localSlot >= 0);
+        uint8_t nameIndex = 0;
+        if (!isLocal) {
+            nameIndex = identifierConstant(var->name);
+        }
+
         if (expr.isPrefix) {
-            // Prefix: increment on stack, then store back
+            // Prefix: ++x → increment on stack, store back, leave new value.
             emitConstant(delta);
             emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
-
-            int localSlot = resolveLocal(var->name);
-            if (localSlot >= 0) {
-                // Duplicate and set local
+            if (isLocal) {
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
                           static_cast<uint8_t>(localSlot));
             } else {
-                uint8_t nameIndex = identifierConstant(var->name);
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL), nameIndex);
             }
         } else {
-            // Postfix: save old value, increment, store, pop new (leave old)
-            // Strategy: dup oldVal, push delta, add, set, pop (old stays)
-            // Actually, this is complex. For Phase 1/2 simplicity:
-            // Push oldVal, push delta, add, set (old val is now buried)
-            // For now, postfix behaves like prefix on the stack result
+            // Postfix: x++ → save old value (DUP), increment, store, pop new,
+            // leaving old value on stack as the expression result.
+            emitByte(static_cast<uint8_t>(OpCode::OP_DUP));
             emitConstant(delta);
             emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
-
-            int localSlot = resolveLocal(var->name);
-            if (localSlot >= 0) {
+            if (isLocal) {
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
                           static_cast<uint8_t>(localSlot));
             } else {
-                uint8_t nameIndex = identifierConstant(var->name);
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL), nameIndex);
             }
+            emitByte(static_cast<uint8_t>(OpCode::OP_POP));
         }
+        return;
     }
-    // Property targets deferred to Phase 3
+
+    // Property target: ++obj.prop / obj.prop++
+    if (auto prop = dynamic_cast<const PropertyExpr*>(expr.target.get())) {
+        uint8_t propIndex = identifierConstant(prop->property);
+
+        if (expr.isPrefix) {
+            // Prefix: ++obj.prop → dup obj, get old, inc, set, leave new.
+            prop->object->accept(*this);
+            emitByte(static_cast<uint8_t>(OpCode::OP_DUP));
+            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIndex);
+            emitConstant(delta);
+            emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+            emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), propIndex);
+        } else {
+            // Postfix: obj.prop++ → get old as result, then set obj.prop += delta.
+            // Strategy: evaluate obj twice — once to get old value, once to set.
+            prop->object->accept(*this);
+            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIndex);
+            // Stack: [old]  — saved for result
+            // Second evaluation: obj again, with DUP to keep obj for SET_PROPERTY
+            prop->object->accept(*this);
+            emitByte(static_cast<uint8_t>(OpCode::OP_DUP));  // keep obj ref
+            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIndex);  // [old, obj, old2]
+            emitConstant(delta);
+            emitByte(static_cast<uint8_t>(OpCode::OP_ADD));   // [old, obj, new]
+            emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), propIndex);  // [old, new]
+            emitByte(static_cast<uint8_t>(OpCode::OP_POP));    // [old]
+        }
+        return;
+    }
 }
 
 void Compiler::visitTernaryExpr(const TernaryExpr& expr) {

@@ -99,19 +99,29 @@ bool VM::throwException(const Value& value) {
 
         // Jump to catch handler
         ip = handler.targetIp;
+        currentChunk = handler.chunk;
 
-        // Restore chunk to the one where the catch was registered
-        // (the current chunk might be from a function call)
-        // Actually, we need to unwind frames too.
-        // For now, just reset frames to match the catch handler's context.
-        // The catch handler frame base corresponds to the frame at registration time.
-        // We pop function frames until the frame base matches.
-        while (!frames.empty() && frames.back().frameBase > handler.targetFrameBase) {
+        // Unwind call frames to the level where the handler was registered.
+        // Use frameCount (not pointer comparison) to handle the edge case
+        // where a called function's frameBase equals the handler's frameBase
+        // (e.g. when the stack is empty at call time, both are at stack[]).
+        while (frames.size() > handler.frameCount) {
+            // Clear open upvalues for the frame being unwound
+            Value* frameEnd = frames.back().frameBase + 256;
+            auto it = openUpvalues.begin();
+            while (it != openUpvalues.end()) {
+                if (it->first >= frames.back().frameBase && it->first < frameEnd) {
+                    it = openUpvalues.erase(it);
+                } else {
+                    ++it;
+                }
+            }
             frames.pop_back();
         }
         if (!frames.empty()) {
             frameBase = frames.back().frameBase;
-            // Restore chunk from the last remaining frame, or top-level
+        } else {
+            frameBase = stack;  // top-level
         }
 
         return true;  // caught
@@ -371,6 +381,11 @@ InterpretResult VM::run() {
                 break;
             }
 
+            case OpCode::OP_DUP: {
+                push(peek(0));
+                break;
+            }
+
             // --- Unary ---
             case OpCode::OP_NEGATE: {
                 Value v = peek(0);
@@ -505,6 +520,25 @@ InterpretResult VM::run() {
                 }
                 break;
             }
+            case OpCode::OP_GET_GLOBAL_SAFE: {
+                // Like OP_GET_GLOBAL but pushes a fallback value if the
+                // global is not found. Used for string interpolation where
+                // undefined variables should keep their literal ${...} text.
+                uint8_t nameIndex = READ_BYTE();
+                uint8_t fallbackIndex = READ_BYTE();
+                if (nameIndex >= currentChunk->constants.size() ||
+                    fallbackIndex >= currentChunk->constants.size()) {
+                    RUNTIME_ERROR_OR_THROW("OP_GET_GLOBAL_SAFE: constant index out of bounds");
+                }
+                std::string name = std::get<std::string>(currentChunk->constants[nameIndex]);
+                auto it = globals.find(name);
+                if (it != globals.end()) {
+                    push(it->second);
+                } else {
+                    push(currentChunk->constants[fallbackIndex]);
+                }
+                break;
+            }
             case OpCode::OP_SET_GLOBAL: {
                 std::string name = std::get<std::string>(READ_CONSTANT());
                 Value value = peek(0);
@@ -568,10 +602,12 @@ InterpretResult VM::run() {
                     uint8_t isLocal = READ_BYTE();
                     uint8_t index = READ_BYTE();
                     if (isLocal) {
-                        // Capture local from current frame's stack
+                        // Capture local: snapshot the current value.
+                        // Each closure gets its own independent copy to match
+                        // the interpreter's Environment::snapshot() semantics.
                         Value* slot = frameBase + index;
-                        auto uv = captureUpvalue(slot);
-                        function->upvalues.push_back(uv);
+                        function->upvalues.push_back(
+                            std::make_shared<Value>(*slot));
                     } else {
                         // Capture upvalue from enclosing function
                         if (!frames.empty()) {
@@ -925,7 +961,7 @@ InterpretResult VM::run() {
             // --- Exception handling ---
             case OpCode::OP_PUSH_CATCH: {
                 uint16_t catchOffset = readShort();
-                catchHandlers.push_back({ip + catchOffset, frameBase});
+                catchHandlers.push_back({ip + catchOffset, frameBase, currentChunk, frames.size()});
                 break;
             }
             case OpCode::OP_POP_CATCH: {

@@ -50,7 +50,7 @@ static void runScript(
     const std::string& source,
     bool printAst,
     bool printTokens,
-    bool vmMode
+    bool interpreterMode
 ) {
     Lexer lexer(source);
     auto tokens = lexer.scanTokens();
@@ -74,8 +74,8 @@ static void runScript(
         std::cout << printer.print(program.get()) << std::endl;
     }
 
-    if (vmMode) {
-        // Bytecode VM path
+    if (!interpreterMode) {
+        // Bytecode VM path (default)
         Compiler compiler;
         Chunk chunk = compiler.compile(program.get());
         VM vm;
@@ -272,7 +272,7 @@ int main(
     bool printAst = false;
     bool printTokens = false;
     bool repl = false;
-    bool vmMode = false;
+    bool interpreterMode = false;  // default: VM
     std::string path;
 
     for (int i = 1; i < argc; i++) {
@@ -293,8 +293,13 @@ int main(
             continue;
         }
 
+        if (arg == "--interpreter") {
+            interpreterMode = true;
+            continue;
+        }
+
+        // --vm is now the default; recognized for compatibility
         if (arg == "--vm") {
-            vmMode = true;
             continue;
         }
 
@@ -320,10 +325,10 @@ int main(
         std::cerr
             << "Usage:\n"
             << "  vora <file>\n"
+            << "  vora <file> --interpreter\n"
             << "  vora <file> --ast-printer\n"
             << "  vora <file> --tokens\n"
-            << "  vora <file> --vm\n"
-            << "  vora <file> --vm --tokens\n"
+            << "  vora <file> --tokens          (bytecode disassembly, default VM)\n"
             << "  vora --repl\n";
 
         return 1;
@@ -340,7 +345,7 @@ int main(
     }
 
     try {
-        runScript(source, printAst, printTokens, vmMode);
+        runScript(source, printAst, printTokens, interpreterMode);
     }
     catch (const RuntimeError& error) {
         std::cerr

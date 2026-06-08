@@ -18,6 +18,7 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_TRUE:           return "OP_TRUE";
         case OpCode::OP_FALSE:          return "OP_FALSE";
         case OpCode::OP_POP:            return "OP_POP";
+        case OpCode::OP_DUP:            return "OP_DUP";
         case OpCode::OP_POPN:           return "OP_POPN";
         case OpCode::OP_NEGATE:         return "OP_NEGATE";
         case OpCode::OP_NOT:            return "OP_NOT";
@@ -36,8 +37,9 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_GET_LOCAL:      return "OP_GET_LOCAL";
         case OpCode::OP_SET_LOCAL:      return "OP_SET_LOCAL";
         case OpCode::OP_DEFINE_GLOBAL:  return "OP_DEFINE_GLOBAL";
-        case OpCode::OP_GET_GLOBAL:     return "OP_GET_GLOBAL";
-        case OpCode::OP_SET_GLOBAL:     return "OP_SET_GLOBAL";
+        case OpCode::OP_GET_GLOBAL:      return "OP_GET_GLOBAL";
+        case OpCode::OP_SET_GLOBAL:      return "OP_SET_GLOBAL";
+        case OpCode::OP_GET_GLOBAL_SAFE: return "OP_GET_GLOBAL_SAFE";
         case OpCode::OP_JUMP:           return "OP_JUMP";
         case OpCode::OP_JUMP_IF_FALSE:  return "OP_JUMP_IF_FALSE";
         case OpCode::OP_JUMP_IF_TRUE:   return "OP_JUMP_IF_TRUE";
@@ -205,11 +207,22 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
         case OpCode::OP_CONSTANT: {
             uint8_t index = code[offset + 1];
             std::printf("%-16s %4d ", opcodeName(instruction), index);
-            std::printf("'%s'\n", constantToString(constants[index]).c_str());
+            if (index < constants.size()) {
+                std::printf("'%s'\n", constantToString(constants[index]).c_str());
+            } else {
+                std::printf("'<invalid index %d>'\n", index);
+            }
             return offset + 2;
         }
         case OpCode::OP_GET_LOCAL:
         case OpCode::OP_SET_LOCAL:
+        case OpCode::OP_GET_UPVALUE:
+        case OpCode::OP_SET_UPVALUE:
+        case OpCode::OP_CLOSE_UPVALUE: {
+            uint8_t index = code[offset + 1];
+            std::printf("%-16s %4d\n", opcodeName(instruction), index);
+            return offset + 2;
+        }
         case OpCode::OP_POPN: {
             uint8_t index = code[offset + 1];
             std::printf("%-16s %4d\n", opcodeName(instruction), index);
@@ -225,12 +238,46 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             if (index < constants.size()) {
                 std::printf("'%s'\n", constantToString(constants[index]).c_str());
             } else {
-                std::printf("\n");
+                std::printf("'<invalid index %d>'\n", index);
             }
             return offset + 2;
         }
-        case OpCode::OP_CLOSURE:
-        case OpCode::OP_CLASS:
+        case OpCode::OP_GET_GLOBAL_SAFE: {
+            uint8_t nameIndex = code[offset + 1];
+            uint8_t fallbackIndex = code[offset + 2];
+            std::printf("%-16s %4d fallback=%d", opcodeName(instruction),
+                       nameIndex, fallbackIndex);
+            if (nameIndex < constants.size()) {
+                std::printf(" '%s'", constantToString(constants[nameIndex]).c_str());
+            }
+            if (fallbackIndex < constants.size()) {
+                std::printf(" -> '%s'", constantToString(constants[fallbackIndex]).c_str());
+            }
+            std::printf("\n");
+            return offset + 3;
+        }
+        case OpCode::OP_CLOSURE: {
+            uint8_t protoIndex = code[offset + 1];
+            uint8_t upvalueCount = code[offset + 2];
+            std::printf("%-16s %4d upvalues=%d", opcodeName(instruction), protoIndex, upvalueCount);
+            if (protoIndex < constants.size()) {
+                std::printf(" %s", constantToString(constants[protoIndex]).c_str());
+            }
+            std::printf("\n");
+            // Skip protoIndex + upvalueCount + upvalue descriptors (2 bytes each)
+            return offset + 2 + 1 + static_cast<size_t>(upvalueCount) * 2;
+        }
+        case OpCode::OP_CLASS: {
+            uint8_t classIndex = code[offset + 1];
+            uint8_t methodCount = code[offset + 2];
+            std::printf("%-16s %4d methods=%d", opcodeName(instruction), classIndex, methodCount);
+            if (classIndex < constants.size()) {
+                std::printf(" %s", constantToString(constants[classIndex]).c_str());
+            }
+            std::printf("\n");
+            // Skip classIndex + methodCount + method indices
+            return offset + 2 + 1 + static_cast<size_t>(methodCount);
+        }
         case OpCode::OP_CALL:
         case OpCode::OP_ARRAY: {
             uint8_t val = code[offset + 1];

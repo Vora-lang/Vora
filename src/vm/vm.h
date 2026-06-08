@@ -40,10 +40,12 @@ class VM {
     std::vector<CallFrame> frames;
     Value* frameBase = nullptr;  // current frame's base (stack for top-level)
 
-    // Catch handler stack: { catchIp, catchFrameBase }
+    // Catch handler stack: { catchIp, catchFrameBase, chunk, frameCount }
     struct CatchHandler {
         const uint8_t* targetIp;
         Value* targetFrameBase;
+        const Chunk* chunk;        // which chunk the handler lives in
+        size_t frameCount;         // frames.size() when handler was registered
     };
     std::vector<CatchHandler> catchHandlers;
 

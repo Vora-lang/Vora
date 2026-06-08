@@ -13,6 +13,7 @@ enum class OpCode : uint8_t {
 
     // Stack
     OP_POP,         // pop top of stack
+    OP_DUP,         // duplicate top of stack
 
     // Unary
     OP_NEGATE,      // negate top of stack (number)
@@ -40,9 +41,11 @@ enum class OpCode : uint8_t {
     OP_POPN,           // pop N values from stack (operand: uint8_t count)
 
     // Globals
-    OP_DEFINE_GLOBAL,  // define global var (operand: uint8_t name index)
-    OP_GET_GLOBAL,     // push global var (operand: uint8_t name index)
-    OP_SET_GLOBAL,     // set global var, leave value on stack (operand: uint8_t name index)
+    OP_DEFINE_GLOBAL,     // define global var (operand: uint8_t name index)
+    OP_GET_GLOBAL,        // push global var (operand: uint8_t name index)
+    OP_SET_GLOBAL,        // set global var, leave value on stack (operand: uint8_t name index)
+    OP_GET_GLOBAL_SAFE,   // push global var, or fallback if undefined
+                          // (operand: uint8_t nameIndex, uint8_t fallbackIndex)
 
     // Control flow
     OP_JUMP,           // unconditional jump (operand: int16_t offset)
