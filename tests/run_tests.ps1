@@ -6,7 +6,30 @@
 param([switch]$Interpreter)
 
 $ErrorActionPreference = "Continue"
-$Vora = ".\build\Debug\Vora.exe"
+
+# Locate the Vora binary — try common locations
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectDir = Split-Path -Parent $ScriptDir
+$Vora = $null
+foreach ($candidate in @(
+        "$ProjectDir\build\Debug\Vora.exe",
+        "$ProjectDir\build\Release\Vora.exe",
+        "$ProjectDir\build\Vora.exe"
+    )) {
+    if (Test-Path $candidate) {
+        $Vora = $candidate
+        break
+    }
+}
+if (-not $Vora) {
+    Write-Host "Error: Vora binary not found. Build the project first:" -ForegroundColor Red
+    Write-Host "  cmake -S . -B build && cmake --build build"
+    exit 1
+}
+
+Write-Host "Using: $Vora"
+Write-Host ""
+
 $Pass = 0
 $Fail = 0
 $Errors = @()
@@ -18,9 +41,9 @@ Write-Host "  Vora Test Suite ($Mode mode)"
 Write-Host "============================================"
 Write-Host ""
 
-Get-ChildItem -Path tests/lexer, tests/parser, tests/runtime, tests/interpreter -Filter *.va | ForEach-Object {
+Get-ChildItem -Path "$ProjectDir\tests\lexer", "$ProjectDir\tests\parser", "$ProjectDir\tests\runtime", "$ProjectDir\tests\interpreter" -Filter *.va | ForEach-Object {
     $file = $_.FullName
-    $name = $_.FullName -replace [regex]::Escape("$PWD\"), ""
+    $name = $_.FullName -replace [regex]::Escape("$ProjectDir\tests\"), ""
     Write-Host ("  {0,-45} " -f $name) -NoNewline
 
     $output = & $Vora $ModeFlag $file 2>&1

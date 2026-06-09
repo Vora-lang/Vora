@@ -1,45 +1,84 @@
 #!/usr/bin/env bash
-# run_tests.sh — Vora test suite runner
+# run_tests.sh — Vora test suite runner (Linux / macOS / WSL)
 # Usage:
-#   bash tests/run_tests.sh          # Interpreter mode (default)
-#   bash tests/run_tests.sh --vm     # VM mode
+#   bash tests/run_tests.sh                 # VM mode (default)
+#   bash tests/run_tests.sh --interpreter   # Interpreter mode
+#
+# On Windows, use tests/run_tests.ps1 instead.
 
 set -e
 
-VORA="./build/Debug/Vora.exe"
+# ──────────────────────────────────────────────────
+# Locate the Vora binary
+# ──────────────────────────────────────────────────
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Try common locations (single-config first, then multi-config)
+VORA=""
+for candidate in \
+    "$PROJECT_DIR/build/Vora" \
+    "$PROJECT_DIR/build/Debug/Vora" \
+    "$PROJECT_DIR/build/Release/Vora" \
+    "$PROJECT_DIR/build/vora" \
+    "$PROJECT_DIR/build/Debug/vora" \
+    "$PROJECT_DIR/build/Release/vora"; do
+    if [ -x "$candidate" ]; then
+        VORA="$candidate"
+        break
+    fi
+done
+
+if [ -z "$VORA" ]; then
+    echo "Error: Vora binary not found. Build the project first:"
+    echo "  cmake -S . -B build && cmake --build build"
+    exit 1
+fi
+
+echo "Using: $VORA"
+echo ""
+
+# ──────────────────────────────────────────────────
+# Mode
+# ──────────────────────────────────────────────────
+
+MODE_FLAG=""
+MODE="VM"
+if [[ "$1" == "--interpreter" ]]; then
+    MODE_FLAG="--interpreter"
+    MODE="Interpreter"
+fi
+
+# ──────────────────────────────────────────────────
+# Run tests
+# ──────────────────────────────────────────────────
+
 PASS=0
 FAIL=0
 ERRORS=""
-
-VM_FLAG=""
-MODE="Interpreter"
-if [[ "$1" == "--vm" ]]; then
-    VM_FLAG="--vm"
-    MODE="VM"
-fi
 
 echo "============================================"
 echo "  Vora Test Suite ($MODE mode)"
 echo "============================================"
 echo ""
 
-run_test() {
-    local file="$1"
-    local name="${file#tests/}"
+for file in "$PROJECT_DIR"/tests/lexer/*.va \
+            "$PROJECT_DIR"/tests/parser/*.va \
+            "$PROJECT_DIR"/tests/runtime/*.va \
+            "$PROJECT_DIR"/tests/interpreter/*.va; do
+    [ -f "$file" ] || continue
+    name="${file#$PROJECT_DIR/tests/}"
     printf "  %-45s " "$name"
-    if output=$("$VORA" $VM_FLAG "$file" 2>&1); then
+
+    if output=$("$VORA" $MODE_FLAG "$file" 2>&1); then
         echo "PASS"
-        PASS=$((PASS + 1))
+        ((PASS++)) || true
     else
         echo "FAIL"
-        FAIL=$((FAIL + 1))
-        ERRORS="$ERRORS\n  $name: $output"
+        ((FAIL++)) || true
+        ERRORS+=$'\n'"  $name: $output"
     fi
-}
-
-for file in tests/lexer/*.va tests/parser/*.va tests/runtime/*.va tests/interpreter/*.va; do
-    [ -f "$file" ] || continue
-    run_test "$file"
 done
 
 echo ""
@@ -50,7 +89,7 @@ echo "============================================"
 if [ $FAIL -gt 0 ]; then
     echo ""
     echo "Failures:"
-    printf "%b" "$ERRORS"
+    echo "$ERRORS"
     echo ""
     exit 1
 fi

@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: "${{ matrix.os }} (${{ matrix.config }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        config: [Debug]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Linux: install Ninja for faster builds ──
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y ninja-build
+
+      # ── macOS: install Ninja for faster builds ──
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      # ── Configure ──────────────────────────────
+      - name: Configure (CMake)
+        run: >
+          cmake
+          -S .
+          -B build
+          -G "${{ runner.os == 'Windows' && 'Visual Studio 17 2022' || 'Ninja' }}"
+          -DCMAKE_CXX_STANDARD=17
+          -DCMAKE_CXX_STANDARD_REQUIRED=ON
+          -DCMAKE_CXX_EXTENSIONS=OFF
+          -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+
+      # ── Build ──────────────────────────────────
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config }}
+
+      # ── List built binary (debug aid) ─────────
+      - name: Show build output
+        shell: bash
+        run: |
+          echo "Build output:"
+          find build -type f \( -name 'Vora' -o -name 'Vora.exe' -o -name 'vora' \) 2>/dev/null || true
+
+      # ── Test (CTest) ───────────────────────────
+      - name: Test (VM mode)
+        run: ctest --test-dir build -C ${{ matrix.config }} -R "^vm-" --output-on-failure
+
+      - name: Test (Interpreter mode)
+        run: ctest --test-dir build -C ${{ matrix.config }} -R "^interp-" --output-on-failure
