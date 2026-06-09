@@ -91,10 +91,19 @@ public:
     // Access to compiled chunk
     const Chunk& getChunk() const { return chunk; }
 
+    // Global variable interning: maps name → slot for direct VM indexing
+    const std::vector<std::string>& getGlobalNames() const { return globalNames; }
+
 private:
     Chunk chunk;
     int currentLine = 1;
     int currentColumn = 1;
+
+    // =========================================================================
+    // Global variable interning
+    // =========================================================================
+    std::vector<std::string> globalNames;
+    int resolveGlobal(const std::string& name);  // returns slot index
 
     // =========================================================================
     // Local variable tracking

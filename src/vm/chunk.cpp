@@ -28,6 +28,14 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_DIVIDE:         return "OP_DIVIDE";
         case OpCode::OP_MODULO:         return "OP_MODULO";
         case OpCode::OP_POWER:          return "OP_POWER";
+        case OpCode::OP_SUB_NN:         return "OP_SUB_NN";
+        case OpCode::OP_MUL_NN:         return "OP_MUL_NN";
+        case OpCode::OP_DIV_NN:         return "OP_DIV_NN";
+        case OpCode::OP_MOD_NN:         return "OP_MOD_NN";
+        case OpCode::OP_LESS_NN:        return "OP_LESS_NN";
+        case OpCode::OP_LESS_EQ_NN:     return "OP_LESS_EQ_NN";
+        case OpCode::OP_GREATER_NN:     return "OP_GREATER_NN";
+        case OpCode::OP_GREATER_EQ_NN:  return "OP_GREATER_EQ_NN";
         case OpCode::OP_EQUAL:          return "OP_EQUAL";
         case OpCode::OP_NOT_EQUAL:      return "OP_NOT_EQUAL";
         case OpCode::OP_LESS:           return "OP_LESS";
@@ -230,7 +238,11 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
         }
         case OpCode::OP_DEFINE_GLOBAL:
         case OpCode::OP_GET_GLOBAL:
-        case OpCode::OP_SET_GLOBAL:
+        case OpCode::OP_SET_GLOBAL: {
+            uint8_t slot = code[offset + 1];
+            std::printf("%-16s slot %d\n", opcodeName(instruction), slot);
+            return offset + 2;
+        }
         case OpCode::OP_GET_PROPERTY:
         case OpCode::OP_SET_PROPERTY: {
             uint8_t index = code[offset + 1];
@@ -243,13 +255,10 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             return offset + 2;
         }
         case OpCode::OP_GET_GLOBAL_SAFE: {
-            uint8_t nameIndex = code[offset + 1];
+            uint8_t slot = code[offset + 1];
             uint8_t fallbackIndex = code[offset + 2];
-            std::printf("%-16s %4d fallback=%d", opcodeName(instruction),
-                       nameIndex, fallbackIndex);
-            if (nameIndex < constants.size()) {
-                std::printf(" '%s'", constantToString(constants[nameIndex]).c_str());
-            }
+            std::printf("%-16s slot %d fallback=%d", opcodeName(instruction),
+                       slot, fallbackIndex);
             if (fallbackIndex < constants.size()) {
                 std::printf(" -> '%s'", constantToString(constants[fallbackIndex]).c_str());
             }

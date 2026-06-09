@@ -20,17 +20,27 @@ enum class OpCode : uint8_t {
     OP_NOT,         // logical not top of stack
 
     // Binary arithmetic
-    OP_ADD,         // a + b
+    OP_ADD,         // a + b  (general: numbers, strings, arrays)
     OP_SUBTRACT,    // a - b
     OP_MULTIPLY,    // a * b
     OP_DIVIDE,      // a / b
     OP_MODULO,      // a % b
     OP_POWER,       // a ** b
 
+    // Fast numeric-only arithmetic (skip type checks, operands must be double)
+    OP_SUB_NN,      // number - number
+    OP_MUL_NN,      // number * number
+    OP_DIV_NN,      // number / number
+    OP_MOD_NN,      // number % number
+    OP_LESS_NN,     // number < number
+    OP_LESS_EQ_NN,  // number <= number
+    OP_GREATER_NN,  // number > number
+    OP_GREATER_EQ_NN, // number >= number
+
     // Comparison
     OP_EQUAL,       // a == b
     OP_NOT_EQUAL,   // a != b
-    OP_LESS,        // a < b
+    OP_LESS,        // a < b  (general, kept for compatibility)
     OP_LESS_EQUAL,  // a <= b
     OP_GREATER,     // a > b
     OP_GREATER_EQUAL, // a >= b

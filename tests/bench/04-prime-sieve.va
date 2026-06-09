@@ -1,0 +1,55 @@
+// ============================================================
+// 题目 4：素数筛选（CPU 密集型）
+// 求 2 到 LIMIT 之间有多少个素数
+// 原题：1 亿（100,000,000），用埃氏筛法
+//
+// Vora 限制：不支持 arr[i]=x 索引赋值，无法实现标准埃氏筛
+// 替代方案：试除法（只检查已知素数的整除性，仅追加不修改）
+// 修改 LIMIT 调整规模
+// ============================================================
+
+func count_primes(limit) {
+    if (limit < 2) { return 0 }
+
+    // 第一个素数
+    let primes = [2]
+    let count = 1
+
+    // 从 3 开始只检查奇数
+    let n = 3
+    while (n <= limit) {
+        let is_prime = true
+        let i = 0
+        // 用已知素数试除 (只需试到 sqrt(n))
+        while (i < count) {
+            let p = primes[i]
+            if (p * p > n) { break }   // 超过 sqrt(n) 即可确定是素数
+            if (n % p == 0) {
+                is_prime = false
+                break                   // 可被整除，非素数
+            }
+            i += 1
+        }
+
+        if (is_prime) {
+            primes += n    // 追加新素数（不修改已有元素）
+            count += 1
+        }
+        n += 2             // 跳过偶数
+    }
+
+    return count
+}
+
+let LIMIT = 100000  // 10 万（原题 100,000,000）
+print("=== 素数筛选（试除法） ===")
+print("筛选范围: 2 ~ " + LIMIT)
+
+let t0 = clock()
+let result = count_primes(LIMIT)
+let elapsed = clock() - t0
+
+print("素数个数: " + result)
+print("耗时: " + elapsed + " 秒")
+// 参考值: 100,000  → 9592 个素数
+//         1,000,000 → 78498 个素数

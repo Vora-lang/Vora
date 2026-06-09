@@ -80,6 +80,9 @@ static void runScript(
         Chunk chunk = compiler.compile(program.get());
         VM vm;
 
+        // Pre-allocate global slots from compiler's interning table
+        vm.initGlobals(compiler.getGlobalNames());
+
         // Register builtins
         vm.defineNative("print", -1,
             [](const std::vector<Value>& arguments) -> Value {

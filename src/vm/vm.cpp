@@ -24,16 +24,20 @@ void VM::resetStack() {
 }
 
 void VM::push(Value value) {
-    *stackTop = value;
+    *stackTop = std::move(value);
     stackTop++;
 }
 
 Value VM::pop() {
     stackTop--;
-    return *stackTop;
+    return std::move(*stackTop);
 }
 
-Value VM::peek(int distance) {
+Value& VM::peek(int distance) {
+    return *(stackTop - 1 - distance);
+}
+
+const Value& VM::peek(int distance) const {
     return *(stackTop - 1 - distance);
 }
 
@@ -136,7 +140,30 @@ bool VM::throwException(const Value& value) {
 
 void VM::defineNative(const std::string& name, int arity,
                       std::function<Value(const std::vector<Value>&)> fn) {
-    globals[name] = std::make_shared<NativeFunction>(name, arity, std::move(fn));
+    int slot;
+    auto it = globalIndex.find(name);
+    if (it != globalIndex.end()) {
+        slot = it->second;
+    } else {
+        slot = static_cast<int>(globalNames.size());
+        globalNames.push_back(name);
+        globalValues.push_back(nullptr);
+        globalDefined.push_back(false);
+        globalIndex[name] = slot;
+    }
+    globalValues[static_cast<size_t>(slot)] =
+        std::make_shared<NativeFunction>(name, arity, std::move(fn));
+    globalDefined[static_cast<size_t>(slot)] = true;
+}
+
+void VM::initGlobals(const std::vector<std::string>& names) {
+    globalNames = names;
+    globalValues.resize(names.size(), nullptr);
+    globalDefined.resize(names.size(), false);
+    globalIndex.clear();
+    for (size_t i = 0; i < names.size(); i++) {
+        globalIndex[names[i]] = static_cast<int>(i);
+    }
 }
 
 // =========================================================================
@@ -376,8 +403,7 @@ InterpretResult VM::run() {
             }
             case OpCode::OP_SET_LOCAL: {
                 uint8_t slot = READ_BYTE();
-                Value value = peek(0);
-                frameBase[slot] = value;
+                frameBase[slot] = peek(0);
                 break;
             }
 
@@ -388,8 +414,7 @@ InterpretResult VM::run() {
 
             // --- Unary ---
             case OpCode::OP_NEGATE: {
-                Value v = peek(0);
-                if (std::holds_alternative<double>(v)) {
+                if (std::holds_alternative<double>(peek(0))) {
                     push(-std::get<double>(pop()));
                 } else {
                     RUNTIME_ERROR_OR_THROW("Negation requires a number");
@@ -449,6 +474,62 @@ InterpretResult VM::run() {
                 break;
             }
 
+            // --- Fast numeric arithmetic (no type checks) ---
+            case OpCode::OP_SUB_NN: {
+                double b = std::get<double>(pop());
+                double a = std::get<double>(pop());
+                push(a - b);
+                break;
+            }
+            case OpCode::OP_MUL_NN: {
+                double b = std::get<double>(pop());
+                double a = std::get<double>(pop());
+                push(a * b);
+                break;
+            }
+            case OpCode::OP_DIV_NN: {
+                double b = std::get<double>(pop());
+                if (b == 0) {
+                    RUNTIME_ERROR_OR_THROW("Division by zero");
+                }
+                double a = std::get<double>(pop());
+                push(a / b);
+                break;
+            }
+            case OpCode::OP_MOD_NN: {
+                double b = std::get<double>(pop());
+                if (b == 0) {
+                    RUNTIME_ERROR_OR_THROW("Modulo by zero");
+                }
+                double a = std::get<double>(pop());
+                push(std::fmod(a, b));
+                break;
+            }
+            case OpCode::OP_LESS_NN: {
+                double b = std::get<double>(pop());
+                double a = std::get<double>(pop());
+                push(a < b);
+                break;
+            }
+            case OpCode::OP_LESS_EQ_NN: {
+                double b = std::get<double>(pop());
+                double a = std::get<double>(pop());
+                push(a <= b);
+                break;
+            }
+            case OpCode::OP_GREATER_NN: {
+                double b = std::get<double>(pop());
+                double a = std::get<double>(pop());
+                push(a > b);
+                break;
+            }
+            case OpCode::OP_GREATER_EQ_NN: {
+                double b = std::get<double>(pop());
+                double a = std::get<double>(pop());
+                push(a >= b);
+                break;
+            }
+
             // --- Comparison ---
             case OpCode::OP_EQUAL: {
                 Value b = pop();
@@ -503,51 +584,45 @@ InterpretResult VM::run() {
                 break;
             }
 
-            // --- Globals ---
+            // --- Globals (integer-indexed, no string hashing) ---
             case OpCode::OP_DEFINE_GLOBAL: {
-                std::string name = std::get<std::string>(READ_CONSTANT());
-                Value value = pop();
-                globals[name] = value;
+                uint8_t slot = READ_BYTE();
+                if (slot >= globalValues.size()) {
+                    RUNTIME_ERROR_OR_THROW("OP_DEFINE_GLOBAL: slot out of range");
+                }
+                globalValues[slot] = pop();
+                globalDefined[slot] = true;
                 break;
             }
             case OpCode::OP_GET_GLOBAL: {
-                std::string name = std::get<std::string>(READ_CONSTANT());
-                auto it = globals.find(name);
-                if (it != globals.end()) {
-                    push(it->second);
-                } else {
-                    RUNTIME_ERROR_OR_THROW("Undefined variable '" + name + "'");
+                uint8_t slot = READ_BYTE();
+                if (slot >= globalValues.size() || !globalDefined[slot]) {
+                    RUNTIME_ERROR_OR_THROW("Undefined variable '" +
+                        (slot < globalNames.size() ? globalNames[slot] : std::to_string(slot)) + "'");
                 }
+                push(globalValues[slot]);
                 break;
             }
             case OpCode::OP_GET_GLOBAL_SAFE: {
-                // Like OP_GET_GLOBAL but pushes a fallback value if the
-                // global is not found. Used for string interpolation where
-                // undefined variables should keep their literal ${...} text.
-                uint8_t nameIndex = READ_BYTE();
+                uint8_t slot = READ_BYTE();
                 uint8_t fallbackIndex = READ_BYTE();
-                if (nameIndex >= currentChunk->constants.size() ||
-                    fallbackIndex >= currentChunk->constants.size()) {
+                if (fallbackIndex >= currentChunk->constants.size()) {
                     RUNTIME_ERROR_OR_THROW("OP_GET_GLOBAL_SAFE: constant index out of bounds");
                 }
-                std::string name = std::get<std::string>(currentChunk->constants[nameIndex]);
-                auto it = globals.find(name);
-                if (it != globals.end()) {
-                    push(it->second);
+                if (slot < globalValues.size() && globalDefined[slot]) {
+                    push(globalValues[slot]);
                 } else {
                     push(currentChunk->constants[fallbackIndex]);
                 }
                 break;
             }
             case OpCode::OP_SET_GLOBAL: {
-                std::string name = std::get<std::string>(READ_CONSTANT());
-                Value value = peek(0);
-                auto it = globals.find(name);
-                if (it != globals.end()) {
-                    it->second = value;
-                } else {
-                    RUNTIME_ERROR_OR_THROW("Undefined variable '" + name + "'");
+                uint8_t slot = READ_BYTE();
+                if (slot >= globalValues.size() || !globalDefined[slot]) {
+                    RUNTIME_ERROR_OR_THROW("Undefined variable '" +
+                        (slot < globalNames.size() ? globalNames[slot] : std::to_string(slot)) + "'");
                 }
+                globalValues[slot] = peek(0);
                 break;
             }
 
@@ -883,13 +958,18 @@ InterpretResult VM::run() {
                 objClass->params = cd.params;
                 objClass->ctorProto = cd.ctor;
 
-                // Resolve parent class from globals
+                // Resolve parent class from globals (integer-indexed lookup)
                 if (!cd.parentName.empty()) {
-                    auto it = globals.find(cd.parentName);
-                    if (it != globals.end()) {
-                        if (auto callable = std::get_if<std::shared_ptr<Callable>>(&it->second)) {
-                            if (*callable) {
-                                objClass->parentClass = (*callable)->getClassDef();
+                    auto it = globalIndex.find(cd.parentName);
+                    if (it != globalIndex.end()) {
+                        int pSlot = it->second;
+                        if (static_cast<size_t>(pSlot) < globalValues.size() &&
+                            globalDefined[static_cast<size_t>(pSlot)]) {
+                            const auto& parentVal = globalValues[static_cast<size_t>(pSlot)];
+                            if (auto callable = std::get_if<std::shared_ptr<Callable>>(&parentVal)) {
+                                if (*callable) {
+                                    objClass->parentClass = (*callable)->getClassDef();
+                                }
                             }
                         }
                     }
@@ -971,12 +1051,10 @@ InterpretResult VM::run() {
                 break;
             }
             case OpCode::OP_THROW: {
-                Value thrown = peek(0);
-                if (!throwException(thrown)) {
-                    runtimeError("Uncaught exception: " + valueToString(thrown));
+                if (!throwException(peek(0))) {
+                    runtimeError("Uncaught exception: " + valueToString(peek(0)));
                     return InterpretResult::RUNTIME_ERROR;
                 }
-                // throwException already set ip and stack, continue execution
                 goto dispatch;
             }
             case OpCode::OP_FINALLY_END: {

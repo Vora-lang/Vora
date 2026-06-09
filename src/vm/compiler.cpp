@@ -1,5 +1,6 @@
 #include "compiler.h"
 
+#include <cmath>
 #include <iostream>
 #include <variant>
 
@@ -137,6 +138,23 @@ int Compiler::resolveLocal(const std::string& name) const {
 
 int Compiler::currentLocalCount() const {
     return static_cast<int>(locals.size());
+}
+
+int Compiler::resolveGlobal(const std::string& name) {
+    // Walk up the enclosing compiler chain to find the root compiler.
+    // All global slot assignments MUST happen in the root compiler so
+    // that nested function compilers share the same numbering.
+    Compiler* root = this;
+    while (root->enclosing) {
+        root = root->enclosing;
+    }
+    // Linear scan — global count is small.
+    for (size_t i = 0; i < root->globalNames.size(); i++) {
+        if (root->globalNames[i] == name) return static_cast<int>(i);
+    }
+    int slot = static_cast<int>(root->globalNames.size());
+    root->globalNames.push_back(name);
+    return slot;
 }
 
 int Compiler::resolveUpvalue(Compiler* compiler, const std::string& name) {
@@ -305,11 +323,11 @@ void Compiler::compileVariableOrPropertyRef(const std::string& name) {
     } else {
         // Use safe global lookup: if the global doesn't exist, push the
         // literal ${...} text as a fallback (matching interpreter behavior).
-        uint8_t nameIndex = identifierConstant(base);
+        int slot = resolveGlobal(base);
         std::string fallback = "${" + name + "}";
         uint8_t fallbackIndex = identifierConstant(fallback);
         emitByte(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL_SAFE));
-        emitByte(nameIndex);
+        emitByte(static_cast<uint8_t>(slot));
         emitByte(fallbackIndex);
         return;  // property chains on safe globals not yet supported
     }
@@ -347,23 +365,57 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
         return;
     }
 
+    // Constant folding: if both operands are literal constants, evaluate at
+    // compile time and emit a single constant instead of runtime bytecode.
+    auto* leftLit = dynamic_cast<const LiteralExpr*>(expr.left.get());
+    auto* rightLit = dynamic_cast<const LiteralExpr*>(expr.right.get());
+    if (leftLit && rightLit) {
+        const auto& lv = leftLit->value;
+        const auto& rv = rightLit->value;
+        if (std::holds_alternative<double>(lv) && std::holds_alternative<double>(rv)) {
+            double a = std::get<double>(lv);
+            double b = std::get<double>(rv);
+            switch (expr.op.type) {
+                case TokenType::PLUS:     emitConstant(a + b); return;
+                case TokenType::MINUS:    emitConstant(a - b); return;
+                case TokenType::MULTIPLY: emitConstant(a * b); return;
+                case TokenType::DIVIDE:
+                    if (b == 0.0) break;  // let runtime handle div-by-zero error
+                    emitConstant(a / b); return;
+                case TokenType::MODULO:
+                    if (b == 0.0) break;  // let runtime handle mod-by-zero error
+                    emitConstant(std::fmod(a, b)); return;
+                default: break;
+            }
+        }
+        if (std::holds_alternative<std::string>(lv) && std::holds_alternative<std::string>(rv)) {
+            // String concatenation at compile time
+            if (expr.op.type == TokenType::PLUS) {
+                emitConstant(std::get<std::string>(lv) + std::get<std::string>(rv));
+                return;
+            }
+        }
+    }
+
     // Regular binary operators
     expr.left->accept(*this);
     expr.right->accept(*this);
 
     switch (expr.op.type) {
+        // OP_ADD is kept general (handles strings, arrays, numbers)
         case TokenType::PLUS:             emitByte(static_cast<uint8_t>(OpCode::OP_ADD)); break;
-        case TokenType::MINUS:            emitByte(static_cast<uint8_t>(OpCode::OP_SUBTRACT)); break;
-        case TokenType::MULTIPLY:         emitByte(static_cast<uint8_t>(OpCode::OP_MULTIPLY)); break;
-        case TokenType::DIVIDE:           emitByte(static_cast<uint8_t>(OpCode::OP_DIVIDE)); break;
-        case TokenType::MODULO:           emitByte(static_cast<uint8_t>(OpCode::OP_MODULO)); break;
+        // Fast numeric-only opcodes — skip type checks at runtime
+        case TokenType::MINUS:            emitByte(static_cast<uint8_t>(OpCode::OP_SUB_NN)); break;
+        case TokenType::MULTIPLY:         emitByte(static_cast<uint8_t>(OpCode::OP_MUL_NN)); break;
+        case TokenType::DIVIDE:           emitByte(static_cast<uint8_t>(OpCode::OP_DIV_NN)); break;
+        case TokenType::MODULO:           emitByte(static_cast<uint8_t>(OpCode::OP_MOD_NN)); break;
         case TokenType::POWER:            emitByte(static_cast<uint8_t>(OpCode::OP_POWER)); break;
         case TokenType::EQUAL_EQUAL:      emitByte(static_cast<uint8_t>(OpCode::OP_EQUAL)); break;
         case TokenType::NOT_EQUAL:        emitByte(static_cast<uint8_t>(OpCode::OP_NOT_EQUAL)); break;
-        case TokenType::LESS:             emitByte(static_cast<uint8_t>(OpCode::OP_LESS)); break;
-        case TokenType::LESS_EQUAL:       emitByte(static_cast<uint8_t>(OpCode::OP_LESS_EQUAL)); break;
-        case TokenType::GREATER:          emitByte(static_cast<uint8_t>(OpCode::OP_GREATER)); break;
-        case TokenType::GREATER_EQUAL:    emitByte(static_cast<uint8_t>(OpCode::OP_GREATER_EQUAL)); break;
+        case TokenType::LESS:             emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN)); break;
+        case TokenType::LESS_EQUAL:       emitByte(static_cast<uint8_t>(OpCode::OP_LESS_EQ_NN)); break;
+        case TokenType::GREATER:          emitByte(static_cast<uint8_t>(OpCode::OP_GREATER_NN)); break;
+        case TokenType::GREATER_EQUAL:    emitByte(static_cast<uint8_t>(OpCode::OP_GREATER_EQ_NN)); break;
         default: break;
     }
 }
@@ -373,6 +425,22 @@ void Compiler::visitGroupingExpr(const GroupingExpr& expr) {
 }
 
 void Compiler::visitUnaryExpr(const UnaryExpr& expr) {
+    // Constant folding: -literal
+    if (auto* lit = dynamic_cast<const LiteralExpr*>(expr.right.get())) {
+        if (expr.op.type == TokenType::MINUS &&
+            std::holds_alternative<double>(lit->value)) {
+            emitConstant(-std::get<double>(lit->value));
+            return;
+        }
+        if (expr.op.type == TokenType::NOT &&
+            std::holds_alternative<bool>(lit->value)) {
+            emitByte(std::get<bool>(lit->value)
+                ? static_cast<uint8_t>(OpCode::OP_FALSE)
+                : static_cast<uint8_t>(OpCode::OP_TRUE));
+            return;
+        }
+    }
+
     expr.right->accept(*this);
 
     switch (expr.op.type) {
@@ -402,8 +470,9 @@ void Compiler::visitVariableExpr(const VariableExpr& expr) {
             emitBytes(static_cast<uint8_t>(OpCode::OP_GET_UPVALUE),
                       static_cast<uint8_t>(upvalueIdx));
         } else {
-            uint8_t nameIndex = identifierConstant(expr.name);
-            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL), nameIndex);
+            int slot = resolveGlobal(expr.name);
+            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL),
+                      static_cast<uint8_t>(slot));
         }
     }
 }
@@ -425,8 +494,9 @@ void Compiler::visitAssignmentExpr(const AssignmentExpr& expr) {
             emitBytes(static_cast<uint8_t>(OpCode::OP_SET_UPVALUE),
                       static_cast<uint8_t>(upvalueIdx));
         } else {
-            uint8_t nameIndex = identifierConstant(expr.name);
-            emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL), nameIndex);
+            int slot = resolveGlobal(expr.name);
+            emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
+                      static_cast<uint8_t>(slot));
         }
     }
 }
@@ -483,8 +553,9 @@ void Compiler::visitThisExpr(const ThisExpr& expr) {
                   static_cast<uint8_t>(localSlot));
     } else {
         // Fall back to global (shouldn't happen in valid code)
-        uint8_t nameIndex = identifierConstant("this");
-        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL), nameIndex);
+        int slot = resolveGlobal("this");
+        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL),
+                  static_cast<uint8_t>(slot));
     }
 }
 
@@ -499,9 +570,9 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
         // Resolve the variable's location once
         int localSlot = resolveLocal(var->name);
         bool isLocal = (localSlot >= 0);
-        uint8_t nameIndex = 0;
+        int globalSlot = -1;
         if (!isLocal) {
-            nameIndex = identifierConstant(var->name);
+            globalSlot = resolveGlobal(var->name);
         }
 
         if (expr.isPrefix) {
@@ -512,7 +583,8 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
                           static_cast<uint8_t>(localSlot));
             } else {
-                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL), nameIndex);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
+                          static_cast<uint8_t>(globalSlot));
             }
         } else {
             // Postfix: x++ → save old value (DUP), increment, store, pop new,
@@ -524,7 +596,8 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
                           static_cast<uint8_t>(localSlot));
             } else {
-                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL), nameIndex);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
+                          static_cast<uint8_t>(globalSlot));
             }
             emitByte(static_cast<uint8_t>(OpCode::OP_POP));
         }
@@ -598,9 +671,10 @@ void Compiler::visitLetStmt(const LetStmt& stmt) {
     }
 
     if (scopeDepth == 0) {
-        // Global variable
-        uint8_t nameIndex = identifierConstant(stmt.name);
-        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL), nameIndex);
+        // Global variable — use interned slot ID
+        int slot = resolveGlobal(stmt.name);
+        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
+                  static_cast<uint8_t>(slot));
     } else {
         // Local variable — the initializer value is already on the stack.
         // It stays there as the local's slot. Just record the slot.
@@ -647,8 +721,12 @@ void Compiler::visitIfStmt(const IfStmt& stmt) {
         stmt.elseBranch->accept(*this);
         patchJump(elseJump);
     } else {
+        // Jump over the false-path OP_POP so the true path
+        // doesn't fall through and pop a local variable value.
+        size_t skipJump = emitJump(OpCode::OP_JUMP);
         patchJump(thenJump);
         emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+        patchJump(skipJump);
     }
 }
 
@@ -720,8 +798,9 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
     addLocal("_i");
 
     // Call _vora_len to get the length of _iter
-    uint8_t lenNameIndex = identifierConstant("_vora_len");
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL), lenNameIndex);
+    int lenSlot = resolveGlobal("_vora_len");
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL),
+              static_cast<uint8_t>(lenSlot));
 
     int iterSlot = resolveLocal("_iter");
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
@@ -748,9 +827,9 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
               static_cast<uint8_t>(iSlot));
 
-    int lenSlot = resolveLocal("_len");
+    int lenLocalSlot = resolveLocal("_len");
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(lenSlot));
+              static_cast<uint8_t>(lenLocalSlot));
 
     emitByte(static_cast<uint8_t>(OpCode::OP_LESS));
     size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
@@ -856,9 +935,10 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
 
     // Bind to name
     if (scopeDepth == 0) {
-        // Global function
-        uint8_t nameIndex = identifierConstant(stmt.name);
-        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL), nameIndex);
+        // Global function — use interned slot ID
+        int slot = resolveGlobal(stmt.name);
+        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
+                  static_cast<uint8_t>(slot));
     } else {
         // Local function — the OP_CLOSURE result stays on stack as local slot
         addLocal(stmt.name);
@@ -945,8 +1025,9 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
 
     // Bind to name
     if (scopeDepth == 0) {
-        uint8_t nameIndex = identifierConstant(stmt.name);
-        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL), nameIndex);
+        int slot = resolveGlobal(stmt.name);
+        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
+                  static_cast<uint8_t>(slot));
     } else {
         addLocal(stmt.name);
     }

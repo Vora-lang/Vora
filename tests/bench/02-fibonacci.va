@@ -1,0 +1,52 @@
+// ============================================================
+// 题目 2：斐波那契数列 — 递归 + 循环双测
+// 计算 F(40) = 102334155
+// 注意：Vora 递归 F(40) 约需 30 分钟（~2 亿次调用）
+//       建议递归用 F(30)，循环用 F(40)
+// ============================================================
+
+func fib_rec(n) {
+    if (n <= 1) { return n }
+    return fib_rec(n - 1) + fib_rec(n - 2)
+}
+
+func fib_iter(n) {
+    if (n <= 1) { return n }
+    let a = 0
+    let b = 1
+    let i = 2
+    while (i <= n) {
+        let temp = a + b
+        a = b
+        b = temp
+        i += 1
+    }
+    return b
+}
+
+let N_REC  = 30   // 递归用 F(30)，~0.83M（原题 F(40)）
+let N_ITER = 40   // 循环用 F(40)，瞬间完成
+
+print("=== 斐波那契数列 ===")
+
+// 递归
+print("--- 递归 F(" + N_REC + ") ---")
+let t0 = clock()
+let r_rec = fib_rec(N_REC)
+let t1 = clock()
+print("F(" + N_REC + ") = " + r_rec)
+print("递归耗时: " + (t1 - t0) + " 秒")
+
+// 循环
+print("--- 循环 F(" + N_ITER + ") ---")
+t0 = clock()
+let r_iter = fib_iter(N_ITER)
+t1 = clock()
+print("F(" + N_ITER + ") = " + r_iter)
+print("循环耗时: " + (t1 - t0) + " 秒")
+
+// 验证
+let expected = 102334155  // F(40)
+print("")
+print("验证: F(40) 期望值 = " + expected)
+print("       F(40) 实际值 = " + fib_iter(40))

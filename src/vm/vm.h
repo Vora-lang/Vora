@@ -32,7 +32,13 @@ class VM {
     Value stack[STACK_MAX];
     Value* stackTop;
 
-    std::unordered_map<std::string, Value> globals;
+    // Global variable storage — integer-indexed for O(1) access without string hashing.
+    // globalNames[slot] → name, globalValues[slot] → value (parallel arrays).
+    // globalIndex maps name → slot for define-time lookup only.
+    std::vector<std::string> globalNames;
+    std::vector<Value> globalValues;
+    std::vector<bool> globalDefined;
+    std::unordered_map<std::string, int> globalIndex;
     const Chunk* currentChunk = nullptr;
     const uint8_t* ip = nullptr;
 
@@ -62,6 +68,9 @@ public:
     void defineNative(const std::string& name, int arity,
                       std::function<Value(const std::vector<Value>&)> fn);
 
+    // Initialize global slots from compiler's interning table.
+    void initGlobals(const std::vector<std::string>& names);
+
     // Value operations
     Value addValues(const Value& a, const Value& b);
     static bool isTruthy(const Value& value);
@@ -75,7 +84,8 @@ private:
 
     void push(Value value);
     Value pop();
-    Value peek(int distance = 0);
+    Value& peek(int distance = 0);
+    const Value& peek(int distance = 0) const;
 
     void runtimeError(const std::string& message);
     void runtimeError(const std::string& message, int line, int column);
