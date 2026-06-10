@@ -132,8 +132,21 @@ private:
         std::vector<size_t> breakJumps;     // OP_JUMP placeholders to patch (break)
         std::vector<size_t> continueJumps;  // OP_JUMP placeholders to patch (continue)
         int enclosingScopeDepth;            // scope depth at loop entry
+        int extraLocalsToPop = 0;           // for-in: auto-generated locals to pop on break
     };
     std::vector<LoopContext> loopStack;
+
+    // =========================================================================
+    // Try context
+    // =========================================================================
+    int tryNesting = 0;  // depth of active try blocks (for OP_POP_CATCH cleanup)
+
+    // =========================================================================
+    // Finally context (for routing break/continue/return through finally)
+    // =========================================================================
+    int finallyNesting = 0;                        // count of active try blocks with finally
+    std::vector<std::vector<uint8_t>> finallyBytecodeStack;  // recorded bytecode per finally
+    std::vector<size_t> pendingReturnJumps;        // return jumps to route through finally
 
     // =========================================================================
     // Function context

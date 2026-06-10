@@ -21,8 +21,6 @@ enum class OpCode : uint8_t {
 
     // Binary arithmetic
     OP_ADD,         // a + b  (general: numbers, strings, arrays)
-    OP_SUBTRACT,    // a - b
-    OP_MULTIPLY,    // a * b
     OP_DIVIDE,      // a / b
     OP_MODULO,      // a % b
     OP_POWER,       // a ** b
@@ -41,9 +39,6 @@ enum class OpCode : uint8_t {
     OP_EQUAL,       // a == b
     OP_NOT_EQUAL,   // a != b
     OP_LESS,        // a < b  (general, kept for compatibility)
-    OP_LESS_EQUAL,  // a <= b
-    OP_GREATER,     // a > b
-    OP_GREATER_EQUAL, // a >= b
 
     // Locals
     OP_GET_LOCAL,      // push local var (operand: uint8_t slot index)
@@ -60,7 +55,6 @@ enum class OpCode : uint8_t {
     // Control flow
     OP_JUMP,           // unconditional jump (operand: int16_t offset)
     OP_JUMP_IF_FALSE,  // pop + conditional jump (operand: int16_t offset)
-    OP_JUMP_IF_TRUE,   // peek + conditional jump if truthy (operand: int16_t offset)
     OP_LOOP,           // jump backward (operand: int16_t offset)
 
     // Functions
@@ -86,6 +80,7 @@ enum class OpCode : uint8_t {
     // Exception handling
     OP_PUSH_CATCH,     // push catch handler info (operand: uint16_t catch offset)
     OP_POP_CATCH,      // pop catch handler
+    OP_CLEAR_EXCEPTION, // clear exceptionInFlight flag (catch block entry)
     OP_THROW,          // throw exception (value on stack top)
     OP_FINALLY_END,    // marker for finally block end
 };

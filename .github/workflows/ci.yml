@@ -8,55 +8,174 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-test:
-    name: "${{ matrix.os }} (${{ matrix.config }})"
-    runs-on: ${{ matrix.os }}
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # Linux — x64, x86, aarch64, armhf
+  # ═════════════════════════════════════════════════════════════════════════
+
+  build-linux:
+    name: "Linux ${{ matrix.arch }} (${{ matrix.config }})"
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        config: [Debug]
+        arch: [x64, x86, aarch64, armhf]
+        config: [Debug, Release]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── Linux: install Ninja for faster builds ──
-      - name: Install Ninja (Linux)
-        if: runner.os == 'Linux'
+      # ── Install Ninja ──────────────────────────────────────────────
+      - name: Install Ninja
         run: sudo apt-get install -y ninja-build
 
-      # ── macOS: install Ninja for faster builds ──
-      - name: Install Ninja (macOS)
-        if: runner.os == 'macOS'
-        run: brew install ninja
-
-      # ── Configure ──────────────────────────────
-      - name: Configure (CMake)
-        run: >
-          cmake
-          -S .
-          -B build
-          -G "${{ runner.os == 'Windows' && 'Visual Studio 17 2022' || 'Ninja' }}"
-          -DCMAKE_CXX_STANDARD=17
-          -DCMAKE_CXX_STANDARD_REQUIRED=ON
-          -DCMAKE_CXX_EXTENSIONS=OFF
-          -DCMAKE_BUILD_TYPE=${{ matrix.config }}
-
-      # ── Build ──────────────────────────────────
-      - name: Build
-        run: cmake --build build --config ${{ matrix.config }}
-
-      # ── List built binary (debug aid) ─────────
-      - name: Show build output
-        shell: bash
+      # ── Install cross-compilation toolchains (non-x64) ─────────────
+      - name: Install x86 cross-compiler (multilib)
+        if: matrix.arch == 'x86'
         run: |
-          echo "Build output:"
-          find build -type f \( -name 'Vora' -o -name 'Vora.exe' -o -name 'vora' \) 2>/dev/null || true
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib
 
-      # ── Test (CTest) ───────────────────────────
+      - name: Install aarch64 cross-compiler
+        if: matrix.arch == 'aarch64'
+        run: sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Install armhf cross-compiler
+        if: matrix.arch == 'armhf'
+        run: sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+
+      # ── Configure ──────────────────────────────────────────────────
+      - name: Configure (CMake)
+        run: cmake --preset "linux-${{ matrix.arch }}-${{ matrix.config }}"
+
+      # ── Build ──────────────────────────────────────────────────────
+      - name: Build
+        run: cmake --build --preset "linux-${{ matrix.arch }}-${{ matrix.config }}"
+
+      # ── Test (native x64 only; cross-compiled binaries need QEMU) ─
       - name: Test (VM mode)
-        run: ctest --test-dir build -C ${{ matrix.config }} -R "^vm-" --output-on-failure
+        if: matrix.arch == 'x64'
+        run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ matrix.config }}" -R "^vm-" --output-on-failure
 
       - name: Test (Interpreter mode)
-        run: ctest --test-dir build -C ${{ matrix.config }} -R "^interp-" --output-on-failure
+        if: matrix.arch == 'x64'
+        run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ matrix.config }}" -R "^interp-" --output-on-failure
+
+      # ── Package (Release only) ─────────────────────────────────────
+      - name: Package (.deb / .rpm / .pkg.tar.xz)
+        if: matrix.config == 'Release'
+        run: cmake --build "build/linux-${{ matrix.arch }}-${{ matrix.config }}" --target package
+
+      - name: Upload packages
+        if: matrix.config == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vora-linux-${{ matrix.arch }}
+          path: |
+            build/linux-${{ matrix.arch }}-${{ matrix.config }}/vora-*.deb
+            build/linux-${{ matrix.arch }}-${{ matrix.config }}/vora-*.rpm
+            build/linux-${{ matrix.arch }}-${{ matrix.config }}/vora-*.tar.xz
+            build/linux-${{ matrix.arch }}-${{ matrix.config }}/vora-*.tar.gz
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # Windows — x64, x86, arm64
+  # ═════════════════════════════════════════════════════════════════════════
+
+  build-windows:
+    name: "Windows ${{ matrix.arch }} (${{ matrix.config }})"
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86, arm64]
+        config: [Debug, Release]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Configure ──────────────────────────────────────────────────
+      - name: Configure (CMake)
+        run: cmake --preset "windows-${{ matrix.arch }}-${{ matrix.config }}"
+
+      # ── Build ──────────────────────────────────────────────────────
+      - name: Build
+        run: cmake --build --preset "windows-${{ matrix.arch }}-${{ matrix.config }}" --config ${{ matrix.config }}
+
+      # ── Test (native x64 only; ARM64 executables won't run on x64) ─
+      - name: Test (VM mode)
+        if: matrix.arch == 'x64'
+        run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ matrix.config }}" -C ${{ matrix.config }} -R "^vm-" --output-on-failure
+
+      - name: Test (Interpreter mode)
+        if: matrix.arch == 'x64'
+        run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ matrix.config }}" -C ${{ matrix.config }} -R "^interp-" --output-on-failure
+
+      # ── Package (Release only) ─────────────────────────────────────
+      - name: Package (.zip / .msi)
+        if: matrix.config == 'Release'
+        run: cmake --build "build/windows-${{ matrix.arch }}-${{ matrix.config }}" --target package --config ${{ matrix.config }}
+
+      - name: Upload packages
+        if: matrix.config == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vora-windows-${{ matrix.arch }}
+          path: |
+            build/windows-${{ matrix.arch }}-${{ matrix.config }}/vora-*.zip
+            build/windows-${{ matrix.arch }}-${{ matrix.config }}/vora-*.msi
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # macOS — Universal binary (x86_64 + arm64)
+  # ═════════════════════════════════════════════════════════════════════════
+
+  build-macos:
+    name: "macOS Universal (${{ matrix.config }})"
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Debug, Release]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      # ── Configure ──────────────────────────────────────────────────
+      - name: Configure (CMake)
+        run: cmake --preset "macos-universal-${{ matrix.config }}"
+
+      # ── Build ──────────────────────────────────────────────────────
+      - name: Build
+        run: cmake --build --preset "macos-universal-${{ matrix.config }}"
+
+      # ── Verify universal binary ────────────────────────────────────
+      - name: Verify universal binary
+        run: |
+          echo "Binary architectures:"
+          lipo -info "build/macos-universal-${{ matrix.config }}/Vora" || file "build/macos-universal-${{ matrix.config }}/Vora"
+
+      # ── Test ───────────────────────────────────────────────────────
+      - name: Test (VM mode)
+        run: ctest --test-dir "build/macos-universal-${{ matrix.config }}" -R "^vm-" --output-on-failure
+
+      - name: Test (Interpreter mode)
+        run: ctest --test-dir "build/macos-universal-${{ matrix.config }}" -R "^interp-" --output-on-failure
+
+      # ── Package (Release only) ─────────────────────────────────────
+      - name: Package (.tar.gz)
+        if: matrix.config == 'Release'
+        run: cmake --build "build/macos-universal-${{ matrix.config }}" --target package
+
+      - name: Upload packages
+        if: matrix.config == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vora-macos-universal
+          path: |
+            build/macos-universal-${{ matrix.config }}/vora-*.tar.gz

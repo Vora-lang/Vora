@@ -1,0 +1,47 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="Vora"
+      Manufacturer="Vora-lang"
+      Version="0.9.0"
+      UpgradeCode="A9A1F393-D8B7-4CD2-9DC6-E2A8DE7EB7A2"
+      Scope="perMachine"
+      Language="2052">
+
+    <SummaryInformation
+        Description="Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation."
+        Manufacturer="Vora-lang" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Vora is already installed." />
+
+    <!-- ARP icon (Add/Remove Programs) -->
+    <Icon Id="vora.ico" SourceFile="res\vora.ico" />
+    <Property Id="ARPPRODUCTICON" Value="vora.ico" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- C:\Program Files\Vora\ -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Vora">
+
+        <Component Id="MainExecutable" Guid="B8E2F914-3D57-4A16-9C1F-CDAE62788B3E">
+          <File Id="VoraExe" Source="build\windows-x64-release\Release\Vora.exe" KeyPath="yes" />
+        </Component>
+
+        <Component Id="LauncherCmd" Guid="D4E8A916-F705-4B83-AE1D-29C6C4B83D70">
+          <File Id="VoraCmd" Source="res\vora.cmd" KeyPath="yes" />
+        </Component>
+
+        <Component Id="PathEntry" Guid="C7D3A815-E694-4B82-9EF2-18D5B3A72C6F">
+          <Environment Id="PathEnv" Name="PATH" Value="[INSTALLFOLDER]" Action="set" Part="last" System="yes" Permanent="no" />
+        </Component>
+
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Vora" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="LauncherCmd" />
+      <ComponentRef Id="PathEntry" />
+    </Feature>
+  </Package>
+</Wix>

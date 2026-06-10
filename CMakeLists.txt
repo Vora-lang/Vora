@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(Vora VERSION 0.9.0 DESCRIPTION "A dynamically-typed scripting language with bytecode VM")
+project(Vora VERSION 0.9.0 DESCRIPTION "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,6 +34,9 @@ add_executable(Vora
     src/vm/chunk.cpp
     src/vm/compiler.cpp
     src/vm/vm.cpp
+
+    # Windows resource file (icon + version info) — ignored on non-MSVC
+    res/vora.rc
 )
 
 target_include_directories(
@@ -97,3 +100,139 @@ foreach(test_file ${TEST_LEXER} ${TEST_PARSER} ${TEST_RUNTIME} ${TEST_INTERPRETE
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
 endforeach()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Install rules
+# ═══════════════════════════════════════════════════════════════════════════
+
+include(GNUInstallDirs)
+install(TARGETS Vora
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+# ── Icon installation ───────────────────────────────────────────────────
+if(WIN32)
+    # ICO is embedded in the .exe via vora.rc — nothing extra to install.
+    # But copy the ICO alongside for CPack/NSIS reference.
+    install(FILES res/vora.ico DESTINATION ${CMAKE_INSTALL_BINDIR})
+elseif(APPLE)
+    install(FILES res/vora.iconset DESTINATION share/vora/icons)
+else()
+    # Linux: SVG → scalable icon, largest PNG → fixed-size fallback
+    install(FILES vora_logo.svg
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps
+        RENAME vora.svg
+    )
+    install(FILES res/vora.png
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/512x512/apps
+        RENAME vora.png
+    )
+endif()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CPack — Package generation (.deb / .rpm / .pkg.tar.xz / .msi)
+# ═══════════════════════════════════════════════════════════════════════════
+
+set(CPACK_PACKAGE_NAME "vora")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_VENDOR "Vora-lang")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+    "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation."
+)
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/vora-lang/vora")
+
+# Architecture-aware package file name
+#   e.g. vora-0.9.0-Linux-amd64.deb  /  vora-0.9.0-Linux-aarch64.rpm
+cmake_host_system_information(RESULT HOST_ARCH QUERY OS_PLATFORM)
+if(NOT HOST_ARCH)
+    set(HOST_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+set(CPACK_SYSTEM_NAME "${CMAKE_SYSTEM_NAME}-${HOST_ARCH}")
+set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-${CPACK_SYSTEM_NAME}")
+
+# ── Debian / Ubuntu (.deb) ────────────────────────────────────────────────
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Vora-lang")
+set(CPACK_DEBIAN_PACKAGE_SECTION "devel")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "${CPACK_PACKAGE_HOMEPAGE_URL}")
+
+# Map CMake system processor → Debian architecture
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "amd64")
+    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "arm64")
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm")
+    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "armhf")
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "i386" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "i686")
+    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "i386")
+else()
+    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+
+# ── Red Hat / Fedora (.rpm) ───────────────────────────────────────────────
+set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_URL "${CPACK_PACKAGE_HOMEPAGE_URL}")
+
+# Map CMake system processor → RPM architecture
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "amd64")
+    set(CPACK_RPM_PACKAGE_ARCHITECTURE "x86_64")
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set(CPACK_RPM_PACKAGE_ARCHITECTURE "aarch64")
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm")
+    set(CPACK_RPM_PACKAGE_ARCHITECTURE "armv7hl")
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "i386" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "i686")
+    set(CPACK_RPM_PACKAGE_ARCHITECTURE "i686")
+else()
+    set(CPACK_RPM_PACKAGE_ARCHITECTURE "${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+
+# ── Generator selection ───────────────────────────────────────────────────
+
+if(WIN32)
+    # Windows: prefer WIX (.msi) if available, fall back to NSIS + ZIP
+    set(CPACK_GENERATOR "ZIP")
+    find_program(WIX_CANDLE_EXECUTABLE candle)
+    find_program(WIX_LIGHT_EXECUTABLE light)
+    if(WIX_CANDLE_EXECUTABLE AND WIX_LIGHT_EXECUTABLE)
+        list(APPEND CPACK_GENERATOR "WIX")
+        set(CPACK_WIX_UPGRADE_GUID "A9A1F393-D8B7-4CD2-9DC6-E2A8DE7EB7A2")
+        set(CPACK_WIX_PRODUCT_ICON "${CMAKE_SOURCE_DIR}/res/vora.ico")
+    else()
+        message(STATUS "WiX Toolset not found — .msi disabled; will build .zip only")
+        message(STATUS "  Install WiX: dotnet tool install -g wix")
+    endif()
+    find_program(NSIS_EXECUTABLE makensis)
+    if(NSIS_EXECUTABLE)
+        list(APPEND CPACK_GENERATOR "NSIS")
+    endif()
+elseif(APPLE)
+    set(CPACK_GENERATOR "TGZ")
+    # productbuild for .pkg (requires Xcode)
+    find_program(PBUILD_EXECUTABLE pkgbuild)
+    find_program(PRDIST_EXECUTABLE productbuild)
+    if(PBUILD_EXECUTABLE AND PRDIST_EXECUTABLE)
+        list(APPEND CPACK_GENERATOR "productbuild")
+    endif()
+else()
+    # Linux: all three package formats
+    set(CPACK_GENERATOR "TGZ;TXZ")
+
+    # .deb — requires dpkg
+    find_program(DPKG_EXECUTABLE dpkg)
+    if(DPKG_EXECUTABLE)
+        list(APPEND CPACK_GENERATOR "DEB")
+    else()
+        message(STATUS "dpkg not found — .deb disabled")
+    endif()
+
+    # .rpm — requires rpmbuild
+    find_program(RPMBUILD_EXECUTABLE rpmbuild)
+    if(RPMBUILD_EXECUTABLE)
+        list(APPEND CPACK_GENERATOR "RPM")
+    else()
+        message(STATUS "rpmbuild not found — .rpm disabled")
+    endif()
+endif()
+
+message(STATUS "CPack generators: ${CPACK_GENERATOR}")
+
+include(CPack)

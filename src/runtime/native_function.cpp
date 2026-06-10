@@ -32,4 +32,11 @@ int NativeFunction::arity() const {
     return arity_;
 }
 
+void NativeFunction::markAsBoundMethod(std::shared_ptr<ObjectInstance> instance,
+                                       const FunctionPrototype* methodProto) {
+    isBoundMethod_ = true;
+    boundInstance_ = std::move(instance);
+    boundMethodProto_ = methodProto;
+}
+
 }

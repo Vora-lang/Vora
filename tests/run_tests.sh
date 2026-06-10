@@ -23,7 +23,11 @@ for candidate in \
     "$PROJECT_DIR/build/Release/Vora" \
     "$PROJECT_DIR/build/vora" \
     "$PROJECT_DIR/build/Debug/vora" \
-    "$PROJECT_DIR/build/Release/vora"; do
+    "$PROJECT_DIR/build/Release/vora" \
+    "$PROJECT_DIR/build/linux-x64-debug/Vora" \
+    "$PROJECT_DIR/build/linux-x64-release/Vora" \
+    "$PROJECT_DIR/build/macos-universal-debug/Vora" \
+    "$PROJECT_DIR/build/macos-universal-release/Vora"; do
     if [ -x "$candidate" ]; then
         VORA="$candidate"
         break

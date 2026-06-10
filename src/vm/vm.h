@@ -55,6 +55,11 @@ class VM {
     };
     std::vector<CatchHandler> catchHandlers;
 
+    // True when throwException() has just routed an exception through a catch
+    // handler and the value is on the stack. OP_FINALLY_END checks this to
+    // decide whether to re-throw.
+    bool exceptionInFlight = false;
+
     // Open upvalues: stack slot address → heap-allocated value (for closures)
     std::unordered_map<Value*, std::shared_ptr<Value>> openUpvalues;
     std::shared_ptr<Value> captureUpvalue(Value* slot);
@@ -70,6 +75,13 @@ public:
 
     // Initialize global slots from compiler's interning table.
     void initGlobals(const std::vector<std::string>& names);
+
+    // Copy global state into this VM. Used to give a temporary VM
+    // (e.g. constructor execution) access to the same globals.
+    void adoptGlobals(const std::vector<std::string>& names,
+                      const std::vector<Value>& values,
+                      const std::vector<bool>& defined,
+                      const std::unordered_map<std::string, int>& index);
 
     // Value operations
     Value addValues(const Value& a, const Value& b);

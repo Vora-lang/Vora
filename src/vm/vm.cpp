@@ -6,6 +6,7 @@
 #include "../vm/compiler.h"  // for FunctionPrototype, ClassData
 
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 
 namespace vora {
@@ -24,6 +25,10 @@ void VM::resetStack() {
 }
 
 void VM::push(Value value) {
+    if (stackTop >= stack + STACK_MAX) {
+        std::cerr << "VM: Fatal stack overflow (STACK_MAX=" << STACK_MAX << ")" << std::endl;
+        std::exit(1);
+    }
     *stackTop = std::move(value);
     stackTop++;
 }
@@ -90,10 +95,12 @@ std::shared_ptr<Value> VM::captureUpvalue(Value* slot) {
 }
 
 bool VM::throwException(const Value& value) {
-    // Walk up through catch handlers
+    // Walk up through catch handlers. We peek the handler (don't pop it)
+    // so that OP_POP_CATCH at the target can pop it. If we popped here,
+    // nested try blocks would fail because OP_POP_CATCH at the inner
+    // handler target would accidentally pop the outer handler.
     while (!catchHandlers.empty()) {
-        auto handler = catchHandlers.back();
-        catchHandlers.pop_back();
+        auto handler = catchHandlers.back();  // peek only
 
         // Unwind stack to handler's frame base
         stackTop = handler.targetFrameBase;
@@ -106,9 +113,6 @@ bool VM::throwException(const Value& value) {
         currentChunk = handler.chunk;
 
         // Unwind call frames to the level where the handler was registered.
-        // Use frameCount (not pointer comparison) to handle the edge case
-        // where a called function's frameBase equals the handler's frameBase
-        // (e.g. when the stack is empty at call time, both are at stack[]).
         while (frames.size() > handler.frameCount) {
             // Clear open upvalues for the frame being unwound
             Value* frameEnd = frames.back().frameBase + 256;
@@ -128,7 +132,8 @@ bool VM::throwException(const Value& value) {
             frameBase = stack;  // top-level
         }
 
-        return true;  // caught
+        exceptionInFlight = true;
+        return true;  // caught — handler will be popped by OP_POP_CATCH at target
     }
 
     return false;  // not caught
@@ -164,6 +169,30 @@ void VM::initGlobals(const std::vector<std::string>& names) {
     for (size_t i = 0; i < names.size(); i++) {
         globalIndex[names[i]] = static_cast<int>(i);
     }
+
+    // Register internal builtin used by for-in loop desugaring.
+    defineNative("_vora_len", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            const auto& arg = arguments[0];
+            if (std::holds_alternative<std::shared_ptr<Array>>(arg)) {
+                return static_cast<double>(
+                    std::get<std::shared_ptr<Array>>(arg)->elements.size());
+            }
+            if (std::holds_alternative<std::string>(arg)) {
+                return static_cast<double>(std::get<std::string>(arg).size());
+            }
+            return 0.0;
+        });
+}
+
+void VM::adoptGlobals(const std::vector<std::string>& names,
+                       const std::vector<Value>& values,
+                       const std::vector<bool>& defined,
+                       const std::unordered_map<std::string, int>& index) {
+    globalNames = names;
+    globalValues = values;
+    globalDefined = defined;
+    globalIndex = index;
 }
 
 // =========================================================================
@@ -265,6 +294,42 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
 
         // Native function
         if (auto native = std::dynamic_pointer_cast<NativeFunction>(callable)) {
+            // Bound method: dispatch through the current VM so globals
+            // and builtins remain accessible (no temp VM).
+            if (native->isBoundMethod()) {
+                auto instance = native->getBoundInstance();
+                const auto* proto = native->getBoundMethodProto();
+                if (!proto) {
+                    runtimeErrorOrThrow("Bound method has no prototype");
+                    return false;
+                }
+
+                // Pop args (in reverse), then pop the callee
+                std::vector<Value> arguments(argCount);
+                for (int i = argCount - 1; i >= 0; i--) {
+                    arguments[static_cast<size_t>(i)] = pop();
+                }
+                pop(); // callee (bound method wrapper)
+
+                // Save frame base BEFORE pushing — it must point at 'this'
+                Value* newFrameBase = stackTop;
+
+                // Push 'this' (bound instance) then method arguments as locals
+                push(instance);
+                for (const auto& a : arguments) {
+                    push(a);
+                }
+
+                // Set up call frame directly (inline callVoraFunction logic).
+                // We skip the usual arity check because 'this' is not counted
+                // in the method prototype's arity.
+                frames.push_back({ip, frameBase, currentChunk, nullptr});
+                currentChunk = &proto->chunk;
+                ip = currentChunk->code.data();
+                frameBase = newFrameBase;  // points to instance at slot 0
+                return true;
+            }
+
             if (native->arity() >= 0 && argCount != static_cast<uint8_t>(native->arity())) {
                 runtimeErrorOrThrow("Wrong arity: expected " +
                     std::to_string(native->arity()) + " but got " +
@@ -433,8 +498,6 @@ InterpretResult VM::run() {
                 push(addValues(a, b));
                 break;
             }
-            case OpCode::OP_SUBTRACT: BINARY_OP(-, "subtraction"); break;
-            case OpCode::OP_MULTIPLY: BINARY_OP(*, "multiplication"); break;
             case OpCode::OP_DIVIDE: {
                 Value b = pop();
                 Value a = pop();
@@ -474,62 +537,87 @@ InterpretResult VM::run() {
                 break;
             }
 
-            // --- Fast numeric arithmetic (no type checks) ---
+            // --- Fast numeric arithmetic (with type checks) ---
             case OpCode::OP_SUB_NN: {
-                double b = std::get<double>(pop());
-                double a = std::get<double>(pop());
-                push(a - b);
+                Value bVal = pop();
+                Value aVal = pop();
+                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                    RUNTIME_ERROR_OR_THROW("Invalid operands for -");
+                }
+                push(std::get<double>(aVal) - std::get<double>(bVal));
                 break;
             }
             case OpCode::OP_MUL_NN: {
-                double b = std::get<double>(pop());
-                double a = std::get<double>(pop());
-                push(a * b);
+                Value bVal = pop();
+                Value aVal = pop();
+                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                    RUNTIME_ERROR_OR_THROW("Invalid operands for *");
+                }
+                push(std::get<double>(aVal) * std::get<double>(bVal));
                 break;
             }
             case OpCode::OP_DIV_NN: {
-                double b = std::get<double>(pop());
+                Value bVal = pop();
+                Value aVal = pop();
+                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                    RUNTIME_ERROR_OR_THROW("Invalid operands for /");
+                }
+                double b = std::get<double>(bVal);
                 if (b == 0) {
                     RUNTIME_ERROR_OR_THROW("Division by zero");
                 }
-                double a = std::get<double>(pop());
-                push(a / b);
+                push(std::get<double>(aVal) / b);
                 break;
             }
             case OpCode::OP_MOD_NN: {
-                double b = std::get<double>(pop());
+                Value bVal = pop();
+                Value aVal = pop();
+                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                    RUNTIME_ERROR_OR_THROW("Invalid operands for %");
+                }
+                double b = std::get<double>(bVal);
                 if (b == 0) {
                     RUNTIME_ERROR_OR_THROW("Modulo by zero");
                 }
-                double a = std::get<double>(pop());
-                push(std::fmod(a, b));
+                push(std::fmod(std::get<double>(aVal), b));
                 break;
             }
             case OpCode::OP_LESS_NN: {
-                double b = std::get<double>(pop());
-                double a = std::get<double>(pop());
-                push(a < b);
+                Value bVal = pop();
+                Value aVal = pop();
+                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                    RUNTIME_ERROR_OR_THROW("Invalid operands for <");
+                }
+                push(std::get<double>(aVal) < std::get<double>(bVal));
                 break;
             }
             case OpCode::OP_LESS_EQ_NN: {
-                double b = std::get<double>(pop());
-                double a = std::get<double>(pop());
-                push(a <= b);
+                Value bVal = pop();
+                Value aVal = pop();
+                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                    RUNTIME_ERROR_OR_THROW("Invalid operands for <=");
+                }
+                push(std::get<double>(aVal) <= std::get<double>(bVal));
                 break;
             }
             case OpCode::OP_GREATER_NN: {
-                double b = std::get<double>(pop());
-                double a = std::get<double>(pop());
-                push(a > b);
+                Value bVal = pop();
+                Value aVal = pop();
+                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                    RUNTIME_ERROR_OR_THROW("Invalid operands for >");
+                }
+                push(std::get<double>(aVal) > std::get<double>(bVal));
                 break;
             }
             case OpCode::OP_GREATER_EQ_NN: {
-                double b = std::get<double>(pop());
-                double a = std::get<double>(pop());
-                push(a >= b);
+                Value bVal = pop();
+                Value aVal = pop();
+                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                    RUNTIME_ERROR_OR_THROW("Invalid operands for >=");
+                }
+                push(std::get<double>(aVal) >= std::get<double>(bVal));
                 break;
             }
-
             // --- Comparison ---
             case OpCode::OP_EQUAL: {
                 Value b = pop();
@@ -548,36 +636,6 @@ InterpretResult VM::run() {
                 Value a = pop();
                 if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
                     push(std::get<double>(a) < std::get<double>(b));
-                } else {
-                    push(false);
-                }
-                break;
-            }
-            case OpCode::OP_LESS_EQUAL: {
-                Value b = pop();
-                Value a = pop();
-                if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
-                    push(std::get<double>(a) <= std::get<double>(b));
-                } else {
-                    push(false);
-                }
-                break;
-            }
-            case OpCode::OP_GREATER: {
-                Value b = pop();
-                Value a = pop();
-                if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
-                    push(std::get<double>(a) > std::get<double>(b));
-                } else {
-                    push(false);
-                }
-                break;
-            }
-            case OpCode::OP_GREATER_EQUAL: {
-                Value b = pop();
-                Value a = pop();
-                if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
-                    push(std::get<double>(a) >= std::get<double>(b));
                 } else {
                     push(false);
                 }
@@ -635,13 +693,6 @@ InterpretResult VM::run() {
             case OpCode::OP_JUMP_IF_FALSE: {
                 uint16_t offset = readShort();
                 if (!isTruthy(peek(0))) {
-                    ip += offset;
-                }
-                break;
-            }
-            case OpCode::OP_JUMP_IF_TRUE: {
-                uint16_t offset = readShort();
-                if (isTruthy(peek(0))) {
                     ip += offset;
                 }
                 break;
@@ -873,52 +924,27 @@ InterpretResult VM::run() {
                         while (cls) {
                             auto methodIt = cls->methods.find(propName);
                             if (methodIt != cls->methods.end()) {
-                                // Create bound method — wrap in a NativeFunction
-                                // that captures this instance and the method
+                                // Create bound method: a NativeFunction carrying the
+                                // instance + prototype. callValue() detects it and
+                                // dispatches through the current VM so globals and
+                                // builtins remain accessible.
                                 auto methodFn = methodIt->second;
-                                auto instancePtr = instance;
+                                const FunctionPrototype* mp = methodFn->getPrototype();
+                                if (!mp) {
+                                    RUNTIME_ERROR_OR_THROW("Method has no compiled body");
+                                }
                                 auto bound = std::make_shared<NativeFunction>(
                                     propName, methodFn->arity(),
-                                    [methodFn, instancePtr](const std::vector<Value>& args) -> Value {
-                                        // Execute the method with 'this' bound
-                                        // For now, use a simplified approach:
-                                        // create a temporary VM, set up call frame
-                                        VM tempVm;
-                                        const FunctionPrototype* mp = methodFn->getPrototype();
-                                        if (!mp) return nullptr; // interpreter-only function
-
-                                        // Save current state
-                                        const Chunk* savedChunk = tempVm.currentChunk;
-                                        const uint8_t* savedIp = tempVm.ip;
-                                        Value* savedFrameBase = tempVm.frameBase;
-
-                                        tempVm.currentChunk = &mp->chunk;
-                                        tempVm.ip = mp->chunk.code.data();
-                                        tempVm.frameBase = tempVm.stackTop;
-
-                                        // Push 'this' as slot 0
-                                        tempVm.push(instancePtr);
-                                        // Push args
-                                        for (const auto& a : args) {
-                                            tempVm.push(a);
-                                        }
-
-                                        // Run the method body
-                                        auto result = tempVm.run();
-
-                                        if (result == InterpretResult::OK) {
-                                            // Result is on top of stack
-                                            if (tempVm.stackTop > tempVm.stack) {
-                                                return tempVm.pop();
-                                            }
-                                        }
-                                        return nullptr;
-                                    });
+                                    /*no-op lambda — callValue intercepts before calling this*/
+                                    [](const std::vector<Value>&) -> Value { return nullptr; });
+                                bound->markAsBoundMethod(instance, mp);
                                 push(bound);
-                                break;
+                                // Found method — break out of while + switch
+                                goto method_found;
                             }
                             cls = cls->parentClass.get();
                         }
+                        method_found:
                         if (cls) break;  // found method
                     }
                     RUNTIME_ERROR_OR_THROW("Undefined property: " + propName);
@@ -991,16 +1017,17 @@ InterpretResult VM::run() {
                 // constructor. Each parent gets args[0..parentParamCount].
                 auto ctorCallable = std::make_shared<NativeFunction>(
                     cd.name, static_cast<int>(cd.params.size()),
-                    [objClass, ctorFn](const std::vector<Value>& args) -> Value {
+                    [objClass, ctorFn, globalsNames = globalNames, globalsValues = globalValues, globalsDefined = globalDefined, globalsIndex = globalIndex](const std::vector<Value>& args) -> Value {
                         auto instance = std::make_shared<ObjectInstance>();
                         instance->className = objClass->className;
                         instance->classDefinition = objClass;
 
                         // Helper: run a constructor prototype on the instance
-                        auto runCtor = [&instance](const FunctionPrototype* cp,
+                        auto runCtor = [&instance, &globalsNames, &globalsValues, &globalsDefined, &globalsIndex](const FunctionPrototype* cp,
                                                    const std::vector<Value>& ctorArgs) {
                             if (!cp) return;
                             VM tempVm;
+                            tempVm.adoptGlobals(globalsNames, globalsValues, globalsDefined, globalsIndex);
                             tempVm.currentChunk = &cp->chunk;
                             tempVm.ip = cp->chunk.code.data();
                             tempVm.frameBase = tempVm.stackTop;
@@ -1050,6 +1077,10 @@ InterpretResult VM::run() {
                 }
                 break;
             }
+            case OpCode::OP_CLEAR_EXCEPTION: {
+                exceptionInFlight = false;
+                break;
+            }
             case OpCode::OP_THROW: {
                 if (!throwException(peek(0))) {
                     runtimeError("Uncaught exception: " + valueToString(peek(0)));
@@ -1058,7 +1089,19 @@ InterpretResult VM::run() {
                 goto dispatch;
             }
             case OpCode::OP_FINALLY_END: {
-                // Marker for finally block end — just continue
+                // If we just ran a finally block after an exception was
+                // routed through a catch handler, re-throw the exception
+                // so enclosing handlers can catch it.
+                if (exceptionInFlight) {
+                    exceptionInFlight = false;
+                    Value ex = pop();  // exception value pushed by throwException
+                    if (!throwException(ex)) {
+                        runtimeError("Uncaught exception: " + valueToString(ex));
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                    // throwException set exceptionInFlight again if re-caught
+                    goto dispatch;
+                }
                 break;
             }
 

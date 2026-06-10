@@ -14,6 +14,8 @@ $Vora = $null
 foreach ($candidate in @(
         "$ProjectDir\build\Debug\Vora.exe",
         "$ProjectDir\build\Release\Vora.exe",
+        "$ProjectDir\build\windows-x64-debug\Debug\Vora.exe",
+        "$ProjectDir\build\windows-x64-release\Release\Vora.exe",
         "$ProjectDir\build\Vora.exe"
     )) {
     if (Test-Path $candidate) {

@@ -23,8 +23,6 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_NEGATE:         return "OP_NEGATE";
         case OpCode::OP_NOT:            return "OP_NOT";
         case OpCode::OP_ADD:            return "OP_ADD";
-        case OpCode::OP_SUBTRACT:       return "OP_SUBTRACT";
-        case OpCode::OP_MULTIPLY:       return "OP_MULTIPLY";
         case OpCode::OP_DIVIDE:         return "OP_DIVIDE";
         case OpCode::OP_MODULO:         return "OP_MODULO";
         case OpCode::OP_POWER:          return "OP_POWER";
@@ -39,9 +37,6 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_EQUAL:          return "OP_EQUAL";
         case OpCode::OP_NOT_EQUAL:      return "OP_NOT_EQUAL";
         case OpCode::OP_LESS:           return "OP_LESS";
-        case OpCode::OP_LESS_EQUAL:     return "OP_LESS_EQUAL";
-        case OpCode::OP_GREATER:        return "OP_GREATER";
-        case OpCode::OP_GREATER_EQUAL:  return "OP_GREATER_EQUAL";
         case OpCode::OP_GET_LOCAL:      return "OP_GET_LOCAL";
         case OpCode::OP_SET_LOCAL:      return "OP_SET_LOCAL";
         case OpCode::OP_DEFINE_GLOBAL:  return "OP_DEFINE_GLOBAL";
@@ -50,7 +45,6 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_GET_GLOBAL_SAFE: return "OP_GET_GLOBAL_SAFE";
         case OpCode::OP_JUMP:           return "OP_JUMP";
         case OpCode::OP_JUMP_IF_FALSE:  return "OP_JUMP_IF_FALSE";
-        case OpCode::OP_JUMP_IF_TRUE:   return "OP_JUMP_IF_TRUE";
         case OpCode::OP_LOOP:           return "OP_LOOP";
         case OpCode::OP_CALL:           return "OP_CALL";
         case OpCode::OP_CLOSURE:        return "OP_CLOSURE";
@@ -63,6 +57,7 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_CLASS:          return "OP_CLASS";
         case OpCode::OP_PUSH_CATCH:     return "OP_PUSH_CATCH";
         case OpCode::OP_POP_CATCH:      return "OP_POP_CATCH";
+        case OpCode::OP_CLEAR_EXCEPTION: return "OP_CLEAR_EXCEPTION";
         case OpCode::OP_THROW:          return "OP_THROW";
         case OpCode::OP_FINALLY_END:    return "OP_FINALLY_END";
     }
@@ -146,7 +141,13 @@ size_t Chunk::addConstant(Value value) {
         const auto& existing = constants[i];
         if (existing.index() != value.index()) continue;
 
-        if (std::holds_alternative<std::nullptr_t>(value)) { constants.push_back(value); return constants.size() - 1; }
+        if (std::holds_alternative<std::nullptr_t>(value)) {
+            for (size_t j = 0; j < constants.size(); j++) {
+                if (std::holds_alternative<std::nullptr_t>(constants[j])) return j;
+            }
+            constants.push_back(value);
+            return constants.size() - 1;
+        }
         if (std::holds_alternative<bool>(value) && std::get<bool>(existing) == std::get<bool>(value)) return i;
         if (std::holds_alternative<double>(value) && std::get<double>(existing) == std::get<double>(value)) return i;
         if (std::holds_alternative<std::string>(value) && std::get<std::string>(existing) == std::get<std::string>(value)) return i;
@@ -294,8 +295,7 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             return offset + 2;
         }
         case OpCode::OP_JUMP:
-        case OpCode::OP_JUMP_IF_FALSE:
-        case OpCode::OP_JUMP_IF_TRUE: {
+        case OpCode::OP_JUMP_IF_FALSE: {
             uint16_t jumpOffset = static_cast<uint16_t>(code[offset + 1])
                                 | (static_cast<uint16_t>(code[offset + 2]) << 8);
             std::printf("%-16s %4d -> %zu\n", opcodeName(instruction),

@@ -37,7 +37,10 @@ void Compiler::patchJump(size_t operandOffset) {
     size_t jumpSize = jumpEnd - operandOffset - 2;
 
     if (jumpSize > UINT16_MAX) {
-        jumpSize = UINT16_MAX;
+        std::cerr << "Compiler error: jump offset " << jumpSize
+                  << " exceeds 16-bit limit (UINT16_MAX=" << UINT16_MAX
+                  << "). Function body too large." << std::endl;
+        std::exit(1);
     }
 
     chunk.writeAt(operandOffset, static_cast<uint8_t>(jumpSize & 0xFF));
@@ -48,7 +51,11 @@ void Compiler::emitLoop(size_t loopStart) {
     emitByte(static_cast<uint8_t>(OpCode::OP_LOOP));
 
     size_t offset = chunk.code.size() - loopStart + 2;
-    if (offset > UINT16_MAX) offset = UINT16_MAX;
+    if (offset > UINT16_MAX) {
+        std::cerr << "Compiler error: loop offset " << offset
+                  << " exceeds 16-bit limit. Loop body too large." << std::endl;
+        std::exit(1);
+    }
 
     emitByte(static_cast<uint8_t>(offset & 0xFF));
     emitByte(static_cast<uint8_t>((offset >> 8) & 0xFF));
@@ -56,9 +63,11 @@ void Compiler::emitLoop(size_t loopStart) {
 
 uint8_t Compiler::makeConstant(Value value) {
     size_t index = chunk.addConstant(value);
-    // Guard against constant pool overflow (> 256 entries)
+    // Guard against constant pool overflow (> 256 entries).
+    // A future OP_CONSTANT_LONG (16-bit index) would lift this limit.
     if (index > UINT8_MAX) {
-        std::cerr << "Compiler error: constant pool overflow (" << index << " entries)" << std::endl;
+        std::cerr << "Compiler error: constant pool overflow ("
+                  << index << " entries, max 256)." << std::endl;
         std::exit(1);
     }
     return static_cast<uint8_t>(index);
@@ -567,12 +576,16 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
         // Get current value onto stack
         var->accept(*this);
 
-        // Resolve the variable's location once
+        // Resolve the variable's location: local → upvalue → global
         int localSlot = resolveLocal(var->name);
         bool isLocal = (localSlot >= 0);
+        int upvalueIdx = -1;
         int globalSlot = -1;
         if (!isLocal) {
-            globalSlot = resolveGlobal(var->name);
+            upvalueIdx = resolveUpvalue(this, var->name);
+            if (upvalueIdx < 0) {
+                globalSlot = resolveGlobal(var->name);
+            }
         }
 
         if (expr.isPrefix) {
@@ -582,6 +595,9 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
             if (isLocal) {
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
                           static_cast<uint8_t>(localSlot));
+            } else if (upvalueIdx >= 0) {
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_UPVALUE),
+                          static_cast<uint8_t>(upvalueIdx));
             } else {
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
                           static_cast<uint8_t>(globalSlot));
@@ -595,6 +611,9 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
             if (isLocal) {
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
                           static_cast<uint8_t>(localSlot));
+            } else if (upvalueIdx >= 0) {
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_UPVALUE),
+                          static_cast<uint8_t>(upvalueIdx));
             } else {
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
                           static_cast<uint8_t>(globalSlot));
@@ -617,19 +636,22 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
             emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
             emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), propIndex);
         } else {
-            // Postfix: obj.prop++ → get old as result, then set obj.prop += delta.
-            // Strategy: evaluate obj twice — once to get old value, once to set.
+            // Postfix: obj.prop++ → return old value, store new value.
+            // Evaluate obj once (DUP) to avoid double-executing side effects.
+            // Stack sequence (delta = ±1):
+            //   obj → DUP → [obj, obj]
+            //   GET_PROPERTY → [obj, old]
+            //   ADD delta → [obj, new]
+            //   SET_PROPERTY → [new]          (stores obj.prop = new)
+            //   ADD (-delta) → [old]           (result: new - delta = old)
             prop->object->accept(*this);
+            emitByte(static_cast<uint8_t>(OpCode::OP_DUP));
             emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIndex);
-            // Stack: [old]  — saved for result
-            // Second evaluation: obj again, with DUP to keep obj for SET_PROPERTY
-            prop->object->accept(*this);
-            emitByte(static_cast<uint8_t>(OpCode::OP_DUP));  // keep obj ref
-            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIndex);  // [old, obj, old2]
             emitConstant(delta);
-            emitByte(static_cast<uint8_t>(OpCode::OP_ADD));   // [old, obj, new]
-            emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), propIndex);  // [old, new]
-            emitByte(static_cast<uint8_t>(OpCode::OP_POP));    // [old]
+            emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+            emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), propIndex);
+            emitConstant(-delta);
+            emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
         }
         return;
     }
@@ -697,12 +719,26 @@ void Compiler::visitBlockStmt(const BlockStmt& stmt) {
 }
 
 void Compiler::visitReturnStmt(const ReturnStmt& stmt) {
+    // Pop catch handlers for any enclosing try blocks before returning
+    for (int t = 0; t < tryNesting; t++) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+    }
+
+    // Push return value (must be on stack before finally runs)
     if (stmt.value) {
         stmt.value->accept(*this);
     } else {
         emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
     }
-    emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
+
+    if (finallyNesting > 0) {
+        // Instead of OP_RETURN, emit OP_JUMP that will be re-routed through
+        // the finally block by visitTryStmt. The return value stays on stack.
+        size_t jump = emitJump(OpCode::OP_JUMP);
+        pendingReturnJumps.push_back(jump);
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
+    }
 }
 
 void Compiler::visitIfStmt(const IfStmt& stmt) {
@@ -819,8 +855,9 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
 
     size_t loopStart = chunk.code.size();
     // continueTarget = SIZE_MAX signals "for-in loop: use forward jump,
-    // target will be set later"
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth});
+    // target will be set later". extraLocalsToPop = 3 accounts for the
+    // auto-generated _iter, _i, _len locals that must be cleaned up on break.
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 3});
 
     // --- Condition: _i < _len ---
     int iSlot = resolveLocal("_i");
@@ -864,16 +901,13 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
     // --- Loop back ---
     emitLoop(loopStart);
 
-    // Patch exit
+    // Patch exit (condition false → exit loop)
     patchJump(exitJump);
     emitByte(static_cast<uint8_t>(OpCode::OP_POP));
 
-    // Patch break jumps (to after the loop)
-    for (size_t jumpOffset : loopStack.back().breakJumps) {
-        patchJump(jumpOffset);
-    }
-
-    // Patch continue jumps to the continueTarget (the increment section)
+    // Patch continue jumps to the continueTarget (the increment section).
+    // Must be done BEFORE endScope() because continue re-enters the loop
+    // and needs _iter/_i/_len still on the stack.
     for (size_t jumpOffset : loopStack.back().continueJumps) {
         size_t target = loopStack.back().continueTarget;
         size_t jumpSize = target - jumpOffset - 2;
@@ -882,10 +916,22 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
         chunk.writeAt(jumpOffset + 1, static_cast<uint8_t>((jumpSize >> 8) & 0xFF));
     }
 
+    // Save break jumps before popping the loop context. They must be
+    // patched AFTER endScope() because break already handled cleanup of
+    // _iter/_i/_len via extraLocalsToPop — landing before endScope()
+    // would double-pop those locals.
+    std::vector<size_t> savedBreakJumps = std::move(loopStack.back().breakJumps);
+
     loopStack.pop_back();
 
-    // End outer scope (pops _iter, _i, _len)
+    // End outer scope (pops _iter, _i, _len for normal exit path)
     endScope();
+
+    // Patch break jumps after endScope() — break path skips the
+    // endScope() cleanup since it already handled it.
+    for (size_t jumpOffset : savedBreakJumps) {
+        patchJump(jumpOffset);
+    }
 }
 
 void Compiler::visitFuncStmt(const FuncStmt& stmt) {
@@ -1038,6 +1084,12 @@ void Compiler::visitBreakStmt(const BreakStmt& /*stmt*/) {
         return;
     }
 
+    // Pop catch handlers for any enclosing try blocks (they are skipped by
+    // the break jump and would otherwise leak on the VM's catch handler stack).
+    for (int t = 0; t < tryNesting; t++) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+    }
+
     // Pop locals from current scope down to the loop's enclosing scope
     int localsToPop = 0;
     for (int i = static_cast<int>(locals.size()) - 1; i >= 0; i--) {
@@ -1047,6 +1099,10 @@ void Compiler::visitBreakStmt(const BreakStmt& /*stmt*/) {
             break;
         }
     }
+    // For-in loops generate _iter, _i, _len at enclosingScopeDepth which
+    // must also be cleaned up on break (they persist through continue).
+    localsToPop += loopStack.back().extraLocalsToPop;
+
     if (localsToPop > 0) {
         emitBytes(static_cast<uint8_t>(OpCode::OP_POPN),
                   static_cast<uint8_t>(localsToPop));
@@ -1060,6 +1116,11 @@ void Compiler::visitBreakStmt(const BreakStmt& /*stmt*/) {
 void Compiler::visitContinueStmt(const ContinueStmt& /*stmt*/) {
     if (loopStack.empty()) {
         return;
+    }
+
+    // Pop catch handlers for any enclosing try blocks.
+    for (int t = 0; t < tryNesting; t++) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
     }
 
     // Pop locals from current scope down to the loop's enclosing scope
@@ -1088,33 +1149,60 @@ void Compiler::visitContinueStmt(const ContinueStmt& /*stmt*/) {
 }
 
 void Compiler::visitTryStmt(const TryStmt& stmt) {
-    // OP_PUSH_CATCH <catchOffset>   -- register catch handler
-    // <try block>
-    // OP_POP_CATCH                  -- unregister
-    // OP_JUMP <afterCatch>
-    // <catch block>                 -- target of catch (patch PUSH_CATCH here)
-    // OP_POP_CATCH
-    // <afterCatch>
-    //
-    // With finally:
-    // OP_PUSH_CATCH <catchOffset>
-    // <try block>
-    // OP_POP_CATCH
-    // <finally block>               -- runs normally AND on exception
-    // OP_JUMP <afterFinally>
-    // <catch block>
-    // OP_POP_CATCH
-    // <finally block>               -- runs after catch too
-    // <afterFinally>
-    // OP_FINALLY_END
-
     // Emit OP_PUSH_CATCH with placeholder (patched later to catch block)
     size_t pushCatchPlaceholder = emitJump(OpCode::OP_PUSH_CATCH);
 
-    // Compile try block
+    // Track try nesting so break/continue/return inside emit OP_POP_CATCH
+    tryNesting++;
+
+    // =========================================================================
+    // Snapshot loop break/continue counts and return jump count BEFORE try body
+    // =========================================================================
+    std::vector<size_t> savedBreakCounts;
+    std::vector<size_t> savedContinueCounts;
+    for (const auto& lc : loopStack) {
+        savedBreakCounts.push_back(lc.breakJumps.size());
+        savedContinueCounts.push_back(lc.continueJumps.size());
+    }
+    size_t savedReturnCount = pendingReturnJumps.size();
+
+    // Track finally nesting for return routing
+    if (stmt.finallyBlock) finallyNesting++;
+
+    // Compile try body (break/continue/return inside may emit new jumps)
     stmt.tryBlock->accept(*this);
 
-    // Pop catch handler (normal exit from try)
+    if (stmt.finallyBlock) finallyNesting--;
+    tryNesting--;
+
+    // =========================================================================
+    // Capture new break/continue jumps emitted inside the try body.
+    // They will be re-routed through the finally block (if present).
+    // =========================================================================
+    struct CapturedJump { size_t offset; int loopIdx; };
+    std::vector<CapturedJump> capturedBreaks;
+    std::vector<CapturedJump> capturedContinues;
+    for (size_t li = 0; li < loopStack.size(); li++) {
+        auto& lc = loopStack[li];
+        while (lc.breakJumps.size() > savedBreakCounts[li]) {
+            capturedBreaks.push_back({lc.breakJumps.back(), static_cast<int>(li)});
+            lc.breakJumps.pop_back();
+        }
+        while (lc.continueJumps.size() > savedContinueCounts[li]) {
+            capturedContinues.push_back({lc.continueJumps.back(), static_cast<int>(li)});
+            lc.continueJumps.pop_back();
+        }
+    }
+    // Capture return jumps emitted inside try body
+    std::vector<size_t> capturedReturns;
+    while (pendingReturnJumps.size() > savedReturnCount) {
+        capturedReturns.push_back(pendingReturnJumps.back());
+        pendingReturnJumps.pop_back();
+    }
+
+    // =========================================================================
+    // Normal try exit: OP_POP_CATCH
+    // =========================================================================
     emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
 
     if (stmt.catchBlock) {
@@ -1130,6 +1218,9 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
         chunk.writeAt(pushCatchPlaceholder + 1,
                       static_cast<uint8_t>((catchJumpSize >> 8) & 0xFF));
 
+        // Clear exceptionInFlight — the catch block handles the exception,
+        // so any following OP_FINALLY_END should NOT re-throw.
+        emitByte(static_cast<uint8_t>(OpCode::OP_CLEAR_EXCEPTION));
         // Pop catch handler (entered via exception path)
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
 
@@ -1142,15 +1233,62 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
         // Patch the skip-catch jump from normal flow
         patchJump(skipCatchJump);
     } else {
-        // No catch — patch PUSH_CATCH to skip to after try+finally
+        // No catch — patch PUSH_CATCH to skip to after try
         patchJump(pushCatchPlaceholder);
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
     }
 
-    // Finally block (if present)
+    // =========================================================================
+    // Finally block — compiled once for the normal flow, then bytecode is
+    // captured and replayed at each captured break/continue/return site.
+    // =========================================================================
     if (stmt.finallyBlock) {
+        // Record the finally bytecode (before OP_FINALLY_END)
+        size_t finallyStart = chunk.code.size();
         stmt.finallyBlock->accept(*this);
+        size_t finallyEnd = chunk.code.size();
+        std::vector<uint8_t> finallyBytes(
+            chunk.code.begin() + finallyStart,
+            chunk.code.begin() + finallyEnd);
         emitByte(static_cast<uint8_t>(OpCode::OP_FINALLY_END));
+
+        // Push finally bytecode onto stack (for nested finally blocks, the
+        // outermost finally bytecode is replayed first at capture sites).
+        finallyBytecodeStack.push_back(std::move(finallyBytes));
+
+        // --- Route captured break jumps through finally ---
+        for (const auto& cj : capturedBreaks) {
+            // Patch the break's OP_JUMP placeholder to point to current position
+            patchJump(cj.offset);
+            // Replay finally bytecode
+            for (uint8_t b : finallyBytecodeStack.back()) emitByte(b);
+            emitByte(static_cast<uint8_t>(OpCode::OP_FINALLY_END));
+            // New jump — re-added to the loop's breakJumps for normal patching
+            size_t newJump = emitJump(OpCode::OP_JUMP);
+            loopStack[static_cast<size_t>(cj.loopIdx)].breakJumps.push_back(newJump);
+        }
+
+        // --- Route captured continue jumps through finally ---
+        for (const auto& cj : capturedContinues) {
+            patchJump(cj.offset);
+            for (uint8_t b : finallyBytecodeStack.back()) emitByte(b);
+            emitByte(static_cast<uint8_t>(OpCode::OP_FINALLY_END));
+            size_t newJump = emitJump(OpCode::OP_JUMP);
+            loopStack[static_cast<size_t>(cj.loopIdx)].continueJumps.push_back(newJump);
+        }
+
+        // --- Route captured return jumps through finally ---
+        for (size_t jumpOffset : capturedReturns) {
+            // The return value is already on the stack (pushed by visitReturnStmt
+            // before the OP_JUMP). After finally runs, it'll still be at peek(0).
+            patchJump(jumpOffset);
+            for (uint8_t b : finallyBytecodeStack.back()) emitByte(b);
+            emitByte(static_cast<uint8_t>(OpCode::OP_FINALLY_END));
+            emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
+        }
+
+        // Pop the finally bytecode stack entry
+        finallyBytecodeStack.pop_back();
     }
 }
 
