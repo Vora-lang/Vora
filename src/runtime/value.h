@@ -19,6 +19,7 @@ struct ClassData;
 using Value = std::variant<
     std::nullptr_t,
     double,
+    int64_t,
     bool,
     std::string,
     std::shared_ptr<Array>,
@@ -51,5 +52,20 @@ struct ObjectInstance {
 void printValue(const Value& value);
 
 std::string valueToString(const Value& value);
+
+// Numeric helpers for dual int64/double type system
+inline bool isNumeric(const Value& v) {
+    return std::holds_alternative<double>(v) || std::holds_alternative<int64_t>(v);
+}
+
+inline double toDouble(const Value& v) {
+    if (std::holds_alternative<int64_t>(v)) return static_cast<double>(std::get<int64_t>(v));
+    return std::get<double>(v);
+}
+
+inline Value promoteToFloat(const Value& v) {
+    if (std::holds_alternative<int64_t>(v)) return static_cast<double>(std::get<int64_t>(v));
+    return v;
+}
 
 }

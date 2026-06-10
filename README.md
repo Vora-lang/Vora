@@ -180,8 +180,10 @@ print("Hello ${name}!")  // "Hello World!"
 | `print(...)` | 变参输出，空格分隔 |
 | `clock()` | Unix 时间戳（秒） |
 | `input(prompt?)` | 读取 stdin 一行 |
-| `int(value)` | 转整数（截断） |
-| `float(value)` | 转浮点数 |
+| `int(value)` | 转 int64（截断） |
+| `float(value)` | 转 float64 |
+| `len(value)` | 返回数组长度或字符串字符数 |
+| `type(value)` | 返回类型名：`"int"`/`"float"`/`"string"`/`"array"`/`"boolean"`/`"null"`/`"function"`/`"object"` |
 | `range(stop)` / `range(start, stop, step)` | 生成数字数组 |
 | `assert(cond, msg?)` | 断言 |
 | `bin(num)` | → `"0b..."` |
@@ -240,7 +242,8 @@ Vora/
 | v0.09 | `19dbb27` | VM 性能优化（全局变量驻留、快速数值操作码、常量折叠、移动语义） | ✅ |
 | v0.10 | `6666872` | VM 异常处理完善（finally 路由、异常重抛、catch handler 清理） | ✅ |
 | v0.11 | `7a33678` | 多架构构建系统 + 应用图标 + 原生打包（.msi/.deb/.rpm/.pkg.tar.xz） | ✅ |
-| v0.12 | — | 模块系统（import/export） | ⏳ |
+| v0.12 | — | int64/float64 双数值类型 + `len()` + `type()` | ✅ |
+| v0.13 | — | 模块系统（import/export） | ⏳ |
 | v0.2 | — | 优化 / JIT | 规划中 |
 
 ## 测试

@@ -71,6 +71,9 @@ static const char* opcodeName(OpCode op) {
 static std::string constantToString(const Value& value) {
     if (std::holds_alternative<std::nullptr_t>(value)) return "null";
     if (std::holds_alternative<bool>(value)) return std::get<bool>(value) ? "true" : "false";
+    if (std::holds_alternative<int64_t>(value)) {
+        return std::to_string(std::get<int64_t>(value));
+    }
     if (std::holds_alternative<double>(value)) {
         double d = std::get<double>(value);
         if (std::floor(d) == d) return std::to_string(static_cast<int64_t>(d));
@@ -149,7 +152,8 @@ size_t Chunk::addConstant(Value value) {
             return constants.size() - 1;
         }
         if (std::holds_alternative<bool>(value) && std::get<bool>(existing) == std::get<bool>(value)) return i;
-        if (std::holds_alternative<double>(value) && std::get<double>(existing) == std::get<double>(value)) return i;
+        if (std::holds_alternative<int64_t>(value) && std::holds_alternative<int64_t>(existing) && std::get<int64_t>(existing) == std::get<int64_t>(value)) return i;
+        if (std::holds_alternative<double>(value) && std::holds_alternative<double>(existing) && std::get<double>(existing) == std::get<double>(value)) return i;
         if (std::holds_alternative<std::string>(value) && std::get<std::string>(existing) == std::get<std::string>(value)) return i;
     }
 

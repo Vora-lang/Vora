@@ -241,7 +241,7 @@ void Compiler::visitLiteralExpr(const LiteralExpr& expr) {
         emitByte(std::get<bool>(v)
             ? static_cast<uint8_t>(OpCode::OP_TRUE)
             : static_cast<uint8_t>(OpCode::OP_FALSE));
-    } else if (std::holds_alternative<double>(v)) {
+    } else if (std::holds_alternative<double>(v) || std::holds_alternative<int64_t>(v)) {
         emitConstant(v);
     } else if (std::holds_alternative<std::string>(v)) {
         const auto& str = std::get<std::string>(v);
@@ -381,20 +381,38 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
     if (leftLit && rightLit) {
         const auto& lv = leftLit->value;
         const auto& rv = rightLit->value;
-        if (std::holds_alternative<double>(lv) && std::holds_alternative<double>(rv)) {
-            double a = std::get<double>(lv);
-            double b = std::get<double>(rv);
-            switch (expr.op.type) {
-                case TokenType::PLUS:     emitConstant(a + b); return;
-                case TokenType::MINUS:    emitConstant(a - b); return;
-                case TokenType::MULTIPLY: emitConstant(a * b); return;
-                case TokenType::DIVIDE:
-                    if (b == 0.0) break;  // let runtime handle div-by-zero error
-                    emitConstant(a / b); return;
-                case TokenType::MODULO:
-                    if (b == 0.0) break;  // let runtime handle mod-by-zero error
-                    emitConstant(std::fmod(a, b)); return;
-                default: break;
+        if (isNumeric(lv) && isNumeric(rv)) {
+            bool intOp = std::holds_alternative<int64_t>(lv) && std::holds_alternative<int64_t>(rv);
+            if (intOp) {
+                int64_t a = std::get<int64_t>(lv);
+                int64_t b = std::get<int64_t>(rv);
+                switch (expr.op.type) {
+                    case TokenType::PLUS:     emitConstant(a + b); return;
+                    case TokenType::MINUS:    emitConstant(a - b); return;
+                    case TokenType::MULTIPLY: emitConstant(a * b); return;
+                    case TokenType::DIVIDE:
+                        if (b == 0) break;
+                        emitConstant(static_cast<double>(a) / static_cast<double>(b)); return;
+                    case TokenType::MODULO:
+                        if (b == 0) break;
+                        emitConstant(static_cast<double>(std::fmod(static_cast<double>(a), static_cast<double>(b)))); return;
+                    default: break;
+                }
+            } else {
+                double a = toDouble(lv);
+                double b = toDouble(rv);
+                switch (expr.op.type) {
+                    case TokenType::PLUS:     emitConstant(a + b); return;
+                    case TokenType::MINUS:    emitConstant(a - b); return;
+                    case TokenType::MULTIPLY: emitConstant(a * b); return;
+                    case TokenType::DIVIDE:
+                        if (b == 0.0) break;
+                        emitConstant(a / b); return;
+                    case TokenType::MODULO:
+                        if (b == 0.0) break;
+                        emitConstant(std::fmod(a, b)); return;
+                    default: break;
+                }
             }
         }
         if (std::holds_alternative<std::string>(lv) && std::holds_alternative<std::string>(rv)) {
@@ -437,8 +455,11 @@ void Compiler::visitUnaryExpr(const UnaryExpr& expr) {
     // Constant folding: -literal
     if (auto* lit = dynamic_cast<const LiteralExpr*>(expr.right.get())) {
         if (expr.op.type == TokenType::MINUS &&
-            std::holds_alternative<double>(lit->value)) {
-            emitConstant(-std::get<double>(lit->value));
+            isNumeric(lit->value)) {
+            if (std::holds_alternative<int64_t>(lit->value))
+                emitConstant(-std::get<int64_t>(lit->value));
+            else
+                emitConstant(-std::get<double>(lit->value));
             return;
         }
         if (expr.op.type == TokenType::NOT &&
@@ -570,7 +591,9 @@ void Compiler::visitThisExpr(const ThisExpr& expr) {
 
 void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
     currentLine = expr.op.line;
-    double delta = (expr.op.type == TokenType::PLUS_PLUS) ? 1.0 : -1.0;
+    Value delta = (expr.op.type == TokenType::PLUS_PLUS)
+        ? Value(static_cast<int64_t>(1))
+        : Value(static_cast<int64_t>(-1));
 
     if (auto var = dynamic_cast<const VariableExpr*>(expr.target.get())) {
         // Get current value onto stack
@@ -650,7 +673,10 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
             emitConstant(delta);
             emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
             emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), propIndex);
-            emitConstant(-delta);
+            Value negDelta = (expr.op.type == TokenType::PLUS_PLUS)
+                ? Value(static_cast<int64_t>(-1))
+                : Value(static_cast<int64_t>(1));
+            emitConstant(negDelta);
             emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
         }
         return;

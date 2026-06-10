@@ -53,6 +53,38 @@ Interpreter::Interpreter(
     );
 
     defineNative(
+        "len",
+        1,
+        [](const std::vector<Value>& arguments) -> Value {
+            const auto& v = arguments[0];
+            if (std::holds_alternative<std::shared_ptr<Array>>(v))
+                return static_cast<int64_t>(std::get<std::shared_ptr<Array>>(v)->elements.size());
+            if (std::holds_alternative<std::string>(v))
+                return static_cast<int64_t>(std::get<std::string>(v).size());
+            throw RuntimeError("len() requires an array or string", Token(TokenType::IDENTIFIER, "len", 0));
+        }
+    );
+
+    defineNative(
+        "type",
+        1,
+        [](const std::vector<Value>& arguments) -> Value {
+            return std::visit([](auto&& arg) -> std::string {
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr (std::is_same_v<T, std::nullptr_t>) return "null";
+                else if constexpr (std::is_same_v<T, double>) return "float";
+                else if constexpr (std::is_same_v<T, int64_t>) return "int";
+                else if constexpr (std::is_same_v<T, bool>) return "boolean";
+                else if constexpr (std::is_same_v<T, std::string>) return "string";
+                else if constexpr (std::is_same_v<T, std::shared_ptr<Array>>) return "array";
+                else if constexpr (std::is_same_v<T, std::shared_ptr<Callable>>) return "function";
+                else if constexpr (std::is_same_v<T, std::shared_ptr<ObjectInstance>>) return "object";
+                else return "unknown";
+            }, arguments[0]);
+        }
+    );
+
+    defineNative(
         "clock",
         0,
         [](const std::vector<Value>&) -> Value {
@@ -91,9 +123,11 @@ Interpreter::Interpreter(
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
 
+            if (std::holds_alternative<int64_t>(arg)) {
+                return arg;  // already an integer
+            }
             if (std::holds_alternative<double>(arg)) {
-                double val = std::get<double>(arg);
-                return std::trunc(val);
+                return static_cast<int64_t>(std::trunc(std::get<double>(arg)));
             }
 
             if (std::holds_alternative<std::string>(arg)) {
@@ -125,6 +159,9 @@ Interpreter::Interpreter(
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
 
+            if (std::holds_alternative<int64_t>(arg)) {
+                return static_cast<double>(std::get<int64_t>(arg));
+            }
             if (std::holds_alternative<double>(arg)) {
                 return arg;  // already a float
             }
@@ -161,14 +198,14 @@ Interpreter::Interpreter(
             double step = 1;
 
             if (arguments.size() == 1) {
-                end = std::get<double>(arguments[0]);
+                end = toDouble(arguments[0]);
             } else if (arguments.size() == 2) {
-                start = std::get<double>(arguments[0]);
-                end = std::get<double>(arguments[1]);
+                start = toDouble(arguments[0]);
+                end = toDouble(arguments[1]);
             } else if (arguments.size() == 3) {
-                start = std::get<double>(arguments[0]);
-                end = std::get<double>(arguments[1]);
-                step = std::get<double>(arguments[2]);
+                start = toDouble(arguments[0]);
+                end = toDouble(arguments[1]);
+                step = toDouble(arguments[2]);
             } else {
                 throw RuntimeError(
                     "range() expects 1, 2, or 3 arguments",
@@ -223,10 +260,13 @@ Interpreter::Interpreter(
         "bin",
         1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<double>(arguments[0]))
+            int64_t n;
+            if (std::holds_alternative<int64_t>(arguments[0]))
+                n = std::get<int64_t>(arguments[0]);
+            else if (std::holds_alternative<double>(arguments[0]))
+                n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
+            else
                 throw RuntimeError("bin() expects a number", Token(TokenType::IDENTIFIER, "bin", 0));
-            double val = std::get<double>(arguments[0]);
-            int64_t n = static_cast<int64_t>(std::trunc(val));
             if (n == 0) return std::string("0b0");
             bool neg = n < 0;
             uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
@@ -243,10 +283,13 @@ Interpreter::Interpreter(
         "oct",
         1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<double>(arguments[0]))
+            int64_t n;
+            if (std::holds_alternative<int64_t>(arguments[0]))
+                n = std::get<int64_t>(arguments[0]);
+            else if (std::holds_alternative<double>(arguments[0]))
+                n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
+            else
                 throw RuntimeError("oct() expects a number", Token(TokenType::IDENTIFIER, "oct", 0));
-            double val = std::get<double>(arguments[0]);
-            int64_t n = static_cast<int64_t>(std::trunc(val));
             if (n == 0) return std::string("0o0");
             bool neg = n < 0;
             uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
@@ -263,10 +306,13 @@ Interpreter::Interpreter(
         "hex",
         1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<double>(arguments[0]))
+            int64_t n;
+            if (std::holds_alternative<int64_t>(arguments[0]))
+                n = std::get<int64_t>(arguments[0]);
+            else if (std::holds_alternative<double>(arguments[0]))
+                n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
+            else
                 throw RuntimeError("hex() expects a number", Token(TokenType::IDENTIFIER, "hex", 0));
-            double val = std::get<double>(arguments[0]);
-            int64_t n = static_cast<int64_t>(std::trunc(val));
             if (n == 0) return std::string("0x0");
             bool neg = n < 0;
             uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
@@ -498,6 +544,9 @@ bool Interpreter::isTruthy(
         return std::get<bool>(value);
     }
 
+    if (std::holds_alternative<int64_t>(value)) {
+        return std::get<int64_t>(value) != 0;
+    }
     if (std::holds_alternative<double>(value)) {
         return std::get<double>(value) != 0.0;
     }
@@ -615,14 +664,14 @@ Value Interpreter::visitIndexExpr(const IndexExpr& expr) {
     Value target = evaluate(expr.array.get());
     Value indexValue = evaluate(expr.index.get());
 
-    if (!std::holds_alternative<double>(indexValue)) {
+    if (!isNumeric(indexValue)) {
         throw RuntimeError(
             "Index must be a number",
             expr.bracket
         );
     }
 
-    double rawIndex = std::get<double>(indexValue);
+    double rawIndex = toDouble(indexValue);
 
     if (rawIndex < 0 || std::floor(rawIndex) != rawIndex) {
         throw RuntimeError(
@@ -677,15 +726,12 @@ Value Interpreter::visitUnaryExpr(const UnaryExpr& expr) {
 
     Value right = evaluate(expr.right.get());
 
-    if (std::holds_alternative<double>(right)) {
-
-        double value = std::get<double>(right);
-
+    if (isNumeric(right)) {
         switch (expr.op.type) {
-
         case TokenType::MINUS:
-            return -value;
-
+            if (std::holds_alternative<int64_t>(right))
+                return -std::get<int64_t>(right);
+            return -std::get<double>(right);
         default:
             break;
         }
@@ -777,11 +823,14 @@ Value Interpreter::visitBinaryExpr(const BinaryExpr& expr) {
     if (expr.op.type == TokenType::EQUAL_EQUAL || expr.op.type == TokenType::NOT_EQUAL) {
 
         auto doCompare = [](const Value& a, const Value& b) -> bool {
+            // Cross-type numeric equality: 42 == 42.0
+            if (isNumeric(a) && isNumeric(b))
+                return toDouble(a) == toDouble(b);
+
             // Same type
             if (a.index() != b.index()) return false;
 
             if (std::holds_alternative<std::nullptr_t>(a)) return true;
-            if (std::holds_alternative<double>(a)) return std::get<double>(a) == std::get<double>(b);
             if (std::holds_alternative<bool>(a)) return std::get<bool>(a) == std::get<bool>(b);
             if (std::holds_alternative<std::string>(a)) return std::get<std::string>(a) == std::get<std::string>(b);
 
@@ -801,61 +850,48 @@ Value Interpreter::visitBinaryExpr(const BinaryExpr& expr) {
     }
 
     // --- numeric operations ---
-    if (
-        std::holds_alternative<double>(left)
-        &&
-        std::holds_alternative<double>(right)
-    ) {
-
-        double l = std::get<double>(left);
-
-        double r = std::get<double>(right);
+    if (isNumeric(left) && isNumeric(right)) {
+        bool intOp = std::holds_alternative<int64_t>(left) && std::holds_alternative<int64_t>(right);
 
         switch (expr.op.type) {
-
         case TokenType::PLUS:
-            return l + r;
+            if (intOp) return std::get<int64_t>(left) + std::get<int64_t>(right);
+            return toDouble(left) + toDouble(right);
 
         case TokenType::MINUS:
-            return l - r;
+            if (intOp) return std::get<int64_t>(left) - std::get<int64_t>(right);
+            return toDouble(left) - toDouble(right);
 
         case TokenType::MULTIPLY:
-            return l * r;
+            if (intOp) return std::get<int64_t>(left) * std::get<int64_t>(right);
+            return toDouble(left) * toDouble(right);
 
-        case TokenType::DIVIDE:
-
-            if (r == 0) {
-                throw RuntimeError(
-                    "Division by zero",
-                    expr.op
-                );
-            }
-
-            return l / r;
+        case TokenType::DIVIDE: {
+            double r = toDouble(right);
+            if (r == 0.0) throw RuntimeError("Division by zero", expr.op);
+            return toDouble(left) / r;  // always float64
+        }
 
         case TokenType::POWER:
-            return std::pow(l, r);
+            return std::pow(toDouble(left), toDouble(right));
 
-        case TokenType::MODULO:
-            if (r == 0) {
-                throw RuntimeError(
-                    "Modulo by zero",
-                    expr.op
-                );
-            }
-            return std::fmod(l, r);
+        case TokenType::MODULO: {
+            double r = toDouble(right);
+            if (r == 0.0) throw RuntimeError("Modulo by zero", expr.op);
+            return std::fmod(toDouble(left), r);
+        }
 
         case TokenType::LESS:
-            return l < r;
+            return toDouble(left) < toDouble(right);
 
         case TokenType::LESS_EQUAL:
-            return l <= r;
+            return toDouble(left) <= toDouble(right);
 
         case TokenType::GREATER:
-            return l > r;
+            return toDouble(left) > toDouble(right);
 
         case TokenType::GREATER_EQUAL:
-            return l >= r;
+            return toDouble(left) >= toDouble(right);
 
         default:
             break;
@@ -988,18 +1024,24 @@ Value Interpreter::visitTernaryExpr(const TernaryExpr& expr) {
 
 Value Interpreter::visitIncDecExpr(const IncDecExpr& expr) {
 
-    double delta = (expr.op.type == TokenType::PLUS_PLUS) ? 1.0 : -1.0;
+    bool isIncrement = (expr.op.type == TokenType::PLUS_PLUS);
 
     // --- Variable target ---
     if (auto var = dynamic_cast<const VariableExpr*>(expr.target.get())) {
         Value current = environment.get(var->name, var->nameToken);
-        if (!std::holds_alternative<double>(current)) {
+        if (!isNumeric(current)) {
             throw RuntimeError("Can only increment/decrement numbers", expr.op);
         }
-        double oldVal = std::get<double>(current);
-        double newVal = oldVal + delta;
+        Value newVal;
+        if (std::holds_alternative<int64_t>(current)) {
+            int64_t oldVal = std::get<int64_t>(current);
+            newVal = isIncrement ? Value(oldVal + 1) : Value(oldVal - 1);
+        } else {
+            double oldVal = std::get<double>(current);
+            newVal = isIncrement ? Value(oldVal + 1.0) : Value(oldVal - 1.0);
+        }
         environment.assign(var->name, newVal, var->nameToken);
-        return expr.isPrefix ? newVal : oldVal;
+        return expr.isPrefix ? newVal : current;
     }
 
     // --- Property target ---
@@ -1013,11 +1055,18 @@ Value Interpreter::visitIncDecExpr(const IncDecExpr& expr) {
         if (it == instance->properties.end()) {
             throw RuntimeError("Undefined property: " + prop->property, expr.op);
         }
-        if (!std::holds_alternative<double>(it->second)) {
+        if (!isNumeric(it->second)) {
             throw RuntimeError("Can only increment/decrement numbers", expr.op);
         }
-        double oldVal = std::get<double>(it->second);
-        double newVal = oldVal + delta;
+        Value newVal;
+        Value oldVal = it->second;
+        if (std::holds_alternative<int64_t>(oldVal)) {
+            int64_t ov = std::get<int64_t>(oldVal);
+            newVal = isIncrement ? Value(ov + 1) : Value(ov - 1);
+        } else {
+            double ov = std::get<double>(oldVal);
+            newVal = isIncrement ? Value(ov + 1.0) : Value(ov - 1.0);
+        }
         instance->properties[prop->property] = newVal;
         return expr.isPrefix ? newVal : oldVal;
     }
@@ -1442,10 +1491,12 @@ std::string Interpreter::interpolateString(
                         }
                     }
 
-                    if (std::holds_alternative<double>(val)) {
+                    if (std::holds_alternative<int64_t>(val)) {
+                        result += std::to_string(std::get<int64_t>(val));
+                    } else if (std::holds_alternative<double>(val)) {
                         double d = std::get<double>(val);
-                        if (d == static_cast<int>(d)) {
-                            result += std::to_string(static_cast<int>(d));
+                        if (d == static_cast<int64_t>(d)) {
+                            result += std::to_string(static_cast<int64_t>(d));
                         } else {
                             result += std::to_string(d);
                         }

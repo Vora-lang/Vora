@@ -628,32 +628,48 @@ std::unique_ptr<Expr> Parser::primary() {
     }
 
     if (match(TokenType::NUMBER)) {
-        double value;
         const std::string& lexeme = previous().lexeme;
 
-        // Handle hex, octal, binary prefixes
+        // Handle hex, octal, binary prefixes — always integer
         if (lexeme.size() >= 2 && lexeme[0] == '0') {
             switch (lexeme[1]) {
                 case 'x': case 'X':
-                    value = static_cast<double>(std::stoul(lexeme, nullptr, 16));
-                    break;
+                    return std::make_unique<LiteralExpr>(
+                        static_cast<int64_t>(std::stoull(lexeme, nullptr, 16))
+                    );
                 case 'o': case 'O':
-                    value = static_cast<double>(std::stoul(lexeme.substr(2), nullptr, 8));
-                    break;
+                    return std::make_unique<LiteralExpr>(
+                        static_cast<int64_t>(std::stoull(lexeme.substr(2), nullptr, 8))
+                    );
                 case 'b': case 'B':
-                    value = static_cast<double>(std::stoul(lexeme.substr(2), nullptr, 2));
-                    break;
+                    return std::make_unique<LiteralExpr>(
+                        static_cast<int64_t>(std::stoull(lexeme.substr(2), nullptr, 2))
+                    );
                 default:
-                    value = std::stod(lexeme);
                     break;
             }
-        } else {
-            value = std::stod(lexeme);
         }
 
-        return std::make_unique<LiteralExpr>(
-            value
-        );
+        // Decimal: check for float vs integer
+        bool hasDot = (lexeme.find('.') != std::string::npos);
+        bool hasExp = (lexeme.find('e') != std::string::npos || lexeme.find('E') != std::string::npos);
+
+        if (hasDot || hasExp) {
+            // Float literal
+            return std::make_unique<LiteralExpr>(std::stod(lexeme));
+        } else {
+            // Integer literal — try int64, fallback to double if overflow
+            try {
+                size_t pos;
+                int64_t ival = std::stoll(lexeme, &pos);
+                if (pos == lexeme.size()) {
+                    return std::make_unique<LiteralExpr>(ival);
+                }
+            } catch (const std::out_of_range&) {
+                // Overflow — fall through to double
+            }
+            return std::make_unique<LiteralExpr>(std::stod(lexeme));
+        }
     }
 
     if (match(TokenType::STRING)) {

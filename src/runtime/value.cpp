@@ -97,6 +97,12 @@ void printValue(const Value& value) {
                 << arg->name
                 << ">";
 
+        } else if constexpr (
+            std::is_same_v<T, int64_t>
+        ) {
+
+            std::cout << arg;
+
         } else {
 
             std::cout << arg;
@@ -138,6 +144,8 @@ std::string valueToString(const Value& value) {
             oss << "<function prototype " << arg->name << ">";
         } else if constexpr (std::is_same_v<T, std::shared_ptr<ClassData>>) {
             oss << "<class " << arg->name << ">";
+        } else if constexpr (std::is_same_v<T, int64_t>) {
+            oss << arg;
         } else {
             // double, string
             oss << arg;

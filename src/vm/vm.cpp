@@ -202,16 +202,20 @@ void VM::adoptGlobals(const std::vector<std::string>& names,
 bool VM::isTruthy(const Value& value) {
     if (std::holds_alternative<std::nullptr_t>(value)) return false;
     if (std::holds_alternative<bool>(value)) return std::get<bool>(value);
+    if (std::holds_alternative<int64_t>(value)) return std::get<int64_t>(value) != 0;
     if (std::holds_alternative<double>(value)) return std::get<double>(value) != 0.0;
     if (std::holds_alternative<std::string>(value)) return !std::get<std::string>(value).empty();
     return true;
 }
 
 bool VM::valuesEqual(const Value& a, const Value& b) {
+    // Cross-type numeric equality: 42 == 42.0
+    if (isNumeric(a) && isNumeric(b))
+        return toDouble(a) == toDouble(b);
+
     if (a.index() != b.index()) return false;
 
     if (std::holds_alternative<std::nullptr_t>(a)) return true;
-    if (std::holds_alternative<double>(a)) return std::get<double>(a) == std::get<double>(b);
     if (std::holds_alternative<bool>(a)) return std::get<bool>(a) == std::get<bool>(b);
     if (std::holds_alternative<std::string>(a)) return std::get<std::string>(a) == std::get<std::string>(b);
 
@@ -226,19 +230,22 @@ bool VM::valuesEqual(const Value& a, const Value& b) {
 }
 
 int VM::valuesCompare(const Value& a, const Value& b) {
-    if (!std::holds_alternative<double>(a) || !std::holds_alternative<double>(b)) {
+    if (!isNumeric(a) || !isNumeric(b)) {
         return 0;
     }
-    double da = std::get<double>(a);
-    double db = std::get<double>(b);
+    double da = toDouble(a);
+    double db = toDouble(b);
     if (da < db) return -1;
     if (da > db) return 1;
     return 0;
 }
 
 Value VM::addValues(const Value& a, const Value& b) {
-    if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
-        return std::get<double>(a) + std::get<double>(b);
+    // int + int → int; otherwise promote to double
+    if (isNumeric(a) && isNumeric(b)) {
+        if (std::holds_alternative<int64_t>(a) && std::holds_alternative<int64_t>(b))
+            return std::get<int64_t>(a) + std::get<int64_t>(b);
+        return toDouble(a) + toDouble(b);
     }
 
     if (std::holds_alternative<std::string>(a) && std::holds_alternative<std::string>(b)) {
@@ -479,7 +486,9 @@ InterpretResult VM::run() {
 
             // --- Unary ---
             case OpCode::OP_NEGATE: {
-                if (std::holds_alternative<double>(peek(0))) {
+                if (std::holds_alternative<int64_t>(peek(0))) {
+                    push(-std::get<int64_t>(pop()));
+                } else if (std::holds_alternative<double>(peek(0))) {
                     push(-std::get<double>(pop()));
                 } else {
                     RUNTIME_ERROR_OR_THROW("Negation requires a number");
@@ -501,12 +510,12 @@ InterpretResult VM::run() {
             case OpCode::OP_DIVIDE: {
                 Value b = pop();
                 Value a = pop();
-                if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
-                    double db = std::get<double>(b);
+                if (isNumeric(a) && isNumeric(b)) {
+                    double db = toDouble(b);
                     if (db == 0) {
                         RUNTIME_ERROR_OR_THROW("Division by zero");
                     }
-                    push(std::get<double>(a) / db);
+                    push(toDouble(a) / db);  // always float64
                 } else {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for division");
                 }
@@ -515,12 +524,12 @@ InterpretResult VM::run() {
             case OpCode::OP_MODULO: {
                 Value b = pop();
                 Value a = pop();
-                if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
-                    double db = std::get<double>(b);
+                if (isNumeric(a) && isNumeric(b)) {
+                    double db = toDouble(b);
                     if (db == 0) {
                         RUNTIME_ERROR_OR_THROW("Modulo by zero");
                     }
-                    push(std::fmod(std::get<double>(a), db));
+                    push(std::fmod(toDouble(a), db));
                 } else {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for modulo");
                 }
@@ -529,8 +538,8 @@ InterpretResult VM::run() {
             case OpCode::OP_POWER: {
                 Value b = pop();
                 Value a = pop();
-                if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
-                    push(std::pow(std::get<double>(a), std::get<double>(b)));
+                if (isNumeric(a) && isNumeric(b)) {
+                    push(std::pow(toDouble(a), toDouble(b)));
                 } else {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for power (**)");
                 }
@@ -541,81 +550,81 @@ InterpretResult VM::run() {
             case OpCode::OP_SUB_NN: {
                 Value bVal = pop();
                 Value aVal = pop();
-                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for -");
                 }
-                push(std::get<double>(aVal) - std::get<double>(bVal));
+                push(toDouble(aVal) - toDouble(bVal));
                 break;
             }
             case OpCode::OP_MUL_NN: {
                 Value bVal = pop();
                 Value aVal = pop();
-                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for *");
                 }
-                push(std::get<double>(aVal) * std::get<double>(bVal));
+                push(toDouble(aVal) * toDouble(bVal));
                 break;
             }
             case OpCode::OP_DIV_NN: {
                 Value bVal = pop();
                 Value aVal = pop();
-                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for /");
                 }
-                double b = std::get<double>(bVal);
+                double b = toDouble(bVal);
                 if (b == 0) {
                     RUNTIME_ERROR_OR_THROW("Division by zero");
                 }
-                push(std::get<double>(aVal) / b);
+                push(toDouble(aVal) / b);
                 break;
             }
             case OpCode::OP_MOD_NN: {
                 Value bVal = pop();
                 Value aVal = pop();
-                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for %");
                 }
-                double b = std::get<double>(bVal);
+                double b = toDouble(bVal);
                 if (b == 0) {
                     RUNTIME_ERROR_OR_THROW("Modulo by zero");
                 }
-                push(std::fmod(std::get<double>(aVal), b));
+                push(std::fmod(toDouble(aVal), b));
                 break;
             }
             case OpCode::OP_LESS_NN: {
                 Value bVal = pop();
                 Value aVal = pop();
-                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for <");
                 }
-                push(std::get<double>(aVal) < std::get<double>(bVal));
+                push(toDouble(aVal) < toDouble(bVal));
                 break;
             }
             case OpCode::OP_LESS_EQ_NN: {
                 Value bVal = pop();
                 Value aVal = pop();
-                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for <=");
                 }
-                push(std::get<double>(aVal) <= std::get<double>(bVal));
+                push(toDouble(aVal) <= toDouble(bVal));
                 break;
             }
             case OpCode::OP_GREATER_NN: {
                 Value bVal = pop();
                 Value aVal = pop();
-                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for >");
                 }
-                push(std::get<double>(aVal) > std::get<double>(bVal));
+                push(toDouble(aVal) > toDouble(bVal));
                 break;
             }
             case OpCode::OP_GREATER_EQ_NN: {
                 Value bVal = pop();
                 Value aVal = pop();
-                if (!std::holds_alternative<double>(aVal) || !std::holds_alternative<double>(bVal)) {
+                if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for >=");
                 }
-                push(std::get<double>(aVal) >= std::get<double>(bVal));
+                push(toDouble(aVal) >= toDouble(bVal));
                 break;
             }
             // --- Comparison ---
@@ -634,8 +643,8 @@ InterpretResult VM::run() {
             case OpCode::OP_LESS: {
                 Value b = pop();
                 Value a = pop();
-                if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) {
-                    push(std::get<double>(a) < std::get<double>(b));
+                if (isNumeric(a) && isNumeric(b)) {
+                    push(toDouble(a) < toDouble(b));
                 } else {
                     push(false);
                 }
@@ -843,11 +852,11 @@ InterpretResult VM::run() {
                 Value indexVal = pop();
                 Value target = pop();
 
-                if (!std::holds_alternative<double>(indexVal)) {
+                if (!isNumeric(indexVal)) {
                     RUNTIME_ERROR_OR_THROW("Index must be a number");
                 }
 
-                double rawIndex = std::get<double>(indexVal);
+                double rawIndex = toDouble(indexVal);
                 if (rawIndex < 0 || std::floor(rawIndex) != rawIndex) {
                     RUNTIME_ERROR_OR_THROW("Index must be a non-negative integer");
                 }
@@ -877,11 +886,11 @@ InterpretResult VM::run() {
                 Value indexVal = pop();
                 Value target = pop();
 
-                if (!std::holds_alternative<double>(indexVal)) {
+                if (!isNumeric(indexVal)) {
                     RUNTIME_ERROR_OR_THROW("Index must be a number");
                 }
 
-                double rawIndex = std::get<double>(indexVal);
+                double rawIndex = toDouble(indexVal);
                 if (rawIndex < 0 || std::floor(rawIndex) != rawIndex) {
                     RUNTIME_ERROR_OR_THROW("Index must be a non-negative integer");
                 }
