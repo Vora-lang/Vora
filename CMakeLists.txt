@@ -141,6 +141,10 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
 )
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Vora-lang/Vora")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+# WiX requires RTF format — plain-text LICENSE has no extension, fails WiX
+if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/res/LICENSE.rtf")
+    set(CPACK_WIX_LICENSE_RTF "${CMAKE_SOURCE_DIR}/res/LICENSE.rtf")
+endif()
 
 # Architecture-aware package file name
 #   e.g. vora-0.9.0-Linux-x86_64.deb  /  vora-0.9.0-Linux-aarch64.rpm
