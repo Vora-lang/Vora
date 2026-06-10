@@ -161,6 +161,207 @@ void VM::defineNative(const std::string& name, int arity,
     globalDefined[static_cast<size_t>(slot)] = true;
 }
 
+// =========================================================================
+// Array & String built-in method tables (VM backend)
+// =========================================================================
+
+static std::shared_ptr<NativeFunction> vmGetArrayMethod(const std::string& name, std::shared_ptr<Array> arr) {
+    if (name == "add") {
+        return std::make_shared<NativeFunction>("add", 1,
+            [arr](const std::vector<Value>& args) -> Value {
+                arr->elements.push_back(args[0]);
+                return nullptr;
+            });
+    }
+    if (name == "pop") {
+        return std::make_shared<NativeFunction>("pop", 0,
+            [arr](const std::vector<Value>&) -> Value {
+                if (arr->elements.empty()) return nullptr;
+                Value v = std::move(arr->elements.back());
+                arr->elements.pop_back();
+                return v;
+            });
+    }
+    if (name == "insert") {
+        return std::make_shared<NativeFunction>("insert", 2,
+            [arr](const std::vector<Value>& args) -> Value {
+                double idx = toDouble(args[0]);
+                if (idx < 0) idx = 0;
+                size_t pos = static_cast<size_t>(idx);
+                if (pos >= arr->elements.size()) {
+                    arr->elements.push_back(args[1]);
+                } else {
+                    arr->elements.insert(arr->elements.begin() + pos, args[1]);
+                }
+                return nullptr;
+            });
+    }
+    if (name == "remove") {
+        return std::make_shared<NativeFunction>("remove", 1,
+            [arr](const std::vector<Value>& args) -> Value {
+                double idx = toDouble(args[0]);
+                if (idx < 0 || static_cast<size_t>(idx) >= arr->elements.size())
+                    return nullptr;  // VM can't throw, caller checks
+                Value v = std::move(arr->elements[static_cast<size_t>(idx)]);
+                arr->elements.erase(arr->elements.begin() + static_cast<size_t>(idx));
+                return v;
+            });
+    }
+    if (name == "indexOf") {
+        return std::make_shared<NativeFunction>("indexOf", 1,
+            [arr](const std::vector<Value>& args) -> Value {
+                for (size_t i = 0; i < arr->elements.size(); ++i) {
+                    if (arr->elements[i].index() == args[0].index()) {
+                        if (std::holds_alternative<std::nullptr_t>(arr->elements[i])) return static_cast<int64_t>(i);
+                        if (std::holds_alternative<bool>(arr->elements[i]) &&
+                            std::get<bool>(arr->elements[i]) == std::get<bool>(args[0])) return static_cast<int64_t>(i);
+                        if (std::holds_alternative<int64_t>(arr->elements[i]) &&
+                            std::get<int64_t>(arr->elements[i]) == std::get<int64_t>(args[0])) return static_cast<int64_t>(i);
+                        if (std::holds_alternative<double>(arr->elements[i]) &&
+                            std::get<double>(arr->elements[i]) == std::get<double>(args[0])) return static_cast<int64_t>(i);
+                        if (std::holds_alternative<std::string>(arr->elements[i]) &&
+                            std::get<std::string>(arr->elements[i]) == std::get<std::string>(args[0])) return static_cast<int64_t>(i);
+                    }
+                    if (isNumeric(arr->elements[i]) && isNumeric(args[0]) &&
+                        toDouble(arr->elements[i]) == toDouble(args[0])) return static_cast<int64_t>(i);
+                }
+                return static_cast<int64_t>(-1);
+            });
+    }
+    if (name == "clear") {
+        return std::make_shared<NativeFunction>("clear", 0,
+            [arr](const std::vector<Value>&) -> Value {
+                arr->elements.clear();
+                return nullptr;
+            });
+    }
+    return nullptr;
+}
+
+static std::shared_ptr<NativeFunction> vmGetStringMethod(const std::string& name, std::string str) {
+    if (name == "substring") {
+        return std::make_shared<NativeFunction>("substring", -1,
+            [str](const std::vector<Value>& args) -> Value {
+                int64_t len = static_cast<int64_t>(str.size());
+                if (len == 0) return std::string("");
+                int64_t start = (args.size() >= 1) ? static_cast<int64_t>(toDouble(args[0])) : 0;
+                int64_t end   = (args.size() >= 2) ? static_cast<int64_t>(toDouble(args[1])) : len;
+                if (start < 0) start += len;
+                if (end < 0) end += len;
+                if (start < 0) start = 0;
+                if (end > len) end = len;
+                if (start >= end) return std::string("");
+                return str.substr(static_cast<size_t>(start), static_cast<size_t>(end - start));
+            });
+    }
+    if (name == "include") {
+        return std::make_shared<NativeFunction>("include", 1,
+            [str](const std::vector<Value>& args) -> Value {
+                if (!std::holds_alternative<std::string>(args[0])) return false;
+                return str.find(std::get<std::string>(args[0])) != std::string::npos;
+            });
+    }
+    if (name == "startsWith") {
+        return std::make_shared<NativeFunction>("startsWith", 1,
+            [str](const std::vector<Value>& args) -> Value {
+                if (!std::holds_alternative<std::string>(args[0])) return false;
+                const auto& prefix = std::get<std::string>(args[0]);
+                return str.size() >= prefix.size() && str.compare(0, prefix.size(), prefix) == 0;
+            });
+    }
+    if (name == "endsWith") {
+        return std::make_shared<NativeFunction>("endsWith", 1,
+            [str](const std::vector<Value>& args) -> Value {
+                if (!std::holds_alternative<std::string>(args[0])) return false;
+                const auto& suffix = std::get<std::string>(args[0]);
+                return str.size() >= suffix.size() && str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+            });
+    }
+    if (name == "upper") {
+        return std::make_shared<NativeFunction>("upper", 0,
+            [str](const std::vector<Value>&) -> Value {
+                std::string result = str;
+                for (auto& c : result) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                return result;
+            });
+    }
+    if (name == "lower") {
+        return std::make_shared<NativeFunction>("lower", 0,
+            [str](const std::vector<Value>&) -> Value {
+                std::string result = str;
+                for (auto& c : result) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                return result;
+            });
+    }
+    if (name == "trim") {
+        return std::make_shared<NativeFunction>("trim", 0,
+            [str](const std::vector<Value>&) -> Value {
+                size_t start = 0;
+                while (start < str.size() && std::isspace(static_cast<unsigned char>(str[start]))) ++start;
+                if (start == str.size()) return std::string("");
+                size_t end = str.size() - 1;
+                while (end > start && std::isspace(static_cast<unsigned char>(str[end]))) --end;
+                return str.substr(start, end - start + 1);
+            });
+    }
+    if (name == "replace") {
+        return std::make_shared<NativeFunction>("replace", 2,
+            [str](const std::vector<Value>& args) -> Value {
+                if (!std::holds_alternative<std::string>(args[0]) || !std::holds_alternative<std::string>(args[1]))
+                    return str;
+                const auto& oldStr = std::get<std::string>(args[0]);
+                const auto& newStr = std::get<std::string>(args[1]);
+                if (oldStr.empty()) return str;
+                size_t pos = str.find(oldStr);
+                if (pos == std::string::npos) return str;
+                std::string result = str;
+                result.replace(pos, oldStr.size(), newStr);
+                return result;
+            });
+    }
+    if (name == "replaceAll") {
+        return std::make_shared<NativeFunction>("replaceAll", 2,
+            [str](const std::vector<Value>& args) -> Value {
+                if (!std::holds_alternative<std::string>(args[0]) || !std::holds_alternative<std::string>(args[1]))
+                    return str;
+                const auto& oldStr = std::get<std::string>(args[0]);
+                const auto& newStr = std::get<std::string>(args[1]);
+                if (oldStr.empty()) return str;
+                std::string result = str;
+                size_t pos = 0;
+                while ((pos = result.find(oldStr, pos)) != std::string::npos) {
+                    result.replace(pos, oldStr.size(), newStr);
+                    pos += newStr.size();
+                }
+                return result;
+            });
+    }
+    if (name == "split") {
+        return std::make_shared<NativeFunction>("split", 1,
+            [str](const std::vector<Value>& args) -> Value {
+                auto result = std::make_shared<Array>();
+                if (!std::holds_alternative<std::string>(args[0])) {
+                    result->elements.push_back(str);
+                    return result;
+                }
+                const auto& delim = std::get<std::string>(args[0]);
+                if (delim.empty()) {
+                    for (char c : str) result->elements.push_back(std::string(1, c));
+                    return result;
+                }
+                size_t pos = 0;
+                size_t found;
+                while ((found = str.find(delim, pos)) != std::string::npos) {
+                    result->elements.push_back(str.substr(pos, found - pos));
+                    pos = found + delim.size();
+                }
+                result->elements.push_back(str.substr(pos));
+                return result;
+            });
+    }
+    return nullptr;
+}
+
 void VM::initGlobals(const std::vector<std::string>& names) {
     globalNames = names;
     globalValues.resize(names.size(), nullptr);
@@ -918,6 +1119,30 @@ InterpretResult VM::run() {
                 uint8_t nameIndex = READ_BYTE();
                 std::string propName = std::get<std::string>(currentChunk->constants[nameIndex]);
                 Value obj = pop();
+
+                // Array built-in methods & properties
+                if (std::holds_alternative<std::shared_ptr<Array>>(obj)) {
+                    auto arr = std::get<std::shared_ptr<Array>>(obj);
+                    if (propName == "length") {
+                        push(static_cast<int64_t>(arr->elements.size()));
+                        break;
+                    }
+                    auto method = vmGetArrayMethod(propName, arr);
+                    if (method) { push(method); break; }
+                    RUNTIME_ERROR_OR_THROW("Unknown array method: " + propName);
+                }
+
+                // String built-in methods & properties
+                if (std::holds_alternative<std::string>(obj)) {
+                    const auto& str = std::get<std::string>(obj);
+                    if (propName == "length") {
+                        push(static_cast<int64_t>(str.size()));
+                        break;
+                    }
+                    auto method = vmGetStringMethod(propName, str);
+                    if (method) { push(method); break; }
+                    RUNTIME_ERROR_OR_THROW("Unknown string method: " + propName);
+                }
 
                 if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(obj)) {
                     auto instance = std::get<std::shared_ptr<ObjectInstance>>(obj);

@@ -190,6 +190,9 @@ print("Hello ${name}!")  // "Hello World!"
 | `oct(num)` | → `"0o..."` |
 | `hex(num)` | → `"0x..."` |
 
+数组方法：`.add(item)` `.pop()` `.length` `.insert(idx, item)` `.remove(idx)` `.indexOf(item)` `.clear()`
+字符串方法：`.length` `.substring(start, end?)` `.include(sub)` `.startsWith(p)` `.endsWith(s)` `.upper()` `.lower()` `.trim()` `.replace(old, new)` `.replaceAll(old, new)` `.split(delim)`
+
 ## 项目结构
 
 ```
@@ -242,7 +245,7 @@ Vora/
 | v0.09 | `19dbb27` | VM 性能优化（全局变量驻留、快速数值操作码、常量折叠、移动语义） | ✅ |
 | v0.10 | `6666872` | VM 异常处理完善（finally 路由、异常重抛、catch handler 清理） | ✅ |
 | v0.11 | `7a33678` | 多架构构建系统 + 应用图标 + 原生打包（.msi/.deb/.rpm/.pkg.tar.xz） | ✅ |
-| v0.12 | — | int64/float64 双数值类型 + `len()` + `type()` | ✅ |
+| v0.12 | `462052f` | int64/float64 双数值类型 + `len()` + `type()` + 17 个数组/字符串内建方法 | ✅ |
 | v0.13 | — | 模块系统（import/export） | ⏳ |
 | v0.2 | — | 优化 / JIT | 规划中 |
 
