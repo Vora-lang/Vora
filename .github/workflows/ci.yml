@@ -26,6 +26,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ── Set lowercase config (presets use lowercase) ───────────────
+      - name: Set config name
+        run: echo "cfg=${{ matrix.config == 'Debug' && 'debug' || 'release' }}" >> $GITHUB_ENV
+
       # ── Install Ninja ──────────────────────────────────────────────
       - name: Install Ninja
         run: sudo apt-get install -y ninja-build
@@ -48,25 +52,25 @@ jobs:
 
       # ── Configure ──────────────────────────────────────────────────
       - name: Configure (CMake)
-        run: cmake --preset "linux-${{ matrix.arch }}-${{ matrix.config }}"
+        run: cmake --preset "linux-${{ matrix.arch }}-${{ env.cfg }}"
 
       # ── Build ──────────────────────────────────────────────────────
       - name: Build
-        run: cmake --build --preset "linux-${{ matrix.arch }}-${{ matrix.config }}"
+        run: cmake --build --preset "linux-${{ matrix.arch }}-${{ env.cfg }}"
 
       # ── Test (native x64 only; cross-compiled binaries need QEMU) ─
       - name: Test (VM mode)
         if: matrix.arch == 'x64'
-        run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ matrix.config }}" -R "^vm-" --output-on-failure
+        run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ env.cfg }}" -R "^vm-" --output-on-failure
 
       - name: Test (Interpreter mode)
         if: matrix.arch == 'x64'
-        run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ matrix.config }}" -R "^interp-" --output-on-failure
+        run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ env.cfg }}" -R "^interp-" --output-on-failure
 
       # ── Package (Release only) ─────────────────────────────────────
       - name: Package (.deb / .rpm / .pkg.tar.xz)
         if: matrix.config == 'Release'
-        run: cmake --build "build/linux-${{ matrix.arch }}-${{ matrix.config }}" --target package
+        run: cmake --build "build/linux-${{ matrix.arch }}-${{ env.cfg }}" --target package
 
       - name: Upload packages
         if: matrix.config == 'Release'
@@ -74,10 +78,10 @@ jobs:
         with:
           name: vora-linux-${{ matrix.arch }}
           path: |
-            build/linux-${{ matrix.arch }}-${{ matrix.config }}/vora-*.deb
-            build/linux-${{ matrix.arch }}-${{ matrix.config }}/vora-*.rpm
-            build/linux-${{ matrix.arch }}-${{ matrix.config }}/vora-*.tar.xz
-            build/linux-${{ matrix.arch }}-${{ matrix.config }}/vora-*.tar.gz
+            build/linux-${{ matrix.arch }}-${{ env.cfg }}/vora-*.deb
+            build/linux-${{ matrix.arch }}-${{ env.cfg }}/vora-*.rpm
+            build/linux-${{ matrix.arch }}-${{ env.cfg }}/vora-*.tar.xz
+            build/linux-${{ matrix.arch }}-${{ env.cfg }}/vora-*.tar.gz
 
   # ═════════════════════════════════════════════════════════════════════════
   # Windows — x64, x86, arm64
@@ -96,27 +100,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ── Set lowercase config (presets use lowercase) ───────────────
+      - name: Set config name
+        run: echo "cfg=${{ matrix.config == 'Debug' && 'debug' || 'release' }}" >> $env:GITHUB_ENV
+
       # ── Configure ──────────────────────────────────────────────────
       - name: Configure (CMake)
-        run: cmake --preset "windows-${{ matrix.arch }}-${{ matrix.config }}"
+        run: cmake --preset "windows-${{ matrix.arch }}-${{ env.cfg }}"
 
       # ── Build ──────────────────────────────────────────────────────
       - name: Build
-        run: cmake --build --preset "windows-${{ matrix.arch }}-${{ matrix.config }}" --config ${{ matrix.config }}
+        run: cmake --build --preset "windows-${{ matrix.arch }}-${{ env.cfg }}" --config ${{ matrix.config }}
 
       # ── Test (native x64 only; ARM64 executables won't run on x64) ─
       - name: Test (VM mode)
         if: matrix.arch == 'x64'
-        run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ matrix.config }}" -C ${{ matrix.config }} -R "^vm-" --output-on-failure
+        run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ env.cfg }}" -C ${{ matrix.config }} -R "^vm-" --output-on-failure
 
       - name: Test (Interpreter mode)
         if: matrix.arch == 'x64'
-        run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ matrix.config }}" -C ${{ matrix.config }} -R "^interp-" --output-on-failure
+        run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ env.cfg }}" -C ${{ matrix.config }} -R "^interp-" --output-on-failure
 
       # ── Package (Release only) ─────────────────────────────────────
       - name: Package (.zip / .msi)
         if: matrix.config == 'Release'
-        run: cmake --build "build/windows-${{ matrix.arch }}-${{ matrix.config }}" --target package --config ${{ matrix.config }}
+        run: cmake --build "build/windows-${{ matrix.arch }}-${{ env.cfg }}" --target package --config ${{ matrix.config }}
 
       - name: Upload packages
         if: matrix.config == 'Release'
@@ -124,8 +132,8 @@ jobs:
         with:
           name: vora-windows-${{ matrix.arch }}
           path: |
-            build/windows-${{ matrix.arch }}-${{ matrix.config }}/vora-*.zip
-            build/windows-${{ matrix.arch }}-${{ matrix.config }}/vora-*.msi
+            build/windows-${{ matrix.arch }}-${{ env.cfg }}/vora-*.zip
+            build/windows-${{ matrix.arch }}-${{ env.cfg }}/vora-*.msi
 
   # ═════════════════════════════════════════════════════════════════════════
   # macOS — Universal binary (x86_64 + arm64)
@@ -146,31 +154,35 @@ jobs:
       - name: Install Ninja
         run: brew install ninja
 
+      # ── Set lowercase config (presets use lowercase) ───────────────
+      - name: Set config name
+        run: echo "cfg=${{ matrix.config == 'Debug' && 'debug' || 'release' }}" >> $GITHUB_ENV
+
       # ── Configure ──────────────────────────────────────────────────
       - name: Configure (CMake)
-        run: cmake --preset "macos-universal-${{ matrix.config }}"
+        run: cmake --preset "macos-universal-${{ env.cfg }}"
 
       # ── Build ──────────────────────────────────────────────────────
       - name: Build
-        run: cmake --build --preset "macos-universal-${{ matrix.config }}"
+        run: cmake --build --preset "macos-universal-${{ env.cfg }}"
 
       # ── Verify universal binary ────────────────────────────────────
       - name: Verify universal binary
         run: |
           echo "Binary architectures:"
-          lipo -info "build/macos-universal-${{ matrix.config }}/Vora" || file "build/macos-universal-${{ matrix.config }}/Vora"
+          lipo -info "build/macos-universal-${{ env.cfg }}/Vora" || file "build/macos-universal-${{ env.cfg }}/Vora"
 
       # ── Test ───────────────────────────────────────────────────────
       - name: Test (VM mode)
-        run: ctest --test-dir "build/macos-universal-${{ matrix.config }}" -R "^vm-" --output-on-failure
+        run: ctest --test-dir "build/macos-universal-${{ env.cfg }}" -R "^vm-" --output-on-failure
 
       - name: Test (Interpreter mode)
-        run: ctest --test-dir "build/macos-universal-${{ matrix.config }}" -R "^interp-" --output-on-failure
+        run: ctest --test-dir "build/macos-universal-${{ env.cfg }}" -R "^interp-" --output-on-failure
 
       # ── Package (Release only) ─────────────────────────────────────
       - name: Package (.tar.gz)
         if: matrix.config == 'Release'
-        run: cmake --build "build/macos-universal-${{ matrix.config }}" --target package
+        run: cmake --build "build/macos-universal-${{ env.cfg }}" --target package
 
       - name: Upload packages
         if: matrix.config == 'Release'
@@ -178,4 +190,4 @@ jobs:
         with:
           name: vora-macos-universal
           path: |
-            build/macos-universal-${{ matrix.config }}/vora-*.tar.gz
+            build/macos-universal-${{ env.cfg }}/vora-*.tar.gz
