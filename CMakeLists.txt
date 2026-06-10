@@ -143,13 +143,20 @@ set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Vora-lang/Vora")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
 
 # Architecture-aware package file name
-#   e.g. vora-0.9.0-Linux-amd64.deb  /  vora-0.9.0-Linux-aarch64.rpm
-cmake_host_system_information(RESULT HOST_ARCH QUERY OS_PLATFORM)
-if(NOT HOST_ARCH)
-    set(HOST_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
-endif()
-set(CPACK_SYSTEM_NAME "${CMAKE_SYSTEM_NAME}-${HOST_ARCH}")
+#   e.g. vora-0.9.0-Linux-x86_64.deb  /  vora-0.9.0-Linux-aarch64.rpm
+# Use CMAKE_SYSTEM_PROCESSOR (target architecture) so cross-compiled
+# packages are named correctly (not the host runner's arch).
+set(CPACK_TARGET_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
+set(CPACK_SYSTEM_NAME "${CMAKE_SYSTEM_NAME}-${CPACK_TARGET_ARCH}")
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-${CPACK_SYSTEM_NAME}")
+
+# ── Cross-compilation RPM strip fix ──────────────────────────────────────────
+# When cross-compiling (host != target), the host's strip(1) cannot process
+# target binaries. Disable CPack's automatic stripping in that case.
+if(NOT CMAKE_SYSTEM_PROCESSOR STREQUAL CMAKE_HOST_SYSTEM_PROCESSOR)
+    set(CPACK_STRIP_FILES OFF)
+    message(STATUS "Cross-compile detected (host=${CMAKE_HOST_SYSTEM_PROCESSOR}, target=${CMAKE_SYSTEM_PROCESSOR}) — stripping disabled for packaging")
+endif()
 
 # ── Debian / Ubuntu (.deb) ────────────────────────────────────────────────
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Vora-lang")
