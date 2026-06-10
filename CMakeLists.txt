@@ -116,7 +116,7 @@ if(WIN32)
     # But copy the ICO alongside for CPack/NSIS reference.
     install(FILES res/vora.ico DESTINATION ${CMAKE_INSTALL_BINDIR})
 elseif(APPLE)
-    install(FILES res/vora.iconset DESTINATION share/vora/icons)
+    install(DIRECTORY res/vora.iconset DESTINATION share/vora/icons)
 else()
     # Linux: SVG → scalable icon, largest PNG → fixed-size fallback
     install(FILES vora_logo.svg
