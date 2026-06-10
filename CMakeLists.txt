@@ -140,10 +140,13 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation."
 )
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Vora-lang/Vora")
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
-# WiX requires RTF format — plain-text LICENSE has no extension, fails WiX
-if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/res/LICENSE.rtf")
-    set(CPACK_WIX_LICENSE_RTF "${CMAKE_SOURCE_DIR}/res/LICENSE.rtf")
+# WiX (Windows) and productbuild (macOS) require a license file with a
+# recognised extension (.rtf, .html, .txt). The repo LICENSE has no
+# extension, so use the RTF copy from res/ if available.
+if(EXISTS "${CMAKE_SOURCE_DIR}/res/LICENSE.rtf")
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/res/LICENSE.rtf")
+else()
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
 endif()
 
 # Architecture-aware package file name
