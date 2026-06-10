@@ -1,4 +1,5 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
   <Package
       Name="Vora"
       Manufacturer="Vora-lang"
@@ -13,13 +14,20 @@
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of Vora is already installed." />
 
-    <!-- ARP icon (Add/Remove Programs) -->
+    <!-- ARP (Add/Remove Programs) — clean uninstall via Windows -->
     <Icon Id="vora.ico" SourceFile="res\vora.ico" />
     <Property Id="ARPPRODUCTICON" Value="vora.ico" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/Vora-lang/Vora" />
+    <Property Id="ARPCOMMENTS" Value="Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation." />
+    <Property Id="ARPNOREPAIR" Value="1" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/Vora-lang/Vora" />
+
+    <!-- Allow custom install dir via msiexec /i vora.msi INSTALLFOLDER="D:\MyPath" -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
 
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- C:\Program Files\Vora\ -->
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Vora">
 
@@ -33,15 +41,21 @@
 
         <Component Id="PathEntry" Guid="C7D3A815-E694-4B82-9EF2-18D5B3A72C6F">
           <Environment Id="PathEnv" Name="PATH" Value="[INSTALLFOLDER]" Action="set" Part="last" System="yes" Permanent="no" />
+          <RegistryKey Root="HKLM" Key="Software\Vora-lang\Vora">
+            <RegistryValue Name="InstallDir" Value="[INSTALLFOLDER]" Type="string" KeyPath="yes" />
+            <RegistryValue Name="Version" Value="0.9.0" Type="string" />
+          </RegistryKey>
         </Component>
 
       </Directory>
     </StandardDirectory>
 
-    <Feature Id="Main" Title="Vora" Level="1">
+    <Feature Id="Main" Title="Vora" Level="1" Display="expand"
+             Description="Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.">
       <ComponentRef Id="MainExecutable" />
       <ComponentRef Id="LauncherCmd" />
       <ComponentRef Id="PathEntry" />
     </Feature>
+
   </Package>
 </Wix>

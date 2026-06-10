@@ -139,7 +139,8 @@ set(CPACK_PACKAGE_VENDOR "Vora-lang")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation."
 )
-set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/vora-lang/vora")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Vora-lang/Vora")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
 
 # Architecture-aware package file name
 #   e.g. vora-0.9.0-Linux-amd64.deb  /  vora-0.9.0-Linux-aarch64.rpm
