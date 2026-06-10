@@ -152,10 +152,11 @@ set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-${CPACK_SY
 
 # ── Cross-compilation RPM strip fix ──────────────────────────────────────────
 # When cross-compiling (host != target), the host's strip(1) cannot process
-# target binaries. Disable CPack's automatic stripping in that case.
+# target binaries. RPM's brp-strip still runs regardless of CPACK_STRIP_FILES,
+# so we must override the RPM __strip macro to a no-op.
 if(NOT CMAKE_SYSTEM_PROCESSOR STREQUAL CMAKE_HOST_SYSTEM_PROCESSOR)
-    set(CPACK_STRIP_FILES OFF)
-    message(STATUS "Cross-compile detected (host=${CMAKE_HOST_SYSTEM_PROCESSOR}, target=${CMAKE_SYSTEM_PROCESSOR}) — stripping disabled for packaging")
+    message(STATUS "Cross-compile detected (host=${CMAKE_HOST_SYSTEM_PROCESSOR}, target=${CMAKE_SYSTEM_PROCESSOR}) — RPM stripping disabled")
+    set(CPACK_RPM_SPEC_MORE_DEFINE "%define __strip /bin/true")
 endif()
 
 # ── Debian / Ubuntu (.deb) ────────────────────────────────────────────────
