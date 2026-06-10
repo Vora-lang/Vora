@@ -1,8 +1,8 @@
 # Vora
 
-Vora 是一门动态类型脚本语言，类 JavaScript 语法、Lua 级简单性、Wren 式面向对象。
+**Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.**
 
-当前为 **字节码 VM**（默认后端）+ **AST 树遍历解释器**（参考实现），~9200 行 C++17，零外部依赖。
+~9400 行 C++17，零外部依赖。双后端：**字节码 VM**（默认）+ **AST 树遍历解释器**（参考实现）。跨平台，多架构，原生打包。
 
 ```vora
 func greet(name) {
@@ -17,22 +17,54 @@ for name in names {
 
 ## 快速开始
 
+### 构建
+
 ```powershell
-# 构建（Windows / CMake）
+# Windows (PowerShell) — 默认 x64 Debug
 .\build.ps1
 
-# 运行脚本
-./build/Debug/Vora.exe examples/main.va
-
-# REPL 模式
-./build/Debug/Vora.exe --repl
-
-# 打印 AST
-./build/Debug/Vora.exe examples/main.va --ast-printer
-
-# 打印 Token 流
-./build/Debug/Vora.exe examples/main.va --tokens
+# 指定架构 + 配置 + 打包
+.\build.ps1 -Architecture arm64 -Config Release -Package   # → .msi 安装包
+.\build.ps1 -Architecture x86 -Config Debug                 # → 32 位 .exe
 ```
+
+```bash
+# Linux / macOS (bash) — 默认 x64 debug
+./build.sh
+
+# 短标志 + 打包
+./build.sh -a arm64 -c release -p     # 交叉编译 ARM64 → .deb/.rpm/.pkg.tar.xz
+./build.sh -a x86 -c debug            # 32 位二进制
+```
+
+### 运行
+
+```bash
+# 执行脚本（VM 模式，默认）
+vora examples/main.va
+
+# 树遍历解释器
+vora examples/main.va --interpreter
+
+# REPL 交互模式
+vora --repl
+
+# 调试：打印 AST
+vora examples/main.va --ast-printer
+
+# 调试：打印 Token 流 / 字节码反汇编
+vora examples/main.va --tokens
+```
+
+### 安装（Release 包）
+
+| 平台 | 包格式 | 安装方式 |
+|------|--------|----------|
+| Windows | `.msi` | 双击安装（可选自定义目录，自动注册 PATH） |
+| Linux | `.deb` | `sudo dpkg -i vora-*.deb` |
+| Linux | `.rpm` | `sudo rpm -i vora-*.rpm` |
+| Linux | `.pkg.tar.xz` | `sudo pacman -U vora-*.pkg.tar.xz` |
+| macOS | `.tar.gz` | 解压到 `/usr/local/bin` |
 
 ## 语言概览
 
@@ -160,61 +192,85 @@ print("Hello ${name}!")  // "Hello World!"
 
 ```
 Vora/
+├── CMakeLists.txt              # CMake 构建配置 + CPack 打包
+├── CMakePresets.json           # CMake 预设（20 个，多架构 + 多配置）
+├── build.ps1                   # Windows 一键构建脚本
+├── build.sh                    # Linux/macOS 一键构建脚本
+├── LICENSE                     # MIT License
+├── vora_logo.svg               # 应用图标源文件
 ├── src/
-│   ├── lexer/       词法分析器（687 行）
-│   ├── ast/          AST 节点 + Visitor 接口 + AST Printer（1258 行）
-│   ├── parser/       Pratt 解析器（1200 行）
-│   ├── interpreter/  树遍历解释器（1621 行）
-│   ├── vm/           字节码 VM（编译器 + 栈式虚拟机，2974 行）
-│   └── runtime/      值系统 / 作用域 / 可调用对象 / 错误（635 行）
-├── examples/         24 个示例文件（按特性编号）
-├── tests/            13 个测试文件 + 4 个基准测试 + 运行脚本
-├── docs/             开发文档（10 篇，中文）
-├── std/              标准库（规划中）
-├── build.ps1         构建脚本
-└── CMakeLists.txt
+│   ├── main.cpp                # 程序入口（~360 行）
+│   ├── lexer/                  # 词法分析器（687 行）
+│   ├── ast/                    # AST 节点 + Visitor 接口 + AST Printer（1629 行）
+│   ├── parser/                 # Pratt 解析器（1200 行）
+│   ├── interpreter/            # 树遍历解释器（1621 行）
+│   ├── vm/                     # 字节码 VM：编译器 + 栈式虚拟机（3175 行）
+│   └── runtime/                # 值系统 / 作用域 / 可调用对象 / 错误（719 行）
+├── cmake/toolchains/           # 交叉编译工具链（6 个文件）
+├── res/                        # 资源文件（图标、WiX 安装包、启动器）
+├── .github/workflows/          # CI 多架构矩阵
+├── examples/                   # 24 个示例文件（按特性编号）
+├── tests/                      # 13 个测试文件 + run_tests.ps1 / run_tests.sh
+├── docs/                       # 开发文档（10 篇，中文）
+└── std/                        # 标准库（规划中）
 ```
+
+## 支持的平台与架构
+
+| 平台 | 架构 |
+|------|------|
+| Windows | x64, x86 (Win32), ARM64 |
+| Linux | x64, x86 (i386), aarch64, armhf |
+| macOS | universal (x86_64 + arm64) |
+
+所有平台均支持交叉编译。CI（GitHub Actions）对全部 18 个 os×arch×config 组合进行自动化构建。
 
 ## 进度
 
-| 版本 | 特性 | 状态 |
-|------|------|------|
-| v0.01 | 字面量 + 表达式 | ✅ |
-| v0.02 | 变量 + 作用域 | ✅ |
-| v0.03 | 函数 | ✅ |
-| v0.04 | 控制流（if/while/for/break/continue） | ✅ |
-| v0.05 | 对象 + 数组 + 继承 | ✅ |
-| v0.06 | 闭包 | ✅ |
-| v0.07 | 异常（try/catch/finally/throw） | ✅ |
-| v0.08 | 字节码 VM（Phase 1-4：表达式/控制流/函数/闭包/对象/异常/插值） | ✅ |
-| v0.09 | 全局变量驻留、快速数值操作码、常量折叠、移动语义 | ✅ |
-| v0.1 | 模块系统（import/export） | ⏳ |
-| v0.2 | 优化 / JIT | 规划中 |
+| 版本 | 提交 | 特性 | 状态 |
+|------|------|------|------|
+| v0.01 | `d1cb460` | 字面量 + 表达式 | ✅ |
+| v0.02 | `7cc3caf` | 变量 + 作用域 | ✅ |
+| v0.03 | `2be35b9` | 函数 | ✅ |
+| v0.04 | `5dc0cd8` | 控制流（if/while/for/break/continue） | ✅ |
+| v0.05 | `807a07d` | 对象 + 数组 + 继承 | ✅ |
+| v0.06 | `357fa7e` | 闭包 | ✅ |
+| v0.07 | `bda534a` | 异常（try/catch/finally/throw） | ✅ |
+| v0.08 | `0e8d810` | 字节码 VM（Phase 1-4：表达式/控制流/函数/闭包/对象/异常/插值） | ✅ |
+| v0.09 | `19dbb27` | VM 性能优化（全局变量驻留、快速数值操作码、常量折叠、移动语义） | ✅ |
+| v0.10 | `6666872` | VM 异常处理完善（finally 路由、异常重抛、catch handler 清理） | ✅ |
+| v0.11 | `7a33678` | 多架构构建系统 + 应用图标 + 原生打包（.msi/.deb/.rpm/.pkg.tar.xz） | ✅ |
+| v0.12 | — | 模块系统（import/export） | ⏳ |
+| v0.2 | — | 优化 / JIT | 规划中 |
 
 ## 测试
 
 ```powershell
-# 运行全部测试
-.\tests\run_tests.ps1
+# Windows
+.\tests\run_tests.ps1                   # VM 模式
+.\tests\run_tests.ps1 -Interpreter      # 解释器模式
+```
 
-# 单个测试
-./build/Debug/Vora.exe tests/interpreter/test_logical.va
+```bash
+# Linux / macOS
+./tests/run_tests.sh                    # VM 模式
+./tests/run_tests.sh --interpreter      # 解释器模式
 ```
 
 ## 文档
 
 | 文档 | 内容 |
 |------|------|
-| `docs/01-技术栈概览.md` | 技术栈概览 |
-| `docs/02-项目结构.md` | 项目结构 |
+| `docs/01-技术栈概览.md` | 技术栈、架构、构建命令 |
+| `docs/02-项目结构.md` | 目录树、各文件说明 |
 | `docs/03-词法分析器开发文档.md` | Lexer 设计 |
-| `docs/04-AST开发文档.md` | AST 节点设计 |
+| `docs/04-AST开发文档.md` | AST 节点设计 + Visitor 模式 |
 | `docs/05-语法分析器开发文档.md` | Pratt Parser 设计 |
-| `docs/06-解释器开发文档.md` | Interpreter 设计 |
+| `docs/06-解释器开发文档.md` | 树遍历 Interpreter 设计 |
 | `docs/07-运行时系统开发文档.md` | Value / Environment / Callable |
-| `docs/08-已实现功能总结.md` | 功能总结 |
-| `docs/09-后续优化建议.md` | 优化路线图 |
-| `docs/10-程序员视角-Vora语言深度分析与UX路线图.md` | 深度分析 + UX 路线图 |
+| `docs/08-已实现功能总结.md` | 功能总结 + 版本历程 |
+| `docs/09-构建系统指南.md` | 多架构构建 + 交叉编译 + 打包 |
+| `docs/10-后续优化建议.md` | 优化路线图 + 推荐优先级 |
 
 ## 参考
 
