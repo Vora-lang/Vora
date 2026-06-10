@@ -5,6 +5,7 @@
 #include "../runtime/vora_function.h"
 #include "../vm/compiler.h"  // for FunctionPrototype, ClassData
 
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>

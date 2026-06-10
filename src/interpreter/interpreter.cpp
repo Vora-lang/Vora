@@ -3,6 +3,7 @@
 #include "../runtime/callable.h"
 #include "../runtime/vora_function.h"
 
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <iostream>
