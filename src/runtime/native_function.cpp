@@ -12,15 +12,7 @@ NativeFunction::NativeFunction(
       function_(std::move(function)) {
 }
 
-Value NativeFunction::call(
-    Interpreter&,
-    const std::vector<Value>& arguments
-) {
-
-    return function_(arguments);
-}
-
-Value NativeFunction::callDirectly(const std::vector<Value>& arguments) const {
+Value NativeFunction::call(const std::vector<Value>& arguments) {
     return function_(arguments);
 }
 

@@ -57,13 +57,13 @@ public:
 ```cpp
 class LiteralExpr : public Expr {
 public:
-    Value value;  // std::variant<nullptr_t, double, bool, string, ...>
+    Value value;  // std::variant<nullptr_t, double, int64_t, bool, string, ...>
 };
 ```
 
 **Vora 用法**：
 ```vora
-42          // double(42)
+42          // int64_t(42)
 3.14        // double(3.14)
 "hello"     // string("hello")
 TRUE        // bool(true)

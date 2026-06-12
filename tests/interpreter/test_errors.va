@@ -1,7 +1,7 @@
 // interpreter/test_errors.va — Error handling tests
 // Run: vora tests/interpreter/test_errors.va
 
-print("=== Interpreter: Error Handling Tests ===")
+print("=== Error Handling Tests ===")
 
 // try/catch (RuntimeError → string)
 try {
@@ -74,4 +74,4 @@ try {
     assert(e.message == "custom", "custom error object")
 }
 
-print("Interpreter error handling tests: PASS")
+print("Error handling tests: PASS")

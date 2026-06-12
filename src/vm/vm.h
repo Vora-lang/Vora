@@ -83,11 +83,22 @@ public:
                       const std::vector<bool>& defined,
                       const std::unordered_map<std::string, int>& index);
 
+    // Native error reporting — set by builtins (e.g. assert) that need to
+    // throw through the VM exception mechanism rather than calling exit().
+    // callValue() checks this after every native call and routes through
+    // throwException() so the error is catchable by try/catch.
+    bool nativeError = false;
+    Value nativeErrorValue;
+
     // Value operations
     Value addValues(const Value& a, const Value& b);
     static bool isTruthy(const Value& value);
     static bool valuesEqual(const Value& a, const Value& b);
     int valuesCompare(const Value& a, const Value& b);
+
+    // Exception throw (public — callable from native function context).
+    // Returns true if caught by a catch handler, false if uncaught.
+    bool throwException(const Value& value);
 
 private:
     InterpretResult run();
@@ -102,7 +113,6 @@ private:
     void runtimeError(const std::string& message);
     void runtimeError(const std::string& message, int line, int column);
     bool runtimeErrorOrThrow(const std::string& message);  // true if caught
-    bool throwException(const Value& value);  // returns true if caught
 
     uint16_t readShort();
     uint8_t readByte();

@@ -1,7 +1,7 @@
 // interpreter/test_logical.va — && and || short-circuit tests
 // Run: vora tests/interpreter/test_logical.va
 
-print("=== Interpreter: Logical Operator Tests ===")
+print("=== Logical Operator Tests ===")
 
 // === && (logical AND) ===
 
@@ -65,4 +65,4 @@ assert(!(false) == true, "!false == true")     // false is falsy
 assert(!(1) == false, "!1 == false")           // non-zero is truthy
 assert(!("x") == false, "!'x' == false")       // non-empty is truthy
 
-print("Interpreter logical operator tests: PASS")
+print("Logical operator tests: PASS")

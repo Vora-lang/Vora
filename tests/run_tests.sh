@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # run_tests.sh — Vora test suite runner (Linux / macOS / WSL)
 # Usage:
-#   bash tests/run_tests.sh                 # VM mode (default)
-#   bash tests/run_tests.sh --interpreter   # Interpreter mode
+#   bash tests/run_tests.sh
 #
 # On Windows, use tests/run_tests.ps1 instead.
 
@@ -44,17 +43,6 @@ echo "Using: $VORA"
 echo ""
 
 # ──────────────────────────────────────────────────
-# Mode
-# ──────────────────────────────────────────────────
-
-MODE_FLAG=""
-MODE="VM"
-if [[ "$1" == "--interpreter" ]]; then
-    MODE_FLAG="--interpreter"
-    MODE="Interpreter"
-fi
-
-# ──────────────────────────────────────────────────
 # Run tests
 # ──────────────────────────────────────────────────
 
@@ -63,7 +51,7 @@ FAIL=0
 ERRORS=""
 
 echo "============================================"
-echo "  Vora Test Suite ($MODE mode)"
+echo "  Vora Test Suite"
 echo "============================================"
 echo ""
 
@@ -75,7 +63,7 @@ for file in "$PROJECT_DIR"/tests/lexer/*.va \
     name="${file#$PROJECT_DIR/tests/}"
     printf "  %-45s " "$name"
 
-    if output=$("$VORA" $MODE_FLAG "$file" 2>&1); then
+    if output=$("$VORA" "$file" 2>&1); then
         echo "PASS"
         ((PASS++)) || true
     else

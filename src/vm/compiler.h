@@ -54,6 +54,11 @@ class Compiler : public ExprVisitor<void>,
 public:
     Chunk compile(const Program* program);
 
+    // True if any compilation error occurred (constant pool overflow, jump
+    // offset overflow, etc.). The caller must check this before using the
+    // compiled chunk — the bytecode may be incomplete.
+    bool hadError = false;
+
     // --- ProgramVisitor ---
     void visitProgram(const Program& program) override;
 

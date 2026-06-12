@@ -29,8 +29,6 @@ add_executable(Vora
     src/runtime/environment.cpp
     src/runtime/runtime_error.cpp
 
-    src/interpreter/interpreter.cpp
-
     src/vm/chunk.cpp
     src/vm/compiler.cpp
     src/vm/vm.cpp
@@ -87,19 +85,6 @@ foreach(test_file ${TEST_LEXER} ${TEST_PARSER} ${TEST_RUNTIME} ${TEST_INTERPRETE
     )
 endforeach()
 
-# Interpreter mode tests
-foreach(test_file ${TEST_LEXER} ${TEST_PARSER} ${TEST_RUNTIME} ${TEST_INTERPRETER})
-    get_filename_component(test_name ${test_file} NAME_WLE)
-    set(rel_path "${test_file}")
-    if(rel_path MATCHES "^${CMAKE_CURRENT_SOURCE_DIR}")
-        string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/" "" rel_path "${rel_path}")
-    endif()
-    add_test(
-        NAME "interp-${test_name}"
-        COMMAND Vora --interpreter "${rel_path}"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    )
-endforeach()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Install rules

@@ -7,9 +7,8 @@ namespace vora {
 // ExprVisitor<R>: processes expression AST nodes via double dispatch.
 //
 // Template parameter R is the return type of each visit* method.
-//   - ExprVisitor<Value>       → Interpreter (evaluates to a runtime value)
+//   - ExprVisitor<void>       → Compiler (emits bytecode)
 //   - ExprVisitor<std::string> → ASTPrinter (pretty-prints as S-expression)
-//   - ExprVisitor<Chunk>       → future bytecode compiler
 //
 // To add a new pass with a new return type:
 //   1. Add a new accept() overload to Expr (expr.h) + all subclasses (expr.cpp).

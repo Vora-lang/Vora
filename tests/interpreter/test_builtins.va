@@ -1,7 +1,7 @@
 // interpreter/test_builtins.va — Built-in function tests
 // Run: vora tests/interpreter/test_builtins.va
 
-print("=== Interpreter: Built-in Tests ===")
+print("=== Built-in Tests ===")
 
 // int()
 assert(int(3.14) == 3, "int(float)")
@@ -37,4 +37,4 @@ assert(t > 0, "clock returns positive")
 // let result = input("")
 // assert(result == "", "input empty prompt")
 
-print("Interpreter built-in tests: PASS")
+print("Built-in tests: PASS")

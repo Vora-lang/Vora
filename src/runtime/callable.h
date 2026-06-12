@@ -7,16 +7,11 @@
 
 namespace vora {
 
-class Interpreter;
-
 class Callable {
 public:
     virtual ~Callable() = default;
 
-    virtual Value call(
-        Interpreter& interpreter,
-        const std::vector<Value>& arguments
-    ) = 0;
+    virtual Value call(const std::vector<Value>& arguments) = 0;
 
     // Returns the ObjectClass for constructor callables (used by inheritance).
     // Returns nullptr for non-constructor callables.

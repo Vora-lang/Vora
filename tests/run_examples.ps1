@@ -2,7 +2,7 @@ $Vora = ".\build\Debug\Vora.exe"
 $Pass = 0
 $Fail = 0
 
-Write-Host "=== Vora Examples (VM mode) ==="
+Write-Host "=== Vora Examples ==="
 
 Get-ChildItem examples/*.va | ForEach-Object {
     $name = $_.Name

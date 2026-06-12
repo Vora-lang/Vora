@@ -33,6 +33,7 @@ size_t Compiler::emitJump(OpCode instruction) {
 }
 
 void Compiler::patchJump(size_t operandOffset) {
+    if (hadError) return;
     size_t jumpEnd = chunk.code.size();
     size_t jumpSize = jumpEnd - operandOffset - 2;
 
@@ -40,7 +41,8 @@ void Compiler::patchJump(size_t operandOffset) {
         std::cerr << "Compiler error: jump offset " << jumpSize
                   << " exceeds 16-bit limit (UINT16_MAX=" << UINT16_MAX
                   << "). Function body too large." << std::endl;
-        std::exit(1);
+        hadError = true;
+        return;
     }
 
     chunk.writeAt(operandOffset, static_cast<uint8_t>(jumpSize & 0xFF));
@@ -48,13 +50,15 @@ void Compiler::patchJump(size_t operandOffset) {
 }
 
 void Compiler::emitLoop(size_t loopStart) {
+    if (hadError) return;
     emitByte(static_cast<uint8_t>(OpCode::OP_LOOP));
 
     size_t offset = chunk.code.size() - loopStart + 2;
     if (offset > UINT16_MAX) {
         std::cerr << "Compiler error: loop offset " << offset
                   << " exceeds 16-bit limit. Loop body too large." << std::endl;
-        std::exit(1);
+        hadError = true;
+        return;
     }
 
     emitByte(static_cast<uint8_t>(offset & 0xFF));
@@ -62,13 +66,15 @@ void Compiler::emitLoop(size_t loopStart) {
 }
 
 uint8_t Compiler::makeConstant(Value value) {
+    if (hadError) return 0;
     size_t index = chunk.addConstant(value);
     // Guard against constant pool overflow (> 256 entries).
     // A future OP_CONSTANT_LONG (16-bit index) would lift this limit.
     if (index > UINT8_MAX) {
         std::cerr << "Compiler error: constant pool overflow ("
                   << index << " entries, max 256)." << std::endl;
-        std::exit(1);
+        hadError = true;
+        return 0;
     }
     return static_cast<uint8_t>(index);
 }

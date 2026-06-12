@@ -4,46 +4,28 @@
 #include <string>
 #include <vector>
 
-#include "../ast/stmt.h"
 #include "callable.h"
 
 namespace vora {
 
-class Environment;
-class Interpreter;
 struct FunctionPrototype;
 
 class VoraFunction : public Callable {
 public:
-    // Interpreter-mode constructor (tree-walking)
-    VoraFunction(
-        std::string name,
-        std::vector<std::string> params,
-        std::shared_ptr<BlockStmt> body,
-        std::shared_ptr<Environment> closure
-    );
-
-    // VM-mode constructor (compiled bytecode)
     VoraFunction(
         std::string name,
         int arity,
         const FunctionPrototype* prototype
     );
 
-    Value call(
-        Interpreter& interpreter,
-        const std::vector<Value>& arguments
-    ) override;
+    // Not called directly — the VM dispatches VoraFunction
+    // via callVoraFunction() which sets up call frames and upvalues.
+    // This stub exists to satisfy the Callable interface.
+    Value call(const std::vector<Value>& arguments) override;
 
     const std::string& name() const;
 
-    const std::vector<std::string>& params() const;
-
-    int arity() const { return static_cast<int>(arity_); }
-
-    const std::shared_ptr<BlockStmt>& body() const;
-
-    const std::shared_ptr<Environment>& closure() const;
+    int arity() const { return arity_; }
 
     const FunctionPrototype* getPrototype() const { return prototype_; }
 
@@ -55,13 +37,7 @@ public:
 private:
     std::string name_;
 
-    std::vector<std::string> params_;
-
     int arity_ = 0;
-
-    std::shared_ptr<BlockStmt> body_;
-
-    std::shared_ptr<Environment> closure_;
 
     const FunctionPrototype* prototype_ = nullptr;
 };

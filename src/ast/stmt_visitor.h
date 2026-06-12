@@ -7,9 +7,8 @@ namespace vora {
 // StmtVisitor<R>: processes statement AST nodes via double dispatch.
 //
 // Template parameter R is the return type of each visit* method.
-//   - StmtVisitor<void>         → Interpreter (executes for side effects)
+//   - StmtVisitor<void>         → Compiler (emits bytecode)
 //   - StmtVisitor<std::string>  → ASTPrinter (pretty-prints as S-expression)
-//   - StmtVisitor<Chunk>        → future bytecode compiler
 //
 // To add a new pass with a new return type:
 //   1. Add a new accept() overload to Stmt (stmt.h) + all subclasses (stmt.cpp).

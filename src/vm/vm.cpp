@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <stdexcept>
 
 namespace vora {
 
@@ -27,8 +28,8 @@ void VM::resetStack() {
 
 void VM::push(Value value) {
     if (stackTop >= stack + STACK_MAX) {
-        std::cerr << "VM: Fatal stack overflow (STACK_MAX=" << STACK_MAX << ")" << std::endl;
-        std::exit(1);
+        throw std::runtime_error("VM: Stack overflow (STACK_MAX=" +
+            std::to_string(STACK_MAX) + ")");
     }
     *stackTop = std::move(value);
     stackTop++;
@@ -106,8 +107,15 @@ bool VM::throwException(const Value& value) {
         // Unwind stack to handler's frame base
         stackTop = handler.targetFrameBase;
 
-        // Push the thrown value
-        push(value);
+        // Push the thrown value (guarded — stack overflow is non-recoverable
+        // at this point since we just unwound the stack).
+        try {
+            push(value);
+        } catch (const std::runtime_error&) {
+            // Double-fault: stack is still full after unwind. Report and bail.
+            runtimeError("Stack overflow during exception handling");
+            return false;
+        }
 
         // Jump to catch handler
         ip = handler.targetIp;
@@ -553,7 +561,24 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
             }
             pop(); // pop the callable itself
 
-            push(native->callDirectly(arguments));
+            Value result = native->call(arguments);
+
+            // Check for native-side error (e.g. assert failure). The native
+            // sets nativeError + nativeErrorValue; we route it through the VM's
+            // exception mechanism so it is catchable by try/catch.
+            if (nativeError) {
+                nativeError = false;
+                Value errorVal = std::move(nativeErrorValue);
+                nativeErrorValue = nullptr;
+                if (throwException(errorVal)) {
+                    return true;  // caught, IP redirected
+                }
+                // Not caught — report as unhandled runtime error.
+                runtimeError("Uncaught: " + valueToString(errorVal));
+                return false;
+            }
+
+            push(result);
             return true;
         }
 
@@ -626,6 +651,7 @@ InterpretResult VM::interpret(const Chunk& chunk) {
 // =========================================================================
 
 InterpretResult VM::run() {
+    try {
 #define READ_BYTE() (*ip++)
 #define READ_CONSTANT() (currentChunk->constants[READ_BYTE()])
 #define RUNTIME_ERROR_OR_THROW(msg) \
@@ -1349,6 +1375,10 @@ InterpretResult VM::run() {
 #undef READ_BYTE
 #undef READ_CONSTANT
 #undef BINARY_OP
+    } catch (const std::runtime_error& e) {
+        runtimeError(e.what());
+        return InterpretResult::RUNTIME_ERROR;
+    }
 }
 
 } // namespace vora

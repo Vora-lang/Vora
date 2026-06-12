@@ -1,10 +1,10 @@
 // interpreter/test_edge_cases.va — Edge case tests
 // Run: vora tests/interpreter/test_edge_cases.va
 
-print("=== Interpreter: Edge Case Tests ===")
+print("=== Edge Case Tests ===")
 
 // TODO: Add edge case tests (large numbers, deep recursion, etc.)
 
 assert(true, "edge cases placeholder")
 
-print("Interpreter edge case tests: PASS")
+print("Edge case tests: PASS")

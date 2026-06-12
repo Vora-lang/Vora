@@ -9,7 +9,6 @@
 
 namespace vora {
 
-class Interpreter;
 class ObjectInstance;
 struct FunctionPrototype;
 
@@ -25,13 +24,7 @@ public:
         NativeFn function
     );
 
-    Value call(
-        Interpreter& interpreter,
-        const std::vector<Value>& arguments
-    ) override;
-
-    // VM-friendly call without Interpreter& dependency.
-    Value callDirectly(const std::vector<Value>& arguments) const;
+    Value call(const std::vector<Value>& arguments) override;
 
     const std::string& name() const;
 
@@ -41,7 +34,7 @@ public:
 
     std::shared_ptr<ObjectClass> getClassDef() const override { return classDef_; }
 
-    // Bound method support (VM): marks this NativeFunction as a method bound
+    // Bound method support: marks this NativeFunction as a method bound
     // to a specific instance. callValue() handles these without a temp VM so
     // that globals and builtins remain accessible.
     void markAsBoundMethod(std::shared_ptr<ObjectInstance> instance,

@@ -1,8 +1,17 @@
-# Vora
+<div align="center">
 
-**Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.**
+# <img src="res/vora.ico" width="40"> Vora
 
-~9400 行 C++17，零外部依赖。双后端：**字节码 VM**（默认）+ **AST 树遍历解释器**（参考实现）。跨平台，多架构，原生打包。
+**A dynamically typed scripting language with JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.**
+
+[![CI](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml/badge.svg)](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
+[![Version](https://img.shields.io/badge/version-0.12-orange.svg)](#changelog)
+
+</div>
+
+---
 
 ```vora
 func greet(name) {
@@ -15,112 +24,166 @@ for name in names {
 }
 ```
 
-## 快速开始
+~10,500 lines of C++17. Zero external dependencies. Two execution backends: a **bytecode VM** (default) and an **AST tree-walking interpreter** (reference implementation). Cross-platform with native packaging.
 
-### 构建
+---
 
-```powershell
-# Windows (PowerShell) — 默认 x64 Debug
-.\build.ps1
+## Table of Contents
 
-# 指定架构 + 配置 + 打包
-.\build.ps1 -Architecture arm64 -Config Release -Package   # → .msi 安装包
-.\build.ps1 -Architecture x86 -Config Debug                 # → 32 位 .exe
-```
+- [Why Vora?](#why-vora)
+- [Quick Start](#quick-start)
+- [Language Features](#language-features)
+  - [Types](#types)
+  - [Operators](#operators)
+  - [Variables & Scope](#variables--scope)
+  - [Control Flow](#control-flow)
+  - [Functions & Closures](#functions--closures)
+  - [Objects & Inheritance](#objects--inheritance)
+  - [Exception Handling](#exception-handling)
+  - [String Interpolation](#string-interpolation)
+- [Built-in Functions](#built-in-functions)
+- [Array Methods](#array-methods)
+- [String Methods](#string-methods)
+- [Project Architecture](#project-architecture)
+- [Platform Support](#platform-support)
+- [Testing](#testing)
+- [Roadmap](#roadmap)
+- [Documentation](#documentation)
+- [Acknowledgments](#acknowledgments)
+- [License](#license)
 
-```bash
-# Linux / macOS (bash) — 默认 x64 debug
-./build.sh
+---
 
-# 短标志 + 打包
-./build.sh -a arm64 -c release -p     # 交叉编译 ARM64 → .deb/.rpm/.pkg.tar.xz
-./build.sh -a x86 -c debug            # 32 位二进制
-```
+## Why Vora?
 
-### 运行
+| | JavaScript | Lua | Wren | **Vora** |
+|---|:---:|:---:|:---:|:---:|
+| C++ embeddable | | | ✔ | **✔** |
+| Object-oriented | ✔ | ✔ | ✔ | **✔** |
+| Try/catch/finally | ✔ | | | **✔** |
+| Closures | ✔ | ✔ | ✔ | **✔** |
+| Multiple backends | | | | **✔** |
+| Zero dependencies | | ✔ | ✔ | **✔** |
+| Native cross-platform builds | | | | **✔** |
 
-```bash
-# 执行脚本（VM 模式，默认）
-vora examples/main.va
+Vora occupies a practical middle ground: readable syntax for scripting, fast enough execution via bytecode VM, and a tiny C++ runtime that embeds into any host application.
 
-# 树遍历解释器
-vora examples/main.va --interpreter
+---
 
-# REPL 交互模式
-vora --repl
+## Quick Start
 
-# 调试：打印 AST
-vora examples/main.va --ast-printer
+### Install from Release
 
-# 调试：打印 Token 流 / 字节码反汇编
-vora examples/main.va --tokens
-```
-
-### 安装（Release 包）
-
-| 平台 | 包格式 | 安装方式 |
-|------|--------|----------|
-| Windows | `.msi` | 双击安装（可选自定义目录，自动注册 PATH） |
+| Platform | Format | Install |
+|----------|--------|---------|
+| Windows | `.msi` | Double-click to install (auto-registers PATH) |
 | Linux | `.deb` | `sudo dpkg -i vora-*.deb` |
 | Linux | `.rpm` | `sudo rpm -i vora-*.rpm` |
 | Linux | `.pkg.tar.xz` | `sudo pacman -U vora-*.pkg.tar.xz` |
-| macOS | `.tar.gz` | 解压到 `/usr/local/bin` |
+| macOS | `.tar.gz` | Extract to `/usr/local/bin` |
 
-## 语言概览
+### Build from Source
 
-### 类型
+**Windows (PowerShell):**
+
+```powershell
+# Default: x64 Debug
+.\build.ps1
+
+# Custom: ARM64 Release with packaging
+.\build.ps1 -Architecture arm64 -Config Release -Package   # → .msi installer
+.\build.ps1 -Architecture x86 -Config Debug               # → 32-bit .exe
+```
+
+**Linux / macOS (bash):**
+
+```bash
+# Default: x64 Debug
+./build.sh
+
+# Custom: ARM64 Release with packaging
+./build.sh -a arm64 -c release -p    # → .deb/.rpm/.pkg.tar.xz
+./build.sh -a x86 -c debug           # → 32-bit binary
+```
+
+### Run
+
+```bash
+vora examples/main.va                 # Execute script (VM mode, default)
+vora examples/main.va --interpreter   # Tree-walking interpreter
+vora --repl                           # Interactive REPL
+vora examples/main.va --ast-printer   # Print AST as S-expressions
+vora examples/main.va --tokens        # Print tokens / bytecode disassembly
+```
+
+---
+
+## Language Features
+
+### Types
 
 ```vora
-let n = 42           // Number (double)
+let n = 42              // Number (int64 or float64)
 let f = 3.14
-let b = true         // Boolean
-let s = "hello"      // String
-let a = [1, 2, 3]    // Array
+let b = true            // Boolean
+let s = "hello"         // String
+let a = [1, 2, 3]       // Array
 let nothing = null
 ```
 
-数字支持 `0x`/`0o`/`0b` 前缀：
+**Number literals** support multiple bases:
+
 ```vora
-0xFF    // 255（十六进制）
-0o77    // 63（八进制）
-0b101   // 5（二进制）
+0xFF      // 255  (hexadecimal)
+0o77      // 63   (octal)
+0b10101   // 21   (binary)
 ```
 
-### 运算符
+### Operators
 
-算术 `+` `-` `*` `/` `%` `**` · 比较 `<` `<=` `>` `>=` `==` `!=` · 逻辑 `&&` `||` `!`（短路求值）· 三元 `? :` · 自增 `++` `--` · 复合赋值 `+=` `-=` `*=` `/=` `%=`
+| Category | Operators |
+|----------|-----------|
+| Arithmetic | `+` `-` `*` `/` `%` `**` |
+| Comparison | `<` `<=` `>` `>=` `==` `!=` |
+| Logical | `&&` `||` `!` (short-circuit) |
+| Ternary | `cond ? a : b` |
+| Increment/Decrement | `++` `--` |
+| Compound Assignment | `+=` `-=` `*=` `/=` `%=` |
 
-`+` 同时支持字符串拼接、数组合并/追加。
+`+` also supports string concatenation and array merge/append.
 
-### 变量与作用域
+### Variables & Scope
 
 ```vora
-let x = 10           // 声明
-x = 20               // 赋值（词法作用域链查找）
-{ let x = 30 }       // 块作用域遮蔽
+let x = 10              // Declaration
+x = 20                  // Assignment (lexical scope chain lookup)
+{ let x = 30 }          // Block scope shadowing
 ```
 
-### 控制流
+### Control Flow
 
 ```vora
+// if / else
 if (x > 0) {
     print("positive")
 } else {
     print("non-positive")
 }
 
+// while
 while (n > 0) {
     n = n - 1
 }
 
+// for-in (arrays, strings, ranges)
 for item in [1, 2, 3] { print(item) }
 for ch in "Vora"       { print(ch) }
-for i in range(5)      { print(i) }  // 0..4
+for i in range(5)      { print(i) }   // 0..4
 ```
 
-`break` / `continue` 有效。
+`break` and `continue` work as expected.
 
-### 函数与闭包
+### Functions & Closures
 
 ```vora
 func add(a, b) {
@@ -131,12 +194,13 @@ func makeCounter() {
     let count = 0
     return func() { count = count + 1; return count }
 }
+
 let c = makeCounter()
 print(c())  // 1
 print(c())  // 2
 ```
 
-### 对象（含继承）
+### Objects & Inheritance
 
 ```vora
 Obj Animal(name) {
@@ -150,11 +214,11 @@ Obj Dog : Animal (name, breed) {
 }
 
 let d = Dog("Rex", "Husky")
-d.speak()      // "Woof! I'm Rex"
-print(d.name)  // "Rex"
+d.speak()       // "Woof! I'm Rex"
+print(d.name)   // "Rex"
 ```
 
-### 异常处理
+### Exception Handling
 
 ```vora
 try {
@@ -166,124 +230,164 @@ try {
 }
 ```
 
-### 字符串插值
+### String Interpolation
 
 ```vora
 let name = "World"
-print("Hello ${name}!")  // "Hello World!"
+print("Hello ${name}!")   // "Hello World!"
 ```
 
-### 内建函数
+---
 
-| 函数 | 说明 |
-|------|------|
-| `print(...)` | 变参输出，空格分隔 |
-| `clock()` | Unix 时间戳（秒） |
-| `input(prompt?)` | 读取 stdin 一行 |
-| `int(value)` | 转 int64（截断） |
-| `float(value)` | 转 float64 |
-| `len(value)` | 返回数组长度或字符串字符数 |
-| `type(value)` | 返回类型名：`"int"`/`"float"`/`"string"`/`"array"`/`"boolean"`/`"null"`/`"function"`/`"object"` |
-| `range(stop)` / `range(start, stop, step)` | 生成数字数组 |
-| `assert(cond, msg?)` | 断言 |
-| `bin(num)` | → `"0b..."` |
-| `oct(num)` | → `"0o..."` |
-| `hex(num)` | → `"0x..."` |
+## Built-in Functions
 
-数组方法：`.add(item)` `.pop()` `.length` `.insert(idx, item)` `.remove(idx)` `.indexOf(item)` `.clear()`
-字符串方法：`.length` `.substring(start, end?)` `.include(sub)` `.startsWith(p)` `.endsWith(s)` `.upper()` `.lower()` `.trim()` `.replace(old, new)` `.replaceAll(old, new)` `.split(delim)`
+| Function | Description |
+|----------|-------------|
+| `print(...)` | Variable-argument output, space-separated |
+| `clock()` | Unix timestamp in seconds |
+| `input(prompt?)` | Read a line from stdin |
+| `int(value)` | Convert to int64 (truncate) |
+| `float(value)` | Convert to float64 |
+| `len(value)` | Array length or string character count |
+| `type(value)` | Type name: `"int"` `"float"` `"string"` `"array"` `"boolean"` `"null"` `"function"` `"object"` |
+| `range(stop)` / `range(start, stop, step?)` | Generate number array |
+| `assert(cond, msg?)` | Assertion with optional message |
+| `bin(num)` | String like `"0b101"` |
+| `oct(num)` | String like `"0o77"` |
+| `hex(num)` | String like `"0xff"` |
 
-## 项目结构
+---
+
+## Array Methods
+
+| Method | Description |
+|--------|-------------|
+| `.length` | Number of elements |
+| `.add(item)` | Append element |
+| `.pop()` | Remove and return last element |
+| `.insert(idx, item)` | Insert at index |
+| `.remove(idx)` | Remove at index |
+| `.indexOf(item)` | Return index, or -1 |
+| `.clear()` | Remove all elements |
+
+---
+
+## String Methods
+
+| Method | Description |
+|--------|-------------|
+| `.length` | Character count |
+| `.substring(start, end?)` | Slice by character index |
+| `.include(sub)` | Check if substring exists |
+| `.startsWith(prefix)` | Check prefix |
+| `.endsWith(suffix)` | Check suffix |
+| `.upper()` | Uppercase |
+| `.lower()` | Lowercase |
+| `.trim()` | Strip whitespace |
+| `.replace(old, new)` | Replace first occurrence |
+| `.replaceAll(old, new)` | Replace all occurrences |
+| `.split(delim)` | Split into array |
+
+---
+
+## Project Architecture
 
 ```
-Vora/
-├── CMakeLists.txt              # CMake 构建配置 + CPack 打包
-├── CMakePresets.json           # CMake 预设（20 个，多架构 + 多配置）
-├── build.ps1                   # Windows 一键构建脚本
-├── build.sh                    # Linux/macOS 一键构建脚本
-├── LICENSE                     # MIT License
-├── vora_logo.svg               # 应用图标源文件
-├── src/
-│   ├── main.cpp                # 程序入口（~360 行）
-│   ├── lexer/                  # 词法分析器（687 行）
-│   ├── ast/                    # AST 节点 + Visitor 接口 + AST Printer（1629 行）
-│   ├── parser/                 # Pratt 解析器（1200 行）
-│   ├── interpreter/            # 树遍历解释器（1621 行）
-│   ├── vm/                     # 字节码 VM：编译器 + 栈式虚拟机（3175 行）
-│   └── runtime/                # 值系统 / 作用域 / 可调用对象 / 错误（719 行）
-├── cmake/toolchains/           # 交叉编译工具链（6 个文件）
-├── res/                        # 资源文件（图标、WiX 安装包、启动器）
-├── .github/workflows/          # CI 多架构矩阵
-├── examples/                   # 24 个示例文件（按特性编号）
-├── tests/                      # 13 个测试文件 + run_tests.ps1 / run_tests.sh
-├── docs/                       # 开发文档（10 篇，中文）
-└── std/                        # 标准库（规划中）
+.vasource  →  Lexer  →  Token stream  →  Parser (Pratt)  →  AST (Program)
+                                                         ├→ Interpreter (tree-walk, --interpreter)
+                                                         └→ Compiler → Chunk (bytecode) → VM (default)
 ```
 
-## 支持的平台与架构
+**Execution pipeline** in `src/`:
 
-| 平台 | 架构 |
-|------|------|
+| Module | Lines | Description |
+|--------|-------|-------------|
+| `lexer/` | ~687 | Hand-written scanner, 21 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b |
+| `parser/` | ~1,185 | Pratt (precedence climbing), 7-level precedence table, panic-mode error recovery |
+| `ast/` | ~1,629 | 27 node types (14 expressions + 13 statements), templated Visitor pattern |
+| `interpreter/` | ~1,621 | Tree-walking backend, 12 built-in functions, 18 built-in methods |
+| `vm/` | ~3,175 | Bytecode compiler + stack-based VM, 50 opcodes, constant folding, fast numeric ops |
+| `runtime/` | ~800 | `Value` (std::variant), `Environment` (lexical scope chain), `Callable` abstraction |
+
+**Design highlights:**
+
+- **Templated Visitor** — A single generic `ExprVisitor<R>` / `StmtVisitor<R>` interface serves three backends: Interpreter (`R=Value`), Compiler (`R=void`), ASTPrinter (`R=string`).
+- **Dual backends** — The same AST feeds both a fast bytecode VM and a clean tree-walking interpreter, enabling both performance and reference-quality clarity.
+- **Zero external dependencies** — Pure C++17 standard library. No Boost, no LLVM, no third-party code.
+- **Enterprise build system** — CMakePresets with 20 presets, 6 cross-compilation toolchains, 18-matrix CI, native packaging for Windows (.msi), Linux (.deb/.rpm), macOS (.tar.gz).
+
+---
+
+## Platform Support
+
+| Platform | Architectures |
+|----------|---------------|
 | Windows | x64, x86 (Win32), ARM64 |
 | Linux | x64, x86 (i386), aarch64, armhf |
-| macOS | universal (x86_64 + arm64) |
+| macOS | Universal (x86_64 + arm64) |
 
-所有平台均支持交叉编译。CI（GitHub Actions）对全部 18 个 os×arch×config 组合进行自动化构建。
+All platforms support cross-compilation. CI (GitHub Actions) automates builds across all 18 os x arch x config combinations.
 
-## 进度
+---
 
-| 版本 | 提交 | 特性 | 状态 |
-|------|------|------|------|
-| v0.01 | `d1cb460` | 字面量 + 表达式 | ✅ |
-| v0.02 | `7cc3caf` | 变量 + 作用域 | ✅ |
-| v0.03 | `2be35b9` | 函数 | ✅ |
-| v0.04 | `5dc0cd8` | 控制流（if/while/for/break/continue） | ✅ |
-| v0.05 | `807a07d` | 对象 + 数组 + 继承 | ✅ |
-| v0.06 | `357fa7e` | 闭包 | ✅ |
-| v0.07 | `bda534a` | 异常（try/catch/finally/throw） | ✅ |
-| v0.08 | `0e8d810` | 字节码 VM（Phase 1-4：表达式/控制流/函数/闭包/对象/异常/插值） | ✅ |
-| v0.09 | `19dbb27` | VM 性能优化（全局变量驻留、快速数值操作码、常量折叠、移动语义） | ✅ |
-| v0.10 | `6666872` | VM 异常处理完善（finally 路由、异常重抛、catch handler 清理） | ✅ |
-| v0.11 | `7a33678` | 多架构构建系统 + 应用图标 + 原生打包（.msi/.deb/.rpm/.pkg.tar.xz） | ✅ |
-| v0.12 | `462052f` | int64/float64 双数值类型 + `len()` + `type()` + 17 个数组/字符串内建方法 | ✅ |
-| v0.13 | — | 模块系统（import/export） | ⏳ |
-| v0.2 | — | 优化 / JIT | 规划中 |
-
-## 测试
+## Testing
 
 ```powershell
-# Windows
-.\tests\run_tests.ps1                   # VM 模式
-.\tests\run_tests.ps1 -Interpreter      # 解释器模式
+# Windows (PowerShell)
+.\tests\run_tests.ps1                   # VM mode
+.\tests\run_tests.ps1 -Interpreter     # Interpreter mode
 ```
 
 ```bash
 # Linux / macOS
-./tests/run_tests.sh                    # VM 模式
-./tests/run_tests.sh --interpreter      # 解释器模式
+./tests/run_tests.sh                    # VM mode
+./tests/run_tests.sh --interpreter      # Interpreter mode
 ```
 
-## 文档
+**Current status:** 13/13 VM tests pass + 13/13 Interpreter tests pass + 24/24 examples pass.
 
-| 文档 | 内容 |
-|------|------|
-| `docs/01-技术栈概览.md` | 技术栈、架构、构建命令 |
-| `docs/02-项目结构.md` | 目录树、各文件说明 |
-| `docs/03-词法分析器开发文档.md` | Lexer 设计 |
-| `docs/04-AST开发文档.md` | AST 节点设计 + Visitor 模式 |
-| `docs/05-语法分析器开发文档.md` | Pratt Parser 设计 |
-| `docs/06-解释器开发文档.md` | 树遍历 Interpreter 设计 |
-| `docs/07-运行时系统开发文档.md` | Value / Environment / Callable |
-| `docs/08-已实现功能总结.md` | 功能总结 + 版本历程 |
-| `docs/09-构建系统指南.md` | 多架构构建 + 交叉编译 + 打包 |
-| `docs/10-后续优化建议.md` | 优化路线图 + 推荐优先级 |
+---
 
-## 参考
+## Roadmap
 
-> [Crafting Interpreters](https://craftinginterpreters.com/)
->
-> [Lua 5.4](https://www.lua.org/source/5.4/)
->
-> [Wren](https://wren.io/)
->
-> [CPython](https://github.com/python/cpython)
+| Version | Status | Milestone |
+|---------|--------|-----------|
+| v0.01 ~ v0.12 | **Done** | Literals, variables, scope, functions, closures, objects, inheritance, try/catch/finally, bytecode VM, performance optimization, multi-platform builds, int64/float64, `len()`, `type()`, 17 built-in methods |
+| v0.13 | Planned | Module system (`import` / `export`), standard library |
+| v0.2 | Planned | Further optimization / JIT compilation |
+
+---
+
+## Documentation
+
+| Document | Content |
+|----------|---------|
+| [`docs/01-技术栈概览.md`](docs/01-技术栈概览.md) | Tech stack, architecture, build commands |
+| [`docs/02-项目结构.md`](docs/02-项目结构.md) | Directory tree, file descriptions |
+| [`docs/03-词法分析器开发文档.md`](docs/03-词法分析器开发文档.md) | Lexer design |
+| [`docs/04-AST开发文档.md`](docs/04-AST开发文档.md) | AST node design + Visitor pattern |
+| [`docs/05-语法分析器开发文档.md`](docs/05-语法分析器开发文档.md) | Pratt Parser design |
+| [`docs/06-解释器开发文档.md`](docs/06-解释器开发文档.md) | Tree-walking Interpreter design |
+| [`docs/07-运行时系统开发文档.md`](docs/07-运行时系统开发文档.md) | Value / Environment / Callable |
+| [`docs/08-已实现功能总结.md`](docs/08-已实现功能总结.md) | Feature summary + version history |
+| [`docs/09-构建系统指南.md`](docs/09-构建系统指南.md) | Multi-architecture builds, cross-compilation, packaging |
+| [`docs/10-深度分析与UX路线图.md`](docs/10-深度分析与UX路线图.md) | In-depth analysis + UX roadmap |
+
+---
+
+## Acknowledgments
+
+Vora draws inspiration from:
+
+- [Crafting Interpreters](https://craftinginterpreters.com/) by Robert Nystrom — foundational interpreter design
+- [Lua 5.4](https://www.lua.org/source/5.4/) — embeddable language philosophy and simplicity
+- [Wren](https://wren.io/) — clean object orientation and bytecode VM design
+- [CPython](https://github.com/python/cpython) — reference implementation patterns
+
+---
+
+## License
+
+MIT License — Copyright (c) 2026 Vora-lang
+
+See [LICENSE](LICENSE) for details.
