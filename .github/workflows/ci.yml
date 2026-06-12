@@ -63,9 +63,9 @@ jobs:
         if: matrix.arch == 'x64'
         run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ env.cfg }}" -R "^vm-" --output-on-failure
 
-      - name: Test (Interpreter mode)
+      - name: Test (C++ Unit)
         if: matrix.arch == 'x64'
-        run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ env.cfg }}" -R "^interp-" --output-on-failure
+        run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ env.cfg }}" -R "^unit-" --output-on-failure
 
       # ── Package (Release only) ─────────────────────────────────────
       - name: Package (.deb / .rpm / .pkg.tar.xz)
@@ -117,9 +117,9 @@ jobs:
         if: matrix.arch == 'x64'
         run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ env.cfg }}" -C ${{ matrix.config }} -R "^vm-" --output-on-failure
 
-      - name: Test (Interpreter mode)
+      - name: Test (C++ Unit)
         if: matrix.arch == 'x64'
-        run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ env.cfg }}" -C ${{ matrix.config }} -R "^interp-" --output-on-failure
+        run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ env.cfg }}" -C ${{ matrix.config }} -R "^unit-" --output-on-failure
 
       # ── Package (Release only) ─────────────────────────────────────
       - name: Package (.zip / .msi)
@@ -176,8 +176,8 @@ jobs:
       - name: Test (VM mode)
         run: ctest --test-dir "build/macos-universal-${{ env.cfg }}" -R "^vm-" --output-on-failure
 
-      - name: Test (Interpreter mode)
-        run: ctest --test-dir "build/macos-universal-${{ env.cfg }}" -R "^interp-" --output-on-failure
+      - name: Test (C++ Unit)
+        run: ctest --test-dir "build/macos-universal-${{ env.cfg }}" -R "^unit-" --output-on-failure
 
       # ── Package (Release only) ─────────────────────────────────────
       - name: Package (.tar.gz)

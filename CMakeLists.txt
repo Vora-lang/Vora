@@ -14,12 +14,13 @@ if(MSVC)
 endif()
 
 # ──────────────────────────────────────────────────
-# Source files
+# OBJECT library — all source files except main.cpp
+# Used by both Vora.exe and Vora_tests.exe (zero
+# duplicate compilation).
 # ──────────────────────────────────────────────────
 
-add_executable(Vora
+add_library(vora_lib OBJECT
 
-    src/main.cpp
     src/ast/ast_printer.cpp
     src/ast/program.cpp
     src/ast/expr.cpp
@@ -30,6 +31,7 @@ add_executable(Vora
 
     src/parser/parser.cpp
 
+    src/runtime/builtins.cpp
     src/runtime/value.cpp
     src/runtime/native_function.cpp
     src/runtime/vora_function.cpp
@@ -39,6 +41,19 @@ add_executable(Vora
     src/vm/chunk.cpp
     src/vm/compiler.cpp
     src/vm/vm.cpp
+)
+
+target_include_directories(vora_lib PRIVATE src)
+
+target_compile_features(vora_lib PRIVATE cxx_std_17)
+
+# ──────────────────────────────────────────────────
+# Main executable
+# ──────────────────────────────────────────────────
+
+add_executable(Vora
+    src/main.cpp
+    $<TARGET_OBJECTS:vora_lib>
 
     # Windows resource file (icon + version info) — ignored on non-MSVC
     res/vora.rc
@@ -91,6 +106,63 @@ foreach(test_file ${TEST_LEXER} ${TEST_PARSER} ${TEST_RUNTIME} ${TEST_INTERPRETE
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
 endforeach()
+
+# ──────────────────────────────────────────────────
+# C++ unit tests (doctest)
+# ──────────────────────────────────────────────────
+
+# Download doctest at configure time if not vendored
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/doctest.h")
+    message(STATUS "Downloading doctest v2.4.11 …")
+    file(DOWNLOAD
+        "https://raw.githubusercontent.com/doctest/doctest/v2.4.11/doctest/doctest.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/doctest.h"
+        SHOW_PROGRESS
+    )
+endif()
+
+add_executable(Vora_tests
+    $<TARGET_OBJECTS:vora_lib>
+    tests/unit/test_main.cpp
+    tests/unit/test_value.cpp
+    tests/unit/test_chunk.cpp
+    tests/unit/test_lexer.cpp
+    tests/unit/test_parser.cpp
+    tests/unit/test_compiler.cpp
+    tests/unit/test_vm.cpp
+)
+
+target_include_directories(Vora_tests PRIVATE
+    src
+    tests/unit
+)
+
+target_compile_features(Vora_tests PRIVATE cxx_std_17)
+
+# Define DOCTEST_CONFIG_IMPLEMENT only for the test driver file.
+set_source_files_properties(
+    tests/unit/test_main.cpp
+    PROPERTIES COMPILE_DEFINITIONS "DOCTEST_CONFIG_IMPLEMENT"
+)
+
+# Register one CTest per test file via doctest --test-case filter.
+# Each test file's cases are prefixed with the module name
+# (e.g. "value_", "chunk_", "lexer_"), so -tc="prefix*" isolates
+# failures to the module level.
+function(vora_unit_test test_file case_prefix)
+    get_filename_component(file_name ${test_file} NAME_WE)
+    add_test(
+        NAME "unit-${file_name}"
+        COMMAND Vora_tests -tc="${case_prefix}*"
+    )
+endfunction()
+
+vora_unit_test(tests/unit/test_value.cpp    "value")
+vora_unit_test(tests/unit/test_chunk.cpp    "chunk")
+vora_unit_test(tests/unit/test_lexer.cpp    "lexer")
+vora_unit_test(tests/unit/test_parser.cpp   "parser")
+vora_unit_test(tests/unit/test_compiler.cpp "compiler")
+vora_unit_test(tests/unit/test_vm.cpp       "vm")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

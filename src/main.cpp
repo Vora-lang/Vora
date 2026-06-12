@@ -1,5 +1,3 @@
-#include <chrono>
-#include <cmath>
 #include <cstdint>
 #include <fstream>
 #include <iostream>
@@ -12,6 +10,7 @@
 
 #include "ast/ast_printer.h"
 
+#include "runtime/builtins.h"
 #include "runtime/runtime_error.h"
 
 #include "vm/compiler.h"
@@ -34,162 +33,6 @@ static std::string readFile(
     buffer << file.rdbuf();
 
     return buffer.str();
-}
-
-// Register built-in natives on a VM (shared between script and REPL paths).
-static void registerBuiltins(VM& vm) {
-    vm.defineNative("print", -1,
-        [](const std::vector<Value>& arguments) -> Value {
-            for (size_t i = 0; i < arguments.size(); ++i) {
-                if (i > 0) std::cout << ' ';
-                printValue(arguments[i]);
-            }
-            std::cout << std::endl;
-            return nullptr;
-        });
-    vm.defineNative("type", 1,
-        [](const std::vector<Value>& arguments) -> Value {
-            return std::visit([](auto&& arg) -> std::string {
-                using T = std::decay_t<decltype(arg)>;
-                if constexpr (std::is_same_v<T, std::nullptr_t>) return "null";
-                else if constexpr (std::is_same_v<T, double>) return "float";
-                else if constexpr (std::is_same_v<T, int64_t>) return "int";
-                else if constexpr (std::is_same_v<T, bool>) return "boolean";
-                else if constexpr (std::is_same_v<T, std::string>) return "string";
-                else if constexpr (std::is_same_v<T, std::shared_ptr<Array>>) return "array";
-                else if constexpr (std::is_same_v<T, std::shared_ptr<Callable>>) return "function";
-                else if constexpr (std::is_same_v<T, std::shared_ptr<ObjectInstance>>) return "object";
-                else return "unknown";
-            }, arguments[0]);
-        });
-    vm.defineNative("len", 1,
-        [](const std::vector<Value>& arguments) -> Value {
-            const auto& v = arguments[0];
-            if (std::holds_alternative<std::shared_ptr<Array>>(v))
-                return static_cast<int64_t>(std::get<std::shared_ptr<Array>>(v)->elements.size());
-            if (std::holds_alternative<std::string>(v))
-                return static_cast<int64_t>(std::get<std::string>(v).size());
-            return nullptr;  // will be caught by runtime
-        });
-    vm.defineNative("clock", 0,
-        [](const std::vector<Value>&) -> Value {
-            auto now = std::chrono::system_clock::now().time_since_epoch();
-            auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-            return static_cast<double>(millis) / 1000.0;
-        });
-    vm.defineNative("assert", -1,
-        [&vm](const std::vector<Value>& arguments) -> Value {
-            if (arguments.empty()) return nullptr;
-            if (!VM::isTruthy(arguments[0])) {
-                std::string msg = "Assertion failed";
-                if (arguments.size() >= 2 && std::holds_alternative<std::string>(arguments[1])) {
-                    msg = std::get<std::string>(arguments[1]);
-                }
-                // Route through VM exception mechanism so assert failures
-                // are catchable by try/catch (consistent with interpreter).
-                vm.nativeError = true;
-                vm.nativeErrorValue = std::string(msg);
-                return nullptr;
-            }
-            return nullptr;
-        });
-    vm.defineNative("int", 1,
-        [](const std::vector<Value>& arguments) -> Value {
-            const auto& arg = arguments[0];
-            if (std::holds_alternative<int64_t>(arg))
-                return arg;
-            if (std::holds_alternative<double>(arg))
-                return static_cast<int64_t>(std::trunc(std::get<double>(arg)));
-            if (std::holds_alternative<std::string>(arg))
-                return static_cast<int64_t>(std::trunc(std::stod(std::get<std::string>(arg))));
-            if (std::holds_alternative<bool>(arg))
-                return std::get<bool>(arg) ? static_cast<int64_t>(1) : static_cast<int64_t>(0);
-            return nullptr;
-        });
-    vm.defineNative("float", 1,
-        [](const std::vector<Value>& arguments) -> Value {
-            const auto& arg = arguments[0];
-            if (std::holds_alternative<int64_t>(arg)) return static_cast<double>(std::get<int64_t>(arg));
-            if (std::holds_alternative<double>(arg)) return arg;
-            if (std::holds_alternative<std::string>(arg))
-                return std::stod(std::get<std::string>(arg));
-            if (std::holds_alternative<bool>(arg))
-                return std::get<bool>(arg) ? 1.0 : 0.0;
-            return nullptr;
-        });
-    vm.defineNative("range", -1,
-        [](const std::vector<Value>& arguments) -> Value {
-            double start = 0, end = 0, step = 1;
-            if (arguments.size() == 1) {
-                end = toDouble(arguments[0]);
-            } else if (arguments.size() == 2) {
-                start = toDouble(arguments[0]);
-                end = toDouble(arguments[1]);
-            } else if (arguments.size() == 3) {
-                start = toDouble(arguments[0]);
-                end = toDouble(arguments[1]);
-                step = toDouble(arguments[2]);
-            }
-            auto arr = std::make_shared<Array>();
-            if (step > 0) {
-                for (double i = start; i < end; i += step)
-                    arr->elements.push_back(i);
-            } else if (step < 0) {
-                for (double i = start; i > end; i += step)
-                    arr->elements.push_back(i);
-            }
-            return arr;
-        });
-    vm.defineNative("input", -1,
-        [](const std::vector<Value>& arguments) -> Value {
-            if (!arguments.empty()) std::cout << valueToString(arguments[0]);
-            std::string line;
-            std::getline(std::cin, line);
-            return line;
-        });
-    vm.defineNative("bin", 1,
-        [](const std::vector<Value>& arguments) -> Value {
-            int64_t n;
-            if (std::holds_alternative<int64_t>(arguments[0]))
-                n = std::get<int64_t>(arguments[0]);
-            else
-                n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
-            if (n == 0) return std::string("0b0");
-            bool neg = n < 0;
-            uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
-            std::string bits;
-            while (u > 0) { bits = (u & 1 ? '1' : '0') + bits; u >>= 1; }
-            return (neg ? std::string("-0b") : std::string("0b")) + bits;
-        });
-    vm.defineNative("oct", 1,
-        [](const std::vector<Value>& arguments) -> Value {
-            int64_t n;
-            if (std::holds_alternative<int64_t>(arguments[0]))
-                n = std::get<int64_t>(arguments[0]);
-            else
-                n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
-            if (n == 0) return std::string("0o0");
-            bool neg = n < 0;
-            uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
-            std::string digits;
-            while (u > 0) { digits = static_cast<char>('0' + (u & 7)) + digits; u >>= 3; }
-            return (neg ? std::string("-0o") : std::string("0o")) + digits;
-        });
-    vm.defineNative("hex", 1,
-        [](const std::vector<Value>& arguments) -> Value {
-            int64_t n;
-            if (std::holds_alternative<int64_t>(arguments[0]))
-                n = std::get<int64_t>(arguments[0]);
-            else
-                n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
-            if (n == 0) return std::string("0x0");
-            bool neg = n < 0;
-            uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
-            const char* hexChars = "0123456789abcdef";
-            std::string digits;
-            while (u > 0) { digits = hexChars[u & 0xF] + digits; u >>= 4; }
-            return (neg ? std::string("-0x") : std::string("0x")) + digits;
-        });
 }
 
 static int runScript(
