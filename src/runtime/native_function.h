@@ -38,10 +38,12 @@ public:
     // to a specific instance. callValue() handles these without a temp VM so
     // that globals and builtins remain accessible.
     void markAsBoundMethod(std::shared_ptr<ObjectInstance> instance,
-                           const FunctionPrototype* methodProto);
+                           const FunctionPrototype* methodProto,
+                           std::shared_ptr<VoraFunction> methodFunc);
     bool isBoundMethod() const { return isBoundMethod_; }
     const std::shared_ptr<ObjectInstance>& getBoundInstance() const { return boundInstance_; }
     const FunctionPrototype* getBoundMethodProto() const { return boundMethodProto_; }
+    const std::shared_ptr<VoraFunction>& getBoundMethodFunc() const { return boundMethodFunc_; }
 
 private:
     std::string name_;
@@ -56,6 +58,7 @@ private:
     bool isBoundMethod_ = false;
     std::shared_ptr<ObjectInstance> boundInstance_;
     const FunctionPrototype* boundMethodProto_ = nullptr;
+    std::shared_ptr<VoraFunction> boundMethodFunc_;  // for stack traces
 };
 
 }

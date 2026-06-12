@@ -40,7 +40,7 @@ struct ObjectClass {
     std::shared_ptr<BlockStmt> body;
     std::map<std::string, std::shared_ptr<VoraFunction>> methods;
     std::string parentClassName;              // empty = no parent
-    std::shared_ptr<ObjectClass> parentClass;  // resolved at runtime
+    std::weak_ptr<ObjectClass> parentClass;     // weak_ptr to break inheritance cycle (GC prep)
     std::shared_ptr<FunctionPrototype> ctorProto;  // compiled constructor
 };
 

@@ -122,6 +122,14 @@ private:
     bool callValue(const Value& callee, uint8_t argCount);
     InterpretResult callVoraFunction(const std::shared_ptr<VoraFunction>& func,
                                       const std::vector<Value>& args);
+
+    // Stack trace: walks the CallFrame chain to produce a traceback string.
+    std::string captureStackTrace() const;
+
+    // Pre-unwind snapshot: throwException() captures the stack trace before
+    // popping frames. runtimeError() uses this if non-empty (exception path)
+    // and captures fresh otherwise (direct error path).
+    std::string lastErrorStackTrace;
 };
 
 } // namespace vora

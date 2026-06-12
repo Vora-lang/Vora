@@ -59,13 +59,17 @@ uint8_t VM::readByte() {
     return *ip++;
 }
 
-void VM::runtimeError(const std::string& message) {
-    size_t offset = ip - currentChunk->code.data();
-    int line = 0;
-    int column = 0;
+// =========================================================================
+// RLE line/column decode helper (used by runtimeError and captureStackTrace)
+// =========================================================================
+
+namespace {
+
+void decodeLineFromChunk(const Chunk& chunk, size_t offset, int& line, int& column) {
+    line = 0;
+    column = 0;
     size_t pos = 0;
-    // Decode line RLE
-    const auto& rleLines = currentChunk->lines;
+    const auto& rleLines = chunk.lines;
     for (size_t i = 0; i < rleLines.size(); i += 2) {
         int runLen = rleLines[i];
         if (offset < pos + static_cast<size_t>(runLen)) {
@@ -74,9 +78,8 @@ void VM::runtimeError(const std::string& message) {
         }
         pos += runLen;
     }
-    // Decode column RLE (same offset, same RLE structure)
     pos = 0;
-    const auto& rleCols = currentChunk->columns;
+    const auto& rleCols = chunk.columns;
     for (size_t i = 0; i < rleCols.size(); i += 2) {
         int runLen = rleCols[i];
         if (offset < pos + static_cast<size_t>(runLen)) {
@@ -85,11 +88,90 @@ void VM::runtimeError(const std::string& message) {
         }
         pos += runLen;
     }
+}
+
+} // anonymous namespace
+
+void VM::runtimeError(const std::string& message) {
+    size_t offset = ip - currentChunk->code.data();
+    int line = 0, column = 0;
+    decodeLineFromChunk(*currentChunk, offset, line, column);
     std::cerr << "VM RuntimeError [" << line << ":" << column << "]: " << message << std::endl;
+    if (!lastErrorStackTrace.empty()) {
+        std::cerr << lastErrorStackTrace;
+        lastErrorStackTrace.clear();
+    } else {
+        std::cerr << captureStackTrace();
+    }
 }
 
 void VM::runtimeError(const std::string& message, int line, int column) {
     std::cerr << "VM RuntimeError [" << line << ":" << column << "]: " << message << std::endl;
+    if (!lastErrorStackTrace.empty()) {
+        std::cerr << lastErrorStackTrace;
+        lastErrorStackTrace.clear();
+    } else {
+        std::cerr << captureStackTrace();
+    }
+}
+
+std::string VM::captureStackTrace() const {
+    // Guard: no chunk loaded yet (shouldn't happen, but be safe)
+    if (!currentChunk || currentChunk->code.empty()) return "";
+
+    std::string result = "Stack trace (most recent call last):\n";
+
+    // Walk frames from OLDEST to NEWEST — each frame's returnIp points
+    // to the OP_CALL site in the caller's chunk (2 bytes: opcode + argCount).
+    // For frame[i]:
+    //   - The CALL happened in frame[i].callerChunk at (returnIp - 2)
+    //   - The CALLER is frames[i-1].function (or <script> for i==0)
+    // Then the error site is in currentChunk at ip (current function).
+    for (size_t i = 0; i < frames.size(); i++) {
+        const auto& frame = frames[i];
+        if (!frame.callerChunk || frame.callerChunk->code.empty()) continue;
+
+        // returnIp points AFTER the OP_CALL instruction (2 bytes)
+        const uint8_t* codeStart = frame.callerChunk->code.data();
+        ptrdiff_t returnOffset = frame.returnIp - codeStart;
+        size_t callOffset = (returnOffset >= 2)
+            ? static_cast<size_t>(returnOffset - 2)
+            : 0;
+
+        int line = 0, column = 0;
+        decodeLineFromChunk(*frame.callerChunk, callOffset, line, column);
+
+        std::string callerName;
+        if (i == 0) {
+            callerName = "<script>";
+        } else {
+            const auto& callerFrame = frames[i - 1];
+            if (callerFrame.function) {
+                callerName = callerFrame.function->name();
+            } else {
+                callerName = "<native>";
+            }
+        }
+
+        result += "  [" + std::to_string(line) + ":" + std::to_string(column)
+               + "] in " + callerName + "\n";
+    }
+
+    // Error site: current instruction in the currently executing function
+    size_t errorOffset = static_cast<size_t>(ip - currentChunk->code.data());
+    int line = 0, column = 0;
+    decodeLineFromChunk(*currentChunk, errorOffset, line, column);
+
+    std::string funcName;
+    if (!frames.empty() && frames.back().function) {
+        funcName = frames.back().function->name();
+    } else {
+        funcName = "<script>";
+    }
+    result += "  [" + std::to_string(line) + ":" + std::to_string(column)
+           + "] in " + funcName + "\n";
+
+    return result;
 }
 
 bool VM::runtimeErrorOrThrow(const std::string& message) {
@@ -111,6 +193,11 @@ std::shared_ptr<Value> VM::captureUpvalue(Value* slot) {
 }
 
 bool VM::throwException(const Value& value) {
+    // Capture stack trace BEFORE unwinding — once frames are popped, the
+    // call chain is lost. If this exception is uncaught, runtimeError()
+    // will print the captured trace.
+    lastErrorStackTrace = captureStackTrace();
+
     // Walk up through catch handlers. We peek the handler (don't pop it)
     // so that OP_POP_CATCH at the target can pop it. If we popped here,
     // nested try blocks would fail because OP_POP_CATCH at the inner
@@ -156,6 +243,7 @@ bool VM::throwException(const Value& value) {
         }
 
         exceptionInFlight = true;
+        lastErrorStackTrace.clear();  // caught — trace no longer needed
         return true;  // caught — handler will be popped by OP_POP_CATCH at target
     }
 
@@ -366,7 +454,7 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
                 // Set up call frame directly (inline callVoraFunction logic).
                 // We skip the usual arity check because 'this' is not counted
                 // in the method prototype's arity.
-                frames.push_back({ip, frameBase, currentChunk, nullptr});
+                frames.push_back({ip, frameBase, currentChunk, native->getBoundMethodFunc()});
                 currentChunk = &proto->chunk;
                 ip = currentChunk->code.data();
                 frameBase = newFrameBase;  // points to instance at slot 0
@@ -472,6 +560,7 @@ InterpretResult VM::interpret(const Chunk& chunk) {
     exceptionInFlight = false;
     nativeError = false;
     nativeErrorValue = nullptr;
+    lastErrorStackTrace.clear();
     return run();
 }
 
@@ -1035,12 +1124,13 @@ InterpretResult VM::run() {
                                     propName, methodFn->arity(),
                                     /*no-op lambda — callValue intercepts before calling this*/
                                     [](const std::vector<Value>&) -> Value { return nullptr; });
-                                bound->markAsBoundMethod(instance, mp);
+                                bound->markAsBoundMethod(instance, mp, methodFn);
                                 push(bound);
                                 // Found method — break out of while + switch
                                 goto method_found;
                             }
-                            cls = cls->parentClass.get();
+                            auto parentPtr = cls->parentClass.lock();
+                            cls = parentPtr.get();
                         }
                         method_found:
                         if (cls) break;  // found method
@@ -1138,12 +1228,12 @@ InterpretResult VM::run() {
 
                         // Run parent constructors root-first.
                         // Each parent gets ALL arguments (it uses the params it needs).
-                        if (objClass->parentClass) {
-                            std::vector<ObjectClass*> chain;
-                            for (ObjectClass* p = objClass->parentClass.get(); p; p = p->parentClass.get()) {
+                        if (auto parentLock = objClass->parentClass.lock()) {
+                            std::vector<std::shared_ptr<ObjectClass>> chain;
+                            for (auto p = parentLock; p; p = p->parentClass.lock()) {
                                 chain.insert(chain.begin(), p);
                             }
-                            for (auto* parent : chain) {
+                            for (auto& parent : chain) {
                                 if (parent->ctorProto) {
                                     runCtor(parent->ctorProto.get(), args);
                                 }
