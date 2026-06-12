@@ -85,6 +85,7 @@ namespace vora {
     }
 
     void Lexer::error(const std::string& message) {
+        hadError = true;
         std::cerr << "[line " << line << ":" << column << "] Lexer error: " << message << "\n";
     }
 
@@ -101,6 +102,11 @@ namespace vora {
                 while (std::isxdigit(static_cast<unsigned char>(peek()))) {
                     advance();
                 }
+                // Reject "0x" with no following digits (would crash parser).
+                if (current - start == 2) {
+                    error("Malformed hex literal: expected digits after 0x");
+                    return;
+                }
                 addToken(TokenType::NUMBER);
                 return;
             }
@@ -109,6 +115,10 @@ namespace vora {
                 while (peek() >= '0' && peek() <= '7') {
                     advance();
                 }
+                if (current - start == 2) {
+                    error("Malformed octal literal: expected digits after 0o");
+                    return;
+                }
                 addToken(TokenType::NUMBER);
                 return;
             }
@@ -116,6 +126,10 @@ namespace vora {
                 advance(); // consume 'b'
                 while (peek() == '0' || peek() == '1') {
                     advance();
+                }
+                if (current - start == 2) {
+                    error("Malformed binary literal: expected digits after 0b");
+                    return;
                 }
                 addToken(TokenType::NUMBER);
                 return;
@@ -433,6 +447,10 @@ namespace vora {
             }
 
             advance();
+        }
+        // If we reach end of file with depth > 0, the comment was never closed.
+        if (depth > 0) {
+            error("Unterminated block comment (missing */)");
         }
     }
 

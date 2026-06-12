@@ -14,6 +14,8 @@ public:
 
     std::vector<Token> scanTokens();
 
+    bool hasError() const { return hadError; }
+
 private:
     std::string source;
 
@@ -25,6 +27,7 @@ private:
     int line = 1;
     int column = 1;       // current position column
     int startColumn = 1;  // column at `start` (used for token creation)
+    bool hadError = false;
 
 private:
     static const std::unordered_map<std::string, TokenType> keywords;

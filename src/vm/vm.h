@@ -28,6 +28,7 @@ struct CallFrame {
 
 class VM {
     static constexpr int STACK_MAX = 1024;
+    static constexpr int MAX_LOCALS_PER_FRAME = 256;
 
     Value stack[STACK_MAX];
     Value* stackTop;

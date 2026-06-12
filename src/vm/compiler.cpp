@@ -329,6 +329,7 @@ void Compiler::compileVariableOrPropertyRef(const std::string& name) {
     // Handles "varName" or "obj.prop.subprop"
     size_t dot = name.find('.');
     std::string base = name.substr(0, dot);
+    bool hasPropertyChain = (dot != std::string::npos);
 
     // Resolve base variable
     int localSlot = resolveLocal(base);
@@ -336,18 +337,27 @@ void Compiler::compileVariableOrPropertyRef(const std::string& name) {
         emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
                   static_cast<uint8_t>(localSlot));
     } else {
-        // Use safe global lookup: if the global doesn't exist, push the
-        // literal ${...} text as a fallback (matching interpreter behavior).
-        int slot = resolveGlobal(base);
-        std::string fallback = "${" + name + "}";
-        uint8_t fallbackIndex = identifierConstant(fallback);
-        emitByte(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL_SAFE));
-        emitByte(static_cast<uint8_t>(slot));
-        emitByte(fallbackIndex);
-        return;  // property chains on safe globals not yet supported
+        if (hasPropertyChain) {
+            // When there's a property chain on a global (e.g. ${obj.prop}),
+            // use a direct global lookup. If the global doesn't exist it's
+            // a runtime error — better than silently falling back to the
+            // literal ${...} text.
+            int slot = resolveGlobal(base);
+            emitByte(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL));
+            emitByte(static_cast<uint8_t>(slot));
+        } else {
+            // Simple global: use safe lookup with fallback to literal text.
+            int slot = resolveGlobal(base);
+            std::string fallback = "${" + name + "}";
+            uint8_t fallbackIndex = identifierConstant(fallback);
+            emitByte(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL_SAFE));
+            emitByte(static_cast<uint8_t>(slot));
+            emitByte(fallbackIndex);
+            return;  // no property chain to walk
+        }
     }
 
-    // Walk property chain (only reached for locals)
+    // Walk property chain
     while (dot != std::string::npos) {
         size_t start = dot + 1;
         dot = name.find('.', start);

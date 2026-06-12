@@ -52,6 +52,8 @@ void Parser::error(const std::string& message) {
 }
 
 void Parser::synchronize() {
+    // Guard: if called with no tokens consumed, previous() would OOB.
+    if (current == 0) return;
     // Skip tokens until we hit a likely statement boundary.
     while (!isAtEnd()) {
         // If we just passed a semicolon or closing brace, we're at a boundary.

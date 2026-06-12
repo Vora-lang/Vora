@@ -60,8 +60,10 @@ inline bool isNumeric(const Value& v) {
 }
 
 inline double toDouble(const Value& v) {
+    // Safe: returns 0.0 for non-numeric types instead of throwing.
     if (std::holds_alternative<int64_t>(v)) return static_cast<double>(std::get<int64_t>(v));
-    return std::get<double>(v);
+    if (std::holds_alternative<double>(v)) return std::get<double>(v);
+    return 0.0;  // non-numeric: bool, string, array, etc.
 }
 
 inline Value promoteToFloat(const Value& v) {

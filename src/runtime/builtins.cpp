@@ -45,6 +45,8 @@ void registerBuiltins(VM& vm) {
                 else if constexpr (std::is_same_v<T, std::shared_ptr<Array>>) return "array";
                 else if constexpr (std::is_same_v<T, std::shared_ptr<Callable>>) return "function";
                 else if constexpr (std::is_same_v<T, std::shared_ptr<ObjectInstance>>) return "object";
+                else if constexpr (std::is_same_v<T, std::shared_ptr<FunctionPrototype>>) return "function";
+                else if constexpr (std::is_same_v<T, std::shared_ptr<ClassData>>) return "class";
                 else return "unknown";
             }, arguments[0]);
         });
@@ -90,8 +92,13 @@ void registerBuiltins(VM& vm) {
                 return arg;
             if (std::holds_alternative<double>(arg))
                 return static_cast<int64_t>(std::trunc(std::get<double>(arg)));
-            if (std::holds_alternative<std::string>(arg))
-                return static_cast<int64_t>(std::trunc(std::stod(std::get<std::string>(arg))));
+            if (std::holds_alternative<std::string>(arg)) {
+                try {
+                    return static_cast<int64_t>(std::trunc(std::stod(std::get<std::string>(arg))));
+                } catch (const std::exception&) {
+                    return nullptr;
+                }
+            }
             if (std::holds_alternative<bool>(arg))
                 return std::get<bool>(arg) ? static_cast<int64_t>(1) : static_cast<int64_t>(0);
             return nullptr;
@@ -102,8 +109,13 @@ void registerBuiltins(VM& vm) {
             const auto& arg = arguments[0];
             if (std::holds_alternative<int64_t>(arg)) return static_cast<double>(std::get<int64_t>(arg));
             if (std::holds_alternative<double>(arg)) return arg;
-            if (std::holds_alternative<std::string>(arg))
-                return std::stod(std::get<std::string>(arg));
+            if (std::holds_alternative<std::string>(arg)) {
+                try {
+                    return std::stod(std::get<std::string>(arg));
+                } catch (const std::exception&) {
+                    return nullptr;
+                }
+            }
             if (std::holds_alternative<bool>(arg))
                 return std::get<bool>(arg) ? 1.0 : 0.0;
             return nullptr;
@@ -112,16 +124,23 @@ void registerBuiltins(VM& vm) {
     vm.defineNative("range", -1,
         [](const std::vector<Value>& arguments) -> Value {
             double start = 0, end = 0, step = 1;
-            if (arguments.size() == 1) {
+            // Guard toDouble against non-numeric arguments (would throw bad_variant_access).
+            if (arguments.size() >= 1) {
+                if (!isNumeric(arguments[0])) return nullptr;
                 end = toDouble(arguments[0]);
-            } else if (arguments.size() == 2) {
+            }
+            if (arguments.size() >= 2) {
+                if (!isNumeric(arguments[1])) return nullptr;
                 start = toDouble(arguments[0]);
                 end = toDouble(arguments[1]);
-            } else if (arguments.size() == 3) {
+            }
+            if (arguments.size() >= 3) {
+                if (!isNumeric(arguments[2])) return nullptr;
                 start = toDouble(arguments[0]);
                 end = toDouble(arguments[1]);
                 step = toDouble(arguments[2]);
             }
+            if (step == 0.0) return nullptr;  // infinite loop guard
             auto arr = std::make_shared<Array>();
             if (step > 0) {
                 for (double i = start; i < end; i += step)
@@ -146,11 +165,15 @@ void registerBuiltins(VM& vm) {
             int64_t n;
             if (std::holds_alternative<int64_t>(arguments[0]))
                 n = std::get<int64_t>(arguments[0]);
-            else
+            else if (std::holds_alternative<double>(arguments[0]))
                 n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
+            else
+                return nullptr;  // non-numeric argument
             if (n == 0) return std::string("0b0");
             bool neg = n < 0;
-            uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
+            // static_cast<uint64_t>(n) is well-defined even for negative n
+            // (two's complement). Avoids signed overflow UB when n == INT64_MIN.
+            uint64_t u = static_cast<uint64_t>(n);
             std::string bits;
             while (u > 0) { bits = (u & 1 ? '1' : '0') + bits; u >>= 1; }
             return (neg ? std::string("-0b") : std::string("0b")) + bits;
@@ -161,11 +184,13 @@ void registerBuiltins(VM& vm) {
             int64_t n;
             if (std::holds_alternative<int64_t>(arguments[0]))
                 n = std::get<int64_t>(arguments[0]);
-            else
+            else if (std::holds_alternative<double>(arguments[0]))
                 n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
+            else
+                return nullptr;  // non-numeric argument
             if (n == 0) return std::string("0o0");
             bool neg = n < 0;
-            uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
+            uint64_t u = static_cast<uint64_t>(n);
             std::string digits;
             while (u > 0) { digits = static_cast<char>('0' + (u & 7)) + digits; u >>= 3; }
             return (neg ? std::string("-0o") : std::string("0o")) + digits;
@@ -176,11 +201,13 @@ void registerBuiltins(VM& vm) {
             int64_t n;
             if (std::holds_alternative<int64_t>(arguments[0]))
                 n = std::get<int64_t>(arguments[0]);
-            else
+            else if (std::holds_alternative<double>(arguments[0]))
                 n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
+            else
+                return nullptr;  // non-numeric argument
             if (n == 0) return std::string("0x0");
             bool neg = n < 0;
-            uint64_t u = neg ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
+            uint64_t u = static_cast<uint64_t>(n);
             const char* hexChars = "0123456789abcdef";
             std::string digits;
             while (u > 0) { digits = hexChars[u & 0xF] + digits; u >>= 4; }
@@ -215,6 +242,7 @@ std::shared_ptr<NativeFunction> getArrayMethod(
     if (name == "insert") {
         return std::make_shared<NativeFunction>("insert", 2,
             [arr](const std::vector<Value>& args) -> Value {
+                if (!isNumeric(args[0])) return nullptr;
                 double idx = toDouble(args[0]);
                 if (idx < 0) idx = 0;
                 size_t pos = static_cast<size_t>(idx);
@@ -229,6 +257,7 @@ std::shared_ptr<NativeFunction> getArrayMethod(
     if (name == "remove") {
         return std::make_shared<NativeFunction>("remove", 1,
             [arr](const std::vector<Value>& args) -> Value {
+                if (!isNumeric(args[0])) return nullptr;
                 double idx = toDouble(args[0]);
                 if (idx < 0 || static_cast<size_t>(idx) >= arr->elements.size())
                     return nullptr;
@@ -281,8 +310,10 @@ std::shared_ptr<NativeFunction> getStringMethod(
             [str](const std::vector<Value>& args) -> Value {
                 int64_t len = static_cast<int64_t>(str.size());
                 if (len == 0) return std::string("");
-                int64_t start = (args.size() >= 1) ? static_cast<int64_t>(toDouble(args[0])) : 0;
-                int64_t end   = (args.size() >= 2) ? static_cast<int64_t>(toDouble(args[1])) : len;
+                int64_t start = (args.size() >= 1 && isNumeric(args[0]))
+                    ? static_cast<int64_t>(toDouble(args[0])) : 0;
+                int64_t end   = (args.size() >= 2 && isNumeric(args[1]))
+                    ? static_cast<int64_t>(toDouble(args[1])) : len;
                 if (start < 0) start += len;
                 if (end < 0) end += len;
                 if (start < 0) start = 0;

@@ -2,6 +2,8 @@
 #include "opcode.h"
 #include "compiler.h"
 
+#include "../runtime/callable.h"
+
 #include <cstdio>
 #include <cmath>
 
@@ -88,7 +90,16 @@ static std::string constantToString(const Value& value) {
     if (std::holds_alternative<std::shared_ptr<ClassData>>(value)) {
         return "<class " + std::get<std::shared_ptr<ClassData>>(value)->name + ">";
     }
-    return "[object]";
+    if (std::holds_alternative<std::shared_ptr<Array>>(value)) {
+        return "[array]";
+    }
+    if (std::holds_alternative<std::shared_ptr<Callable>>(value)) {
+        return "<callable>";
+    }
+    if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(value)) {
+        return "<instance " + std::get<std::shared_ptr<ObjectInstance>>(value)->className + ">";
+    }
+    return "[unknown]";
 }
 
 // =========================================================================

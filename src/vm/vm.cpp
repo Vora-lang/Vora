@@ -138,7 +138,7 @@ bool VM::throwException(const Value& value) {
         // Unwind call frames to the level where the handler was registered.
         while (frames.size() > handler.frameCount) {
             // Clear open upvalues for the frame being unwound
-            Value* frameEnd = frames.back().frameBase + 256;
+            Value* frameEnd = frames.back().frameBase + MAX_LOCALS_PER_FRAME;
             auto it = openUpvalues.begin();
             while (it != openUpvalues.end()) {
                 if (it->first >= frames.back().frameBase && it->first < frameEnd) {
@@ -248,6 +248,10 @@ bool VM::valuesEqual(const Value& a, const Value& b) {
         return std::get<std::shared_ptr<Callable>>(a) == std::get<std::shared_ptr<Callable>>(b);
     if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(a))
         return std::get<std::shared_ptr<ObjectInstance>>(a) == std::get<std::shared_ptr<ObjectInstance>>(b);
+    if (std::holds_alternative<std::shared_ptr<FunctionPrototype>>(a))
+        return std::get<std::shared_ptr<FunctionPrototype>>(a) == std::get<std::shared_ptr<FunctionPrototype>>(b);
+    if (std::holds_alternative<std::shared_ptr<ClassData>>(a))
+        return std::get<std::shared_ptr<ClassData>>(a) == std::get<std::shared_ptr<ClassData>>(b);
 
     return false;
 }
@@ -264,10 +268,19 @@ int VM::valuesCompare(const Value& a, const Value& b) {
 }
 
 Value VM::addValues(const Value& a, const Value& b) {
-    // int + int → int; otherwise promote to double
+    // int + int → int (with overflow detection); otherwise promote to double
     if (isNumeric(a) && isNumeric(b)) {
-        if (std::holds_alternative<int64_t>(a) && std::holds_alternative<int64_t>(b))
-            return std::get<int64_t>(a) + std::get<int64_t>(b);
+        if (std::holds_alternative<int64_t>(a) && std::holds_alternative<int64_t>(b)) {
+            int64_t av = std::get<int64_t>(a);
+            int64_t bv = std::get<int64_t>(b);
+            // Detect signed overflow: (av > 0 && bv > INT64_MAX - av) ||
+            //                       (av < 0 && bv < INT64_MIN - av)
+            if ((bv > 0 && av > INT64_MAX - bv) ||
+                (bv < 0 && av < INT64_MIN - bv)) {
+                return static_cast<double>(av) + static_cast<double>(bv);
+            }
+            return av + bv;
+        }
         return toDouble(a) + toDouble(b);
     }
 
@@ -456,6 +469,9 @@ InterpretResult VM::interpret(const Chunk& chunk) {
     frameBase = stack;
     frames.clear();
     catchHandlers.clear();
+    exceptionInFlight = false;
+    nativeError = false;
+    nativeErrorValue = nullptr;
     return run();
 }
 
@@ -473,18 +489,6 @@ InterpretResult VM::run() {
         if (throwException(_errMsg)) { goto dispatch; } \
         runtimeError(_errMsg); \
         return InterpretResult::RUNTIME_ERROR; \
-    } while (false)
-#define BINARY_OP(op, opName) \
-    do { \
-        Value b = pop(); \
-        Value a = pop(); \
-        if (std::holds_alternative<double>(a) && std::holds_alternative<double>(b)) { \
-            double da = std::get<double>(a); \
-            double db = std::get<double>(b); \
-            push((da op db)); \
-        } else { \
-            RUNTIME_ERROR_OR_THROW("Invalid operands for " opName); \
-        } \
     } while (false)
 
     for (;;) {
@@ -504,7 +508,11 @@ InterpretResult VM::run() {
             case OpCode::OP_POP: pop(); break;
             case OpCode::OP_POPN: {
                 uint8_t count = READ_BYTE();
-                stackTop -= count;
+                if (stackTop - stack < count) {
+                    RUNTIME_ERROR_OR_THROW("Stack underflow in OP_POPN");
+                } else {
+                    stackTop -= count;
+                }
                 break;
             }
 
@@ -528,7 +536,13 @@ InterpretResult VM::run() {
             // --- Unary ---
             case OpCode::OP_NEGATE: {
                 if (std::holds_alternative<int64_t>(peek(0))) {
-                    push(-std::get<int64_t>(pop()));
+                    int64_t v = std::get<int64_t>(pop());
+                    // -INT64_MIN overflows signed int64; promote to double.
+                    if (v == INT64_MIN) {
+                        push(-static_cast<double>(v));
+                    } else {
+                        push(-v);
+                    }
                 } else if (std::holds_alternative<double>(peek(0))) {
                     push(-std::get<double>(pop()));
                 } else {
@@ -819,7 +833,7 @@ InterpretResult VM::run() {
 
                 // Clear any open upvalues for this frame (locals going out of scope)
                 for (auto it = openUpvalues.begin(); it != openUpvalues.end(); ) {
-                    if (it->first >= frameBase && it->first < frameBase + 256) {
+                    if (it->first >= frameBase && it->first < frameBase + MAX_LOCALS_PER_FRAME) {
                         it = openUpvalues.erase(it);
                     } else {
                         ++it;
@@ -832,6 +846,13 @@ InterpretResult VM::run() {
                 ip = frame.returnIp;
                 frameBase = frame.frameBase;
                 currentChunk = frame.callerChunk;
+
+                // Clean up any catch handlers that belonged to the returning
+                // function (their frameCount references the now-popped frame).
+                while (!catchHandlers.empty() &&
+                       catchHandlers.back().frameCount > frames.size()) {
+                    catchHandlers.pop_back();
+                }
 
                 // Push return value
                 push(returnValue);
@@ -870,8 +891,11 @@ InterpretResult VM::run() {
                 Value* slot = frameBase + localSlot;
                 auto it = openUpvalues.find(slot);
                 if (it != openUpvalues.end()) {
-                    // Sync current stack value to the heap-allocated upvalue
+                    // Sync current stack value to the heap-allocated upvalue,
+                    // then remove from open upvalues so subsequent captures on
+                    // this slot create a new heap allocation.
                     *(it->second) = *slot;
+                    openUpvalues.erase(it);
                 }
                 break;
             }
@@ -1187,7 +1211,6 @@ InterpretResult VM::run() {
 
 #undef READ_BYTE
 #undef READ_CONSTANT
-#undef BINARY_OP
     } catch (const std::runtime_error& e) {
         runtimeError(e.what());
         return InterpretResult::RUNTIME_ERROR;
