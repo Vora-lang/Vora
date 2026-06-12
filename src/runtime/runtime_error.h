@@ -15,6 +15,7 @@ public:
     const Token& token() const noexcept;
 
     int line() const noexcept;
+    int column() const noexcept;
 
 private:
     Token token_;

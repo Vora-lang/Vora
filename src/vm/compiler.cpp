@@ -493,6 +493,7 @@ void Compiler::visitUnaryExpr(const UnaryExpr& expr) {
 
 void Compiler::visitVariableExpr(const VariableExpr& expr) {
     currentLine = expr.nameToken.line;
+    currentColumn = expr.nameToken.column;
 
     // Check locals first
     int localSlot = resolveLocal(expr.name);
@@ -515,6 +516,7 @@ void Compiler::visitVariableExpr(const VariableExpr& expr) {
 
 void Compiler::visitAssignmentExpr(const AssignmentExpr& expr) {
     currentLine = expr.nameToken.line;
+    currentColumn = expr.nameToken.column;
     expr.value->accept(*this);
 
     // Check locals first
@@ -539,6 +541,7 @@ void Compiler::visitAssignmentExpr(const AssignmentExpr& expr) {
 
 void Compiler::visitCallExpr(const CallExpr& expr) {
     currentLine = expr.paren.line;
+    currentColumn = expr.paren.column;
     // Compile callee first (goes below arguments on stack)
     expr.callee->accept(*this);
     // Compile arguments (pushed on top of callee)
@@ -551,6 +554,7 @@ void Compiler::visitCallExpr(const CallExpr& expr) {
 
 void Compiler::visitArrayExpr(const ArrayExpr& expr) {
     currentLine = expr.leftBracket.line;
+    currentColumn = expr.leftBracket.column;
     for (const auto& elem : expr.elements) {
         elem->accept(*this);
     }
@@ -560,6 +564,7 @@ void Compiler::visitArrayExpr(const ArrayExpr& expr) {
 
 void Compiler::visitIndexExpr(const IndexExpr& expr) {
     currentLine = expr.bracket.line;
+    currentColumn = expr.bracket.column;
     expr.array->accept(*this);
     expr.index->accept(*this);
     emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
@@ -567,6 +572,7 @@ void Compiler::visitIndexExpr(const IndexExpr& expr) {
 
 void Compiler::visitPropertyExpr(const PropertyExpr& expr) {
     currentLine = expr.dot.line;
+    currentColumn = expr.dot.column;
     expr.object->accept(*this);
     uint8_t nameIndex = identifierConstant(expr.property);
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), nameIndex);
@@ -574,6 +580,7 @@ void Compiler::visitPropertyExpr(const PropertyExpr& expr) {
 
 void Compiler::visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) {
     currentLine = expr.dot.line;
+    currentColumn = expr.dot.column;
     expr.object->accept(*this);
     expr.value->accept(*this);
     uint8_t nameIndex = identifierConstant(expr.property);
@@ -582,6 +589,7 @@ void Compiler::visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) {
 
 void Compiler::visitThisExpr(const ThisExpr& expr) {
     currentLine = expr.keyword.line;
+    currentColumn = expr.keyword.column;
     // 'this' is always a local variable at slot 0 in method scope
     int localSlot = resolveLocal("this");
     if (localSlot >= 0) {
@@ -597,6 +605,7 @@ void Compiler::visitThisExpr(const ThisExpr& expr) {
 
 void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
     currentLine = expr.op.line;
+    currentColumn = expr.op.column;
     Value delta = (expr.op.type == TokenType::PLUS_PLUS)
         ? Value(static_cast<int64_t>(1))
         : Value(static_cast<int64_t>(-1));
@@ -838,6 +847,8 @@ void Compiler::visitWhileStmt(const WhileStmt& stmt) {
 }
 
 void Compiler::visitForStmt(const ForStmt& stmt) {
+    currentLine = stmt.forToken.line;
+    currentColumn = stmt.forToken.column;
     // Desugar for-in into a while loop using local variables:
     //
     //   for x in iterable { body }
@@ -1111,7 +1122,9 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     }
 }
 
-void Compiler::visitBreakStmt(const BreakStmt& /*stmt*/) {
+void Compiler::visitBreakStmt(const BreakStmt& stmt) {
+    currentLine = stmt.keyword.line;
+    currentColumn = stmt.keyword.column;
     if (loopStack.empty()) {
         return;
     }
@@ -1145,7 +1158,9 @@ void Compiler::visitBreakStmt(const BreakStmt& /*stmt*/) {
     loopStack.back().breakJumps.push_back(jumpOffset);
 }
 
-void Compiler::visitContinueStmt(const ContinueStmt& /*stmt*/) {
+void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
+    currentLine = stmt.keyword.line;
+    currentColumn = stmt.keyword.column;
     if (loopStack.empty()) {
         return;
     }
@@ -1325,6 +1340,8 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
 }
 
 void Compiler::visitThrowStmt(const ThrowStmt& stmt) {
+    currentLine = stmt.keyword.line;
+    currentColumn = stmt.keyword.column;
     // Compile the value to throw
     stmt.value->accept(*this);
     emitByte(static_cast<uint8_t>(OpCode::OP_THROW));

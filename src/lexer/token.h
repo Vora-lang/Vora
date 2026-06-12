@@ -91,11 +91,13 @@ struct Token {
     TokenType type;
     std::string lexeme;
     int line;
+    int column;
 
-    Token(TokenType type, std::string lexeme, int line)
+    Token(TokenType type, std::string lexeme, int line, int column)
         : type(type),
           lexeme(std::move(lexeme)),
-          line(line) {
+          line(line),
+          column(column) {
     }
     std::string toString() const;
 };

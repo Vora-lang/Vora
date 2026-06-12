@@ -36,10 +36,11 @@ namespace vora {
     std::vector<Token> Lexer::scanTokens() {
         while (!isAtEnd()) {
             start = current;
+            startColumn = column;
             scanToken();
         }
 
-        tokens.emplace_back(TokenType::END_OF_FILE, "", line);
+        tokens.emplace_back(TokenType::END_OF_FILE, "", line, column);
         return tokens;
     }
 
@@ -58,6 +59,7 @@ namespace vora {
     }
 
     char Lexer::advance() {
+        column++;
         return source[current++];
     }
 
@@ -78,16 +80,17 @@ namespace vora {
         if (source[current] != expected) return false;
 
         current++;
+        column++;
         return true;
     }
 
     void Lexer::error(const std::string& message) {
-        std::cerr << "[line " << line << "] Lexer error: " << message << "\n";
+        std::cerr << "[line " << line << ":" << column << "] Lexer error: " << message << "\n";
     }
 
     void Lexer::addToken(TokenType type) {
         std::string text = source.substr(start, current - start);
-        tokens.emplace_back(type, text, line);
+        tokens.emplace_back(type, text, line, startColumn);
     }
 
     void Lexer::number() {
@@ -158,6 +161,7 @@ namespace vora {
         while (peek() != delimiter && !isAtEnd()) {
             if (peek() == '\n') {
                 line++;
+                column = 1;
             }
 
             char c = advance();
@@ -191,14 +195,14 @@ namespace vora {
         if (isAtEnd()) {
             error("Unterminated string");
             // Best-effort: emit what we have so far
-            tokens.emplace_back(TokenType::STRING, value, line);
+            tokens.emplace_back(TokenType::STRING, value, line, startColumn);
             return;
         }
 
         // closing quote
         advance();
 
-        tokens.emplace_back(TokenType::STRING, value, line);
+        tokens.emplace_back(TokenType::STRING, value, line, startColumn);
     }
 
     void Lexer::scanToken() {
@@ -379,6 +383,7 @@ namespace vora {
 
         case '\n':
             line++;
+            column = 1;
             break;
 
         default:
@@ -407,6 +412,7 @@ namespace vora {
         while (!isAtEnd()) {
             if (peek() == '\n') {
                 line++;
+                column = 1;
             }
 
             if (peek() == '/' && peekNext() == '*') {

@@ -61,7 +61,9 @@ uint8_t VM::readByte() {
 void VM::runtimeError(const std::string& message) {
     size_t offset = ip - currentChunk->code.data();
     int line = 0;
+    int column = 0;
     size_t pos = 0;
+    // Decode line RLE
     const auto& rleLines = currentChunk->lines;
     for (size_t i = 0; i < rleLines.size(); i += 2) {
         int runLen = rleLines[i];
@@ -71,7 +73,18 @@ void VM::runtimeError(const std::string& message) {
         }
         pos += runLen;
     }
-    std::cerr << "VM RuntimeError [" << line << "]: " << message << std::endl;
+    // Decode column RLE (same offset, same RLE structure)
+    pos = 0;
+    const auto& rleCols = currentChunk->columns;
+    for (size_t i = 0; i < rleCols.size(); i += 2) {
+        int runLen = rleCols[i];
+        if (offset < pos + static_cast<size_t>(runLen)) {
+            column = rleCols[i + 1];
+            break;
+        }
+        pos += runLen;
+    }
+    std::cerr << "VM RuntimeError [" << line << ":" << column << "]: " << message << std::endl;
 }
 
 void VM::runtimeError(const std::string& message, int line, int column) {

@@ -6,6 +6,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Tell MSVC to treat source files as UTF-8 (eliminates C4819 code page warnings
+# on systems where the default locale uses a narrow code page like 936/GBK).
+# /utf-8 sets both source and execution character sets to UTF-8.
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 # ──────────────────────────────────────────────────
 # Source files
 # ──────────────────────────────────────────────────

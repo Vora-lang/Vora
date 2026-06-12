@@ -374,6 +374,8 @@ int main(
         std::cerr
             << "RuntimeError ["
             << error.line()
+            << ":"
+            << error.column()
             << "]: "
             << error.what()
             << std::endl;

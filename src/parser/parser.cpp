@@ -48,7 +48,7 @@ std::unique_ptr<Program> Parser::parse() {
 
 void Parser::error(const std::string& message) {
     hadError = true;
-    std::cerr << "[line " << peek().line << "] Error: " << message << "\n";
+    std::cerr << "[line " << peek().line << ":" << peek().column << "] Error: " << message << "\n";
 }
 
 void Parser::synchronize() {
@@ -983,7 +983,7 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
                 default: break;
             }
 
-            Token baseToken(baseOp, op.lexeme.substr(0, 1), op.line);
+            Token baseToken(baseOp, op.lexeme.substr(0, 1), op.line, op.column);
 
             // Build the binary: left op right
             auto bin = std::make_unique<BinaryExpr>(

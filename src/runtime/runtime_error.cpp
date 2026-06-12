@@ -18,4 +18,8 @@ int RuntimeError::line() const noexcept {
     return token_.line;
 }
 
+int RuntimeError::column() const noexcept {
+    return token_.column;
+}
+
 }

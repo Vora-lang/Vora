@@ -145,11 +145,7 @@ size_t Chunk::addConstant(Value value) {
         if (existing.index() != value.index()) continue;
 
         if (std::holds_alternative<std::nullptr_t>(value)) {
-            for (size_t j = 0; j < constants.size(); j++) {
-                if (std::holds_alternative<std::nullptr_t>(constants[j])) return j;
-            }
-            constants.push_back(value);
-            return constants.size() - 1;
+            return i;
         }
         if (std::holds_alternative<bool>(value) && std::get<bool>(existing) == std::get<bool>(value)) return i;
         if (std::holds_alternative<int64_t>(value) && std::holds_alternative<int64_t>(existing) && std::get<int64_t>(existing) == std::get<int64_t>(value)) return i;

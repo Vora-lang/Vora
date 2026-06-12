@@ -23,6 +23,8 @@ private:
     size_t current = 0;
 
     int line = 1;
+    int column = 1;       // current position column
+    int startColumn = 1;  // column at `start` (used for token creation)
 
 private:
     static const std::unordered_map<std::string, TokenType> keywords;
