@@ -14,6 +14,7 @@
 
 #include "native_function.h"
 #include "value.h"
+#include "vm/value_ops.h"
 #include "vm/vm.h"
 
 namespace vora {
@@ -74,7 +75,7 @@ void registerBuiltins(VM& vm) {
     vm.defineNative("assert", -1,
         [&vm](const std::vector<Value>& arguments) -> Value {
             if (arguments.empty()) return nullptr;
-            if (!VM::isTruthy(arguments[0])) {
+            if (!isTruthy(arguments[0])) {
                 std::string msg = "Assertion failed";
                 if (arguments.size() >= 2 && std::holds_alternative<std::string>(arguments[1])) {
                     msg = std::get<std::string>(arguments[1]);

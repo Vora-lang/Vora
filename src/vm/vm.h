@@ -95,11 +95,7 @@ public:
     bool nativeError = false;
     Value nativeErrorValue;
 
-    // Value operations
-    Value addValues(const Value& a, const Value& b);
-    static bool isTruthy(const Value& value);
-    static bool valuesEqual(const Value& a, const Value& b);
-    int valuesCompare(const Value& a, const Value& b);
+    // Value operations are in value_ops.h (free functions).
 
     // Exception throw (public — callable from native function context).
     // Returns true if caught by a catch handler, false if uncaught.

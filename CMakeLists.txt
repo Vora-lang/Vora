@@ -40,6 +40,9 @@ add_library(vora_lib OBJECT
 
     src/vm/chunk.cpp
     src/vm/compiler.cpp
+    src/vm/compiler_expr.cpp
+    src/vm/compiler_stmt.cpp
+    src/vm/value_ops.cpp
     src/vm/vm.cpp
 )
 

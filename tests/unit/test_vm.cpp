@@ -7,6 +7,7 @@
 #include "doctest.h"
 #include "lexer/lexer.h"
 #include "vm/vm.h"
+#include "vm/value_ops.h"
 #include "vm/compiler.h"
 #include "parser/parser.h"
 #include "runtime/builtins.h"
@@ -38,36 +39,36 @@ static std::pair<InterpretResult, VM> run(const std::string& src) {
 // ============================================================================
 
 TEST_CASE("vm_isTruthy_null") {
-    CHECK_FALSE(VM::isTruthy(Value(nullptr)));
+    CHECK_FALSE(isTruthy(Value(nullptr)));
 }
 
 TEST_CASE("vm_isTruthy_bool") {
-    CHECK(VM::isTruthy(Value(true)));
-    CHECK_FALSE(VM::isTruthy(Value(false)));
+    CHECK(isTruthy(Value(true)));
+    CHECK_FALSE(isTruthy(Value(false)));
 }
 
 TEST_CASE("vm_isTruthy_int") {
-    CHECK_FALSE(VM::isTruthy(Value(static_cast<int64_t>(0))));
-    CHECK(VM::isTruthy(Value(static_cast<int64_t>(1))));
-    CHECK(VM::isTruthy(Value(static_cast<int64_t>(-1))));
-    CHECK(VM::isTruthy(Value(static_cast<int64_t>(42))));
+    CHECK_FALSE(isTruthy(Value(static_cast<int64_t>(0))));
+    CHECK(isTruthy(Value(static_cast<int64_t>(1))));
+    CHECK(isTruthy(Value(static_cast<int64_t>(-1))));
+    CHECK(isTruthy(Value(static_cast<int64_t>(42))));
 }
 
 TEST_CASE("vm_isTruthy_double") {
-    CHECK_FALSE(VM::isTruthy(Value(0.0)));
-    CHECK(VM::isTruthy(Value(0.1)));
-    CHECK(VM::isTruthy(Value(-1.5)));
+    CHECK_FALSE(isTruthy(Value(0.0)));
+    CHECK(isTruthy(Value(0.1)));
+    CHECK(isTruthy(Value(-1.5)));
 }
 
 TEST_CASE("vm_isTruthy_string") {
-    CHECK_FALSE(VM::isTruthy(Value(std::string(""))));
-    CHECK(VM::isTruthy(Value(std::string("hello"))));
-    CHECK(VM::isTruthy(Value(std::string("0"))));
+    CHECK_FALSE(isTruthy(Value(std::string(""))));
+    CHECK(isTruthy(Value(std::string("hello"))));
+    CHECK(isTruthy(Value(std::string("0"))));
 }
 
 TEST_CASE("vm_isTruthy_array") {
     auto arr = std::make_shared<Array>();
-    CHECK(VM::isTruthy(Value(arr)));  // empty array is truthy
+    CHECK(isTruthy(Value(arr)));  // empty array is truthy
 }
 
 // ============================================================================
@@ -75,40 +76,40 @@ TEST_CASE("vm_isTruthy_array") {
 // ============================================================================
 
 TEST_CASE("vm_valuesEqual_null") {
-    CHECK(VM::valuesEqual(Value(nullptr), Value(nullptr)));
+    CHECK(valuesEqual(Value(nullptr), Value(nullptr)));
 }
 
 TEST_CASE("vm_valuesEqual_bool") {
-    CHECK(VM::valuesEqual(Value(true), Value(true)));
-    CHECK_FALSE(VM::valuesEqual(Value(true), Value(false)));
+    CHECK(valuesEqual(Value(true), Value(true)));
+    CHECK_FALSE(valuesEqual(Value(true), Value(false)));
 }
 
 TEST_CASE("vm_valuesEqual_int64") {
-    CHECK(VM::valuesEqual(Value(static_cast<int64_t>(42)), Value(static_cast<int64_t>(42))));
-    CHECK_FALSE(VM::valuesEqual(Value(static_cast<int64_t>(42)), Value(static_cast<int64_t>(43))));
+    CHECK(valuesEqual(Value(static_cast<int64_t>(42)), Value(static_cast<int64_t>(42))));
+    CHECK_FALSE(valuesEqual(Value(static_cast<int64_t>(42)), Value(static_cast<int64_t>(43))));
 }
 
 TEST_CASE("vm_valuesEqual_double") {
-    CHECK(VM::valuesEqual(Value(3.14), Value(3.14)));
-    CHECK_FALSE(VM::valuesEqual(Value(3.14), Value(2.71)));
+    CHECK(valuesEqual(Value(3.14), Value(3.14)));
+    CHECK_FALSE(valuesEqual(Value(3.14), Value(2.71)));
 }
 
 TEST_CASE("vm_valuesEqual_string") {
-    CHECK(VM::valuesEqual(Value(std::string("abc")), Value(std::string("abc"))));
-    CHECK_FALSE(VM::valuesEqual(Value(std::string("abc")), Value(std::string("def"))));
+    CHECK(valuesEqual(Value(std::string("abc")), Value(std::string("abc"))));
+    CHECK_FALSE(valuesEqual(Value(std::string("abc")), Value(std::string("def"))));
 }
 
 TEST_CASE("vm_valuesEqual_cross_type_numeric") {
     // int == double (both numeric)
-    CHECK(VM::valuesEqual(Value(static_cast<int64_t>(42)), Value(42.0)));
-    CHECK(VM::valuesEqual(Value(0.0), Value(static_cast<int64_t>(0))));
+    CHECK(valuesEqual(Value(static_cast<int64_t>(42)), Value(42.0)));
+    CHECK(valuesEqual(Value(0.0), Value(static_cast<int64_t>(0))));
 }
 
 TEST_CASE("vm_valuesEqual_cross_type_non_numeric") {
     // null != int 0 (different type indices)
-    CHECK_FALSE(VM::valuesEqual(Value(nullptr), Value(static_cast<int64_t>(0))));
+    CHECK_FALSE(valuesEqual(Value(nullptr), Value(static_cast<int64_t>(0))));
     // bool != int 1
-    CHECK_FALSE(VM::valuesEqual(Value(true), Value(static_cast<int64_t>(1))));
+    CHECK_FALSE(valuesEqual(Value(true), Value(static_cast<int64_t>(1))));
 }
 
 // ============================================================================
@@ -116,13 +117,13 @@ TEST_CASE("vm_valuesEqual_cross_type_non_numeric") {
 // ============================================================================
 
 TEST_CASE("vm_valuesCompare_numeric") {
-    CHECK(VM().valuesCompare(Value(static_cast<int64_t>(1)), Value(static_cast<int64_t>(2))) < 0);
-    CHECK(VM().valuesCompare(Value(static_cast<int64_t>(2)), Value(static_cast<int64_t>(1))) > 0);
-    CHECK(VM().valuesCompare(Value(static_cast<int64_t>(1)), Value(1.0)) == 0);
+    CHECK(valuesCompare(Value(static_cast<int64_t>(1)), Value(static_cast<int64_t>(2))) < 0);
+    CHECK(valuesCompare(Value(static_cast<int64_t>(2)), Value(static_cast<int64_t>(1))) > 0);
+    CHECK(valuesCompare(Value(static_cast<int64_t>(1)), Value(1.0)) == 0);
 }
 
 TEST_CASE("vm_valuesCompare_non_numeric_returns_zero") {
-    CHECK(VM().valuesCompare(Value(std::string("a")), Value(std::string("b"))) == 0);
+    CHECK(valuesCompare(Value(std::string("a")), Value(std::string("b"))) == 0);
 }
 
 // ============================================================================
@@ -130,43 +131,48 @@ TEST_CASE("vm_valuesCompare_non_numeric_returns_zero") {
 // ============================================================================
 
 TEST_CASE("vm_addValues_int_plus_int") {
-    VM vm;
-    Value result = vm.addValues(Value(static_cast<int64_t>(3)),
-                                Value(static_cast<int64_t>(4)));
+    bool err = false;
+    Value result = addValues(Value(static_cast<int64_t>(3)),
+                             Value(static_cast<int64_t>(4)), err);
+    CHECK_FALSE(err);
     CHECK(std::holds_alternative<int64_t>(result));
     CHECK(std::get<int64_t>(result) == 7);
 }
 
 TEST_CASE("vm_addValues_int_plus_double") {
-    VM vm;
-    Value result = vm.addValues(Value(static_cast<int64_t>(3)), Value(4.5));
+    bool err = false;
+    Value result = addValues(Value(static_cast<int64_t>(3)), Value(4.5), err);
+    CHECK_FALSE(err);
     CHECK(std::holds_alternative<double>(result));
     CHECK(std::get<double>(result) == 7.5);
 }
 
 TEST_CASE("vm_addValues_string_concat") {
-    VM vm;
-    Value result = vm.addValues(Value(std::string("hello ")),
-                                Value(std::string("world")));
+    bool err = false;
+    Value result = addValues(Value(std::string("hello ")),
+                             Value(std::string("world")), err);
+    CHECK_FALSE(err);
     CHECK(std::holds_alternative<std::string>(result));
     CHECK(std::get<std::string>(result) == "hello world");
 }
 
 TEST_CASE("vm_addValues_string_plus_int") {
-    VM vm;
-    Value result = vm.addValues(Value(std::string("x=")),
-                                Value(static_cast<int64_t>(42)));
+    bool err = false;
+    Value result = addValues(Value(std::string("x=")),
+                             Value(static_cast<int64_t>(42)), err);
+    CHECK_FALSE(err);
     CHECK(std::holds_alternative<std::string>(result));
     CHECK(std::get<std::string>(result) == "x=42");
 }
 
 TEST_CASE("vm_addValues_array_concat") {
-    VM vm;
+    bool err = false;
     auto a = std::make_shared<Array>();
     a->elements.push_back(Value(static_cast<int64_t>(1)));
     auto b = std::make_shared<Array>();
     b->elements.push_back(Value(static_cast<int64_t>(2)));
-    Value result = vm.addValues(Value(a), Value(b));
+    Value result = addValues(Value(a), Value(b), err);
+    CHECK_FALSE(err);
     CHECK(std::holds_alternative<std::shared_ptr<Array>>(result));
     auto arr = std::get<std::shared_ptr<Array>>(result);
     REQUIRE(arr->elements.size() == 2);
