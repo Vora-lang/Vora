@@ -215,6 +215,9 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
     expr.left->accept(*this);
     expr.right->accept(*this);
 
+    currentLine = expr.op.line;
+    currentColumn = expr.op.column;
+
     switch (expr.op.type) {
         // OP_ADD is kept general (handles strings, arrays, numbers)
         case TokenType::PLUS:             emitByte(static_cast<uint8_t>(OpCode::OP_ADD)); break;

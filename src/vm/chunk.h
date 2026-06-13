@@ -1,12 +1,34 @@
 #pragma once
 
 #include <cstdint>
+#include <iostream>
 #include <string>
 #include <vector>
 
 #include "../runtime/value.h"
 
 namespace vora {
+
+// Print a source line with a caret marker at the given position.
+// `source`  = full source text (may be empty — function prints nothing)
+// `line`    = 1-indexed line number
+// `column`  = 1-indexed column within that line
+// `length`  = number of characters to underline (1 = single caret, >1 = tilde span)
+// `label`   = message label printed next to the caret line (e.g. "Error: Division by zero")
+// `prefix`  = "Error" / "Warning" / etc. for the --> line
+void printSourceLine(std::ostream& out,
+                     const std::string& source,
+                     int line, int column, int length,
+                     const std::string& label,
+                     const std::string& prefix = "Error");
+
+// Convenience: print source snippet for a single-point error.
+inline void printSourceError(std::ostream& out,
+                             const std::string& source,
+                             int line, int column,
+                             const std::string& message) {
+    printSourceLine(out, source, line, column, 1, message, "Error");
+}
 
 // Chunk holds a compiled bytecode sequence: code bytes, constant pool, and
 // run-length-encoded line/column tables for debug disassembly.
@@ -30,6 +52,7 @@ public:
     std::vector<Value> constants;
     std::vector<int> lines;   // RLE line numbers (public for VM runtime errors)
     std::vector<int> columns; // RLE column numbers
+    std::string source;       // original source text (for error display)
 
 private:
     void writeLineColumn(int line, int column);

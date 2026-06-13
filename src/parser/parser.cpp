@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "../ast/stmt.h"
+#include "../vm/chunk.h"  // for printSourceLine()
 #include <iostream>
 
 namespace vora {
@@ -48,7 +49,9 @@ std::unique_ptr<Program> Parser::parse() {
 
 void Parser::error(const std::string& message) {
     hadError = true;
-    std::cerr << "[line " << peek().line << ":" << peek().column << "] Error: " << message << "\n";
+    printSourceLine(std::cerr, sourceText, peek().line, peek().column,
+                    static_cast<int>(peek().lexeme.size()),
+                    message, "ParseError");
 }
 
 void Parser::synchronize() {

@@ -18,8 +18,12 @@ public:
 
     bool hasError() const { return hadError; }
 
+    // Set source text for error display (parser errors show source snippets).
+    void setSource(const std::string& source) { sourceText = source; }
+
 private:
     std::vector<Token> tokens;
+    std::string sourceText;
 
     size_t current = 0;
 

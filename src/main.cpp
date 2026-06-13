@@ -50,6 +50,7 @@ static int runScript(
     }
 
     Parser parser(tokens);
+    parser.setSource(source);
     auto program = parser.parse();
 
     if (!program) {
@@ -64,6 +65,7 @@ static int runScript(
 
     // Bytecode VM path
     Compiler compiler;
+    compiler.setSource(source);
     Chunk chunk = compiler.compile(program.get());
 
     if (compiler.hadError) {
@@ -114,6 +116,7 @@ static void runREPL() {
         Lexer lexer(line);
         auto tokens = lexer.scanTokens();
         Parser parser(tokens);
+        parser.setSource(line);
         auto program = parser.parse();
 
         if (!program) {
@@ -121,6 +124,7 @@ static void runREPL() {
         }
 
         Compiler compiler;
+        compiler.setSource(line);
         Chunk chunk = compiler.compile(program.get());
 
         if (compiler.hadError) {

@@ -38,9 +38,11 @@ void Compiler::patchJump(size_t operandOffset) {
     size_t jumpSize = jumpEnd - operandOffset - 2;
 
     if (jumpSize > UINT16_MAX) {
-        std::cerr << "Compiler error: jump offset " << jumpSize
-                  << " exceeds 16-bit limit (UINT16_MAX=" << UINT16_MAX
-                  << "). Function body too large." << std::endl;
+        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                        "Jump offset " + std::to_string(jumpSize) +
+                        " exceeds 16-bit limit (max " + std::to_string(UINT16_MAX) +
+                        "). Function body too large.",
+                        "CompilerError");
         hadError = true;
         return;
     }
@@ -55,8 +57,11 @@ void Compiler::emitLoop(size_t loopStart) {
 
     size_t offset = chunk.code.size() - loopStart + 2;
     if (offset > UINT16_MAX) {
-        std::cerr << "Compiler error: loop offset " << offset
-                  << " exceeds 16-bit limit. Loop body too large." << std::endl;
+        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                        "Loop offset " + std::to_string(offset) +
+                        " exceeds 16-bit limit (max " + std::to_string(UINT16_MAX) +
+                        "). Loop body too large.",
+                        "CompilerError");
         hadError = true;
         return;
     }
@@ -72,8 +77,10 @@ uint8_t Compiler::makeConstant(Value value) {
     // (e.g. property names, closure/class indices). OP_CONSTANT_LONG handles
     // value constants with 16-bit indices — see Chunk::writeConstant().
     if (index > UINT8_MAX) {
-        std::cerr << "Compiler error: constant pool overflow ("
-                  << index << " entries, max 256)." << std::endl;
+        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                        "Constant pool overflow (" + std::to_string(index) +
+                        " entries, max 256).",
+                        "CompilerError");
         hadError = true;
         return 0;
     }

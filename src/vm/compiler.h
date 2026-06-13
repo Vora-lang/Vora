@@ -100,6 +100,9 @@ public:
     // Access to compiled chunk
     const Chunk& getChunk() const { return chunk; }
 
+    // Set source text for error display (compiler errors show source snippets)
+    void setSource(const std::string& source) { chunk.source = source; }
+
     // Global variable interning: maps name → slot for direct VM indexing
     const std::vector<std::string>& getGlobalNames() const { return globalNames; }
 

@@ -255,6 +255,7 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     // Create a separate compiler for the function body
     Compiler fnCompiler;
     fnCompiler.enclosing = this;
+    fnCompiler.chunk.source = chunk.source;  // propagate source for error display
 
     // Function body starts a new scope with parameters as locals
     fnCompiler.beginScope();
@@ -372,6 +373,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
         if (auto funcStmt = dynamic_cast<const FuncStmt*>(methodStmt.get())) {
             Compiler methodCompiler;
             methodCompiler.enclosing = this;
+            methodCompiler.chunk.source = chunk.source;  // propagate source for error display
 
             // Count required params for methods
             int mRequiredArity = 0;
@@ -450,6 +452,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
 
     Compiler ctorCompiler;
     ctorCompiler.enclosing = this;
+    ctorCompiler.chunk.source = chunk.source;  // propagate source for error display
     ctorCompiler.beginScope();
     ctorCompiler.addLocal("this");  // slot 0
     for (const auto& param : stmt.params) {

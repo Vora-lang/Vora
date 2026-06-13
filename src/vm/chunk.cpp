@@ -364,4 +364,78 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
     }
 }
 
+// =========================================================================
+// Source line printer — used by VM, compiler, parser, and lexer errors
+// =========================================================================
+
+void printSourceLine(std::ostream& out,
+                     const std::string& source,
+                     int line, int column, int length,
+                     const std::string& label,
+                     const std::string& prefix) {
+    if (source.empty() || line < 1 || column < 1) return;
+
+    // Extract line `line` from source (1-indexed).
+    size_t pos = 0;
+    int currentLine = 1;
+    while (currentLine < line && pos < source.size()) {
+        if (source[pos] == '\n') currentLine++;
+        pos++;
+    }
+    if (currentLine != line) return;  // line not found
+
+    size_t lineStart = pos;
+    size_t lineEnd = source.find('\n', lineStart);
+    if (lineEnd == std::string::npos) lineEnd = source.size();
+    std::string sourceLine = source.substr(lineStart, lineEnd - lineStart);
+
+    // Replace tabs with spaces in display to keep caret alignment correct.
+    // We keep a parallel translation so column mapping works.
+    std::string displayLine;
+    int displayCol = 1;
+    for (size_t i = 0; i < sourceLine.size(); i++) {
+        if (sourceLine[i] == '\t') {
+            displayLine += "    ";  // 4-space tab stop
+            if (static_cast<int>(i + 1) < column) displayCol += 4;
+        } else {
+            displayLine += sourceLine[i];
+            if (static_cast<int>(i + 1) < column) displayCol++;
+        }
+    }
+
+    int caretCol = displayCol;
+
+    // Print header
+    out << "  --> " << line << ":" << column << "\n";
+
+    // Print gutter + ruler line
+    out << "     |\n";
+
+    // Print line number + source
+    // Right-align line number in 3-char field, but limit to 999 lines.
+    if (line < 1000) {
+        char buf[8];
+        std::snprintf(buf, sizeof(buf), "%3d", line);
+        out << " " << buf << " | " << displayLine << "\n";
+    } else {
+        out << " ... | " << displayLine << "\n";
+    }
+
+    // Print caret(s)
+    out << "     | ";
+    for (int i = 1; i < caretCol; i++) out << ' ';
+    if (length <= 1) {
+        out << "^\n";
+    } else {
+        out << '^';
+        for (int i = 1; i < length && (caretCol + i) <= static_cast<int>(displayLine.size()) + 1; i++) {
+            out << '~';
+        }
+        out << '\n';
+    }
+
+    // Print label
+    out << "     = " << prefix << ": " << label << "\n";
+}
+
 } // namespace vora

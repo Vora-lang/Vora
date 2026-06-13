@@ -3,6 +3,8 @@
 #include <cctype>
 #include <iostream>
 
+#include "../vm/chunk.h"  // for printSourceLine()
+
 namespace vora {
 
     const std::unordered_map<std::string, TokenType> Lexer::keywords = {
@@ -87,7 +89,8 @@ namespace vora {
 
     void Lexer::error(const std::string& message) {
         hadError = true;
-        std::cerr << "[line " << line << ":" << column << "] Lexer error: " << message << "\n";
+        printSourceLine(std::cerr, source, line, column, 1,
+                        message, "LexerError");
     }
 
     void Lexer::addToken(TokenType type) {

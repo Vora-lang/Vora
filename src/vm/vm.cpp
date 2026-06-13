@@ -185,7 +185,11 @@ void VM::runtimeError(const std::string& message) {
     size_t offset = ip - currentChunk->code.data();
     int line = 0, column = 0;
     decodeLineFromChunk(*currentChunk, offset, line, column);
-    std::cerr << "VM RuntimeError [" << line << ":" << column << "]: " << message << std::endl;
+
+    // Print source snippet with caret
+    printSourceLine(std::cerr, currentChunk->source, line, column, 1,
+                    message, "RuntimeError");
+
     if (!lastErrorStackTrace.empty()) {
         std::cerr << lastErrorStackTrace;
         lastErrorStackTrace.clear();
@@ -195,7 +199,15 @@ void VM::runtimeError(const std::string& message) {
 }
 
 void VM::runtimeError(const std::string& message, int line, int column) {
-    std::cerr << "VM RuntimeError [" << line << ":" << column << "]: " << message << std::endl;
+    // Print source snippet with caret (uses currentChunk for source if available)
+    if (currentChunk) {
+        printSourceLine(std::cerr, currentChunk->source, line, column, 1,
+                        message, "RuntimeError");
+    } else {
+        std::cerr << "VM RuntimeError [" << line << ":" << column << "]: "
+                  << message << "\n";
+    }
+
     if (!lastErrorStackTrace.empty()) {
         std::cerr << lastErrorStackTrace;
         lastErrorStackTrace.clear();
