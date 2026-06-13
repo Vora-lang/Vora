@@ -72,9 +72,11 @@ public:
     void visitAssignmentExpr(const AssignmentExpr& expr) override;
     void visitCallExpr(const CallExpr& expr) override;
     void visitArrayExpr(const ArrayExpr& expr) override;
+    void visitDictExpr(const DictExpr& expr) override;
     void visitIndexExpr(const IndexExpr& expr) override;
     void visitPropertyExpr(const PropertyExpr& expr) override;
     void visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) override;
+    void visitIndexAssignmentExpr(const IndexAssignmentExpr& expr) override;
     void visitThisExpr(const ThisExpr& expr) override;
     void visitSuperExpr(const SuperExpr& expr) override;
     void visitIncDecExpr(const IncDecExpr& expr) override;

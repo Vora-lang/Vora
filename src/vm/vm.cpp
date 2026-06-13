@@ -108,34 +108,33 @@ static std::vector<std::shared_ptr<ObjectClass>> computeC3MRO(
 // =========================================================================
 
 VM::VM() {
+    stack.reserve(1024);
     resetStack();
-    frameBase = stack;
+    frameBaseIndex = 0;
 }
 
 void VM::resetStack() {
-    stackTop = stack;
+    stackTopIndex = 0;
 }
 
 void VM::push(Value value) {
-    if (stackTop >= stack + STACK_MAX) {
-        throw std::runtime_error("VM: Stack overflow (STACK_MAX=" +
-            std::to_string(STACK_MAX) + ")");
-    }
-    *stackTop = std::move(value);
-    stackTop++;
+    if (stackTopIndex < stack.size())
+        stack[stackTopIndex] = std::move(value);
+    else
+        stack.push_back(std::move(value));
+    stackTopIndex++;
 }
 
 Value VM::pop() {
-    stackTop--;
-    return std::move(*stackTop);
+    return std::move(stack[--stackTopIndex]);
 }
 
 Value& VM::peek(int distance) {
-    return *(stackTop - 1 - distance);
+    return stack[stackTopIndex - 1 - distance];
 }
 
 const Value& VM::peek(int distance) const {
-    return *(stackTop - 1 - distance);
+    return stack[stackTopIndex - 1 - distance];
 }
 
 uint16_t VM::readShort() {
@@ -269,15 +268,15 @@ bool VM::runtimeErrorOrThrow(const std::string& message) {
     return false;  // not caught
 }
 
-std::shared_ptr<Value> VM::captureUpvalue(Value* slot) {
+std::shared_ptr<Value> VM::captureUpvalue(size_t slotIndex) {
     // Check if this slot already has an open upvalue
-    auto it = openUpvalues.find(slot);
+    auto it = openUpvalues.find(slotIndex);
     if (it != openUpvalues.end()) {
         return it->second;
     }
     // Create a new heap-allocated value copying the current stack value
-    auto uv = std::make_shared<Value>(*slot);
-    openUpvalues[slot] = uv;
+    auto uv = std::make_shared<Value>(stack[slotIndex]);
+    openUpvalues[slotIndex] = uv;
     return uv;
 }
 
@@ -295,17 +294,10 @@ bool VM::throwException(const Value& value) {
         auto handler = catchHandlers.back();  // peek only
 
         // Unwind stack to handler's frame base
-        stackTop = handler.targetFrameBase;
+        stackTopIndex = handler.targetFrameBase;
 
-        // Push the thrown value (guarded — stack overflow is non-recoverable
-        // at this point since we just unwound the stack).
-        try {
-            push(value);
-        } catch (const std::runtime_error&) {
-            // Double-fault: stack is still full after unwind. Report and bail.
-            runtimeError("Stack overflow during exception handling");
-            return false;
-        }
+        // Push the thrown value onto the stack.
+        push(value);
 
         // Jump to catch handler
         ip = handler.targetIp;
@@ -314,7 +306,7 @@ bool VM::throwException(const Value& value) {
         // Unwind call frames to the level where the handler was registered.
         while (frames.size() > handler.frameCount) {
             // Clear open upvalues for the frame being unwound
-            Value* frameEnd = frames.back().frameBase + MAX_LOCALS_PER_FRAME;
+            size_t frameEnd = frames.back().frameBase + MAX_LOCALS_PER_FRAME;
             auto it = openUpvalues.begin();
             while (it != openUpvalues.end()) {
                 if (it->first >= frames.back().frameBase && it->first < frameEnd) {
@@ -326,9 +318,9 @@ bool VM::throwException(const Value& value) {
             frames.pop_back();
         }
         if (!frames.empty()) {
-            frameBase = frames.back().frameBase;
+            frameBaseIndex = frames.back().frameBase;
         } else {
-            frameBase = stack;  // top-level
+            frameBaseIndex = 0;  // top-level
         }
 
         exceptionInFlight = true;
@@ -381,6 +373,14 @@ void VM::initGlobals(const std::vector<std::string>& names) {
             if (std::holds_alternative<std::string>(arg)) {
                 return static_cast<double>(std::get<std::string>(arg).size());
             }
+            if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(arg)) {
+                return static_cast<double>(
+                    std::get<std::shared_ptr<ObjectInstance>>(arg)->properties.size());
+            }
+            if (std::holds_alternative<std::shared_ptr<Dict>>(arg)) {
+                return static_cast<double>(
+                    std::get<std::shared_ptr<Dict>>(arg)->pairs.size());
+            }
             return 0.0;
         });
 }
@@ -421,6 +421,8 @@ bool VM::valuesEqual(const Value& a, const Value& b) {
 
     if (std::holds_alternative<std::shared_ptr<Array>>(a))
         return std::get<std::shared_ptr<Array>>(a) == std::get<std::shared_ptr<Array>>(b);
+    if (std::holds_alternative<std::shared_ptr<Dict>>(a))
+        return std::get<std::shared_ptr<Dict>>(a) == std::get<std::shared_ptr<Dict>>(b);
     if (std::holds_alternative<std::shared_ptr<Callable>>(a))
         return std::get<std::shared_ptr<Callable>>(a) == std::get<std::shared_ptr<Callable>>(b);
     if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(a))
@@ -482,6 +484,17 @@ Value VM::addValues(const Value& a, const Value& b) {
         return result;
     }
 
+    if (std::holds_alternative<std::shared_ptr<Dict>>(a) && std::holds_alternative<std::shared_ptr<Dict>>(b)) {
+        auto result = std::make_shared<Dict>();
+        const auto& leftDict = std::get<std::shared_ptr<Dict>>(a)->pairs;
+        const auto& rightDict = std::get<std::shared_ptr<Dict>>(b)->pairs;
+        result->pairs = leftDict;
+        for (const auto& [k, v] : rightDict) {
+            result->pairs[k] = v;  // right overwrites left
+        }
+        return result;
+    }
+
     if (std::holds_alternative<std::shared_ptr<Array>>(a)) {
         auto result = std::make_shared<Array>();
         const auto& leftArr = std::get<std::shared_ptr<Array>>(a)->elements;
@@ -532,7 +545,7 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
                 pop(); // callee (bound method wrapper)
 
                 // Save frame base BEFORE pushing — it must point at 'this'
-                Value* newFrameBase = stackTop;
+                size_t newFrameBaseIndex = stackTopIndex;
 
                 // Push 'this' (bound instance) then method arguments as locals
                 push(instance);
@@ -543,10 +556,10 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
                 // Set up call frame directly (inline callVoraFunction logic).
                 // We skip the usual arity check because 'this' is not counted
                 // in the method prototype's arity.
-                frames.push_back({ip, frameBase, currentChunk, native->getBoundMethodFunc()});
+                frames.push_back({ip, frameBaseIndex, currentChunk, native->getBoundMethodFunc()});
                 currentChunk = &proto->chunk;
                 ip = currentChunk->code.data();
-                frameBase = newFrameBase;  // points to instance at slot 0
+                frameBaseIndex = newFrameBaseIndex;  // points to instance at slot 0
                 return true;
             }
 
@@ -627,12 +640,12 @@ InterpretResult VM::callVoraFunction(const std::shared_ptr<VoraFunction>& func,
     }
 
     // Push return address, caller chunk, and function onto call frame stack
-    frames.push_back({ip, frameBase, currentChunk, func});
+    frames.push_back({ip, frameBaseIndex, currentChunk, func});
 
     // Switch to function's chunk
     currentChunk = &proto->chunk;
     ip = currentChunk->code.data();
-    frameBase = stackTop;  // locals start after the current stack top
+    frameBaseIndex = stackTopIndex;  // locals start after the current stack top
 
     // Store actual arg count for OP_DEFAULT_PARAM
     currentArgCount = static_cast<uint8_t>(args.size());
@@ -658,7 +671,7 @@ InterpretResult VM::interpret(const Chunk& chunk) {
     currentChunk = &chunk;
     ip = chunk.code.data();
     resetStack();
-    frameBase = stack;
+    frameBaseIndex = 0;
     frames.clear();
     catchHandlers.clear();
     exceptionInFlight = false;
@@ -675,7 +688,9 @@ InterpretResult VM::interpret(const Chunk& chunk) {
 InterpretResult VM::run() {
     try {
 #define READ_BYTE() (*ip++)
+#define READ_SHORT() (static_cast<uint16_t>(READ_BYTE()) | (static_cast<uint16_t>(READ_BYTE()) << 8))
 #define READ_CONSTANT() (currentChunk->constants[READ_BYTE()])
+#define READ_LONG_CONSTANT() (currentChunk->constants[READ_SHORT()])
 #define RUNTIME_ERROR_OR_THROW(msg) \
     do { \
         std::string _errMsg = (msg); \
@@ -693,6 +708,10 @@ InterpretResult VM::run() {
                 push(READ_CONSTANT());
                 break;
             }
+            case OpCode::OP_CONSTANT_LONG: {
+                push(READ_LONG_CONSTANT());
+                break;
+            }
             case OpCode::OP_NULL:  push(nullptr); break;
             case OpCode::OP_TRUE:  push(true);  break;
             case OpCode::OP_FALSE: push(false); break;
@@ -701,10 +720,10 @@ InterpretResult VM::run() {
             case OpCode::OP_POP: pop(); break;
             case OpCode::OP_POPN: {
                 uint8_t count = READ_BYTE();
-                if (stackTop - stack < count) {
+                if (stackTopIndex < count) {
                     RUNTIME_ERROR_OR_THROW("Stack underflow in OP_POPN");
                 } else {
-                    stackTop -= count;
+                    stackTopIndex -= count;
                 }
                 break;
             }
@@ -712,12 +731,12 @@ InterpretResult VM::run() {
             // --- Locals ---
             case OpCode::OP_GET_LOCAL: {
                 uint8_t slot = READ_BYTE();
-                push(frameBase[slot]);
+                push(stack[frameBaseIndex + slot]);
                 break;
             }
             case OpCode::OP_SET_LOCAL: {
                 uint8_t slot = READ_BYTE();
-                frameBase[slot] = peek(0);
+                stack[frameBaseIndex + slot] = peek(0);
                 break;
             }
 
@@ -989,9 +1008,8 @@ InterpretResult VM::run() {
                         // Capture local: snapshot the current value.
                         // Each closure gets its own independent copy to match
                         // the interpreter's Environment::snapshot() semantics.
-                        Value* slot = frameBase + index;
                         function->upvalues.push_back(
-                            std::make_shared<Value>(*slot));
+                            std::make_shared<Value>(stack[frameBaseIndex + index]));
                     } else {
                         // Capture upvalue from enclosing function
                         if (!frames.empty()) {
@@ -1023,11 +1041,11 @@ InterpretResult VM::run() {
                 Value returnValue = pop();
 
                 // Pop all locals by restoring stack to frame base
-                stackTop = frameBase;
+                stackTopIndex = frameBaseIndex;
 
                 // Clear any open upvalues for this frame (locals going out of scope)
                 for (auto it = openUpvalues.begin(); it != openUpvalues.end(); ) {
-                    if (it->first >= frameBase && it->first < frameBase + MAX_LOCALS_PER_FRAME) {
+                    if (it->first >= frameBaseIndex && it->first < frameBaseIndex + MAX_LOCALS_PER_FRAME) {
                         it = openUpvalues.erase(it);
                     } else {
                         ++it;
@@ -1038,7 +1056,7 @@ InterpretResult VM::run() {
                 CallFrame frame = frames.back();
                 frames.pop_back();
                 ip = frame.returnIp;
-                frameBase = frame.frameBase;
+                frameBaseIndex = frame.frameBase;
                 currentChunk = frame.callerChunk;
 
                 // Clean up any catch handlers that belonged to the returning
@@ -1094,13 +1112,13 @@ InterpretResult VM::run() {
             }
             case OpCode::OP_CLOSE_UPVALUE: {
                 uint8_t localSlot = READ_BYTE();
-                Value* slot = frameBase + localSlot;
-                auto it = openUpvalues.find(slot);
+                size_t slotIdx = frameBaseIndex + localSlot;
+                auto it = openUpvalues.find(slotIdx);
                 if (it != openUpvalues.end()) {
                     // Sync current stack value to the heap-allocated upvalue,
                     // then remove from open upvalues so subsequent captures on
                     // this slot create a new heap allocation.
-                    *(it->second) = *slot;
+                    *(it->second) = stack[slotIdx];
                     openUpvalues.erase(it);
                 }
                 break;
@@ -1111,17 +1129,54 @@ InterpretResult VM::run() {
                 uint8_t count = READ_BYTE();
                 auto arr = std::make_shared<Array>();
                 arr->elements.reserve(count);
-                size_t startIdx = stackTop - stack - count;
+                size_t startIdx = stackTopIndex - count;
                 for (uint8_t i = 0; i < count; i++) {
                     arr->elements.push_back(stack[startIdx + i]);
                 }
-                stackTop -= count;
+                stackTopIndex -= count;
                 push(arr);
+                break;
+            }
+            case OpCode::OP_DICT: {
+                uint8_t pairCount = READ_BYTE();
+                auto dict = std::make_shared<Dict>();
+                size_t startIdx = stackTopIndex - pairCount * 2;
+                for (uint8_t i = 0; i < pairCount; i++) {
+                    std::string key = valueToString(stack[startIdx + i * 2]);
+                    dict->pairs[key] = stack[startIdx + i * 2 + 1];
+                }
+                stackTopIndex -= pairCount * 2;
+                push(dict);
                 break;
             }
             case OpCode::OP_INDEX: {
                 Value indexVal = pop();
                 Value target = pop();
+
+                // Dict: string key lookup, or numeric index for for-in iteration
+                if (std::holds_alternative<std::shared_ptr<Dict>>(target)) {
+                    const auto& dpairs =
+                        std::get<std::shared_ptr<Dict>>(target)->pairs;
+                    if (isNumeric(indexVal)) {
+                        // Numeric index: return Nth key (for for-in iteration)
+                        size_t idx = static_cast<size_t>(toDouble(indexVal));
+                        if (idx >= dpairs.size()) {
+                            RUNTIME_ERROR_OR_THROW("Index out of bounds");
+                        }
+                        auto it = dpairs.begin();
+                        std::advance(it, idx);
+                        push(std::string(it->first));
+                    } else {
+                        // String key: lookup by name
+                        std::string key = valueToString(indexVal);
+                        auto it = dpairs.find(key);
+                        if (it == dpairs.end()) {
+                            RUNTIME_ERROR_OR_THROW("Key not found: " + key);
+                        }
+                        push(it->second);
+                    }
+                    break;
+                }
 
                 if (!isNumeric(indexVal)) {
                     RUNTIME_ERROR_OR_THROW("Index must be a number");
@@ -1147,8 +1202,17 @@ InterpretResult VM::run() {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
                     push(elements[index]);
+                } else if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(target)) {
+                    const auto& props =
+                        std::get<std::shared_ptr<ObjectInstance>>(target)->properties;
+                    if (index >= props.size()) {
+                        RUNTIME_ERROR_OR_THROW("Index out of bounds");
+                    }
+                    auto it = props.begin();
+                    std::advance(it, index);
+                    push(std::string(it->first));
                 } else {
-                    RUNTIME_ERROR_OR_THROW("Indexing requires an array or string");
+                    RUNTIME_ERROR_OR_THROW("Indexing requires an array, string, or object");
                 }
                 break;
             }
@@ -1156,6 +1220,14 @@ InterpretResult VM::run() {
                 Value value = pop();
                 Value indexVal = pop();
                 Value target = pop();
+
+                // Dict: string-keyed assignment (handled first since keys are non-numeric)
+                if (std::holds_alternative<std::shared_ptr<Dict>>(target)) {
+                    std::string key = valueToString(indexVal);
+                    std::get<std::shared_ptr<Dict>>(target)->pairs[key] = value;
+                    push(value);
+                    break;
+                }
 
                 if (!isNumeric(indexVal)) {
                     RUNTIME_ERROR_OR_THROW("Index must be a number");
@@ -1212,6 +1284,18 @@ InterpretResult VM::run() {
                     auto method = getStringMethod(propName, str);
                     if (method) { push(method); break; }
                     RUNTIME_ERROR_OR_THROW("Unknown string method: " + propName);
+                }
+
+                // Dict built-in methods & properties
+                if (std::holds_alternative<std::shared_ptr<Dict>>(obj)) {
+                    auto dict = std::get<std::shared_ptr<Dict>>(obj);
+                    if (propName == "length") {
+                        push(static_cast<int64_t>(dict->pairs.size()));
+                        break;
+                    }
+                    auto method = getDictMethod(propName, dict);
+                    if (method) { push(method); break; }
+                    RUNTIME_ERROR_OR_THROW("Unknown dict method: " + propName);
                 }
 
                 if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(obj)) {
@@ -1277,7 +1361,7 @@ InterpretResult VM::run() {
                 std::string propName = std::get<std::string>(currentChunk->constants[nameIndex]);
 
                 // Get 'this' from local slot 0 (must be in a method)
-                Value thisVal = frameBase[0];
+                Value thisVal = stack[frameBaseIndex];
                 if (!std::holds_alternative<std::shared_ptr<ObjectInstance>>(thisVal)) {
                     RUNTIME_ERROR_OR_THROW("'super' used outside of method");
                 }
@@ -1425,7 +1509,7 @@ InterpretResult VM::run() {
                             tempVm.adoptGlobals(globalsNames, globalsValues, globalsDefined, globalsIndex);
                             tempVm.currentChunk = &cp->chunk;
                             tempVm.ip = cp->chunk.code.data();
-                            tempVm.frameBase = tempVm.stackTop;
+                            tempVm.frameBaseIndex = tempVm.stackTopIndex;
                             tempVm.push(instance);  // 'this' at slot 0
                             for (const auto& a : ctorArgs) {
                                 tempVm.push(a);
@@ -1461,7 +1545,7 @@ InterpretResult VM::run() {
             // --- Exception handling ---
             case OpCode::OP_PUSH_CATCH: {
                 uint16_t catchOffset = readShort();
-                catchHandlers.push_back({ip + catchOffset, frameBase, currentChunk, frames.size()});
+                catchHandlers.push_back({ip + catchOffset, frameBaseIndex, currentChunk, frames.size()});
                 break;
             }
             case OpCode::OP_POP_CATCH: {

@@ -191,6 +191,25 @@ public:
     Token leftBracket;
 };
 
+class DictExpr : public Expr {
+public:
+    DictExpr(
+        std::vector<std::pair<std::unique_ptr<Expr>, std::unique_ptr<Expr>>> pairs,
+        Token leftBrace
+    )
+        : pairs(std::move(pairs)),
+          leftBrace(std::move(leftBrace)) {
+    }
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::vector<std::pair<std::unique_ptr<Expr>, std::unique_ptr<Expr>>> pairs;
+    Token leftBrace;
+};
+
 class IndexExpr : public Expr {
 public:
     IndexExpr(
@@ -258,6 +277,31 @@ public:
     std::string property;
     std::unique_ptr<Expr> value;
     Token dot;
+};
+
+class IndexAssignmentExpr : public Expr {
+public:
+    IndexAssignmentExpr(
+        std::unique_ptr<Expr> object,
+        std::unique_ptr<Expr> index,
+        std::unique_ptr<Expr> value,
+        Token bracket
+    )
+        : object(std::move(object)),
+          index(std::move(index)),
+          value(std::move(value)),
+          bracket(std::move(bracket)) {
+    }
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::unique_ptr<Expr> object;
+    std::unique_ptr<Expr> index;
+    std::unique_ptr<Expr> value;
+    Token bracket;
 };
 
 class ThisExpr : public Expr {

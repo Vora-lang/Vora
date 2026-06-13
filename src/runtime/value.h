@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 #include <map>
@@ -13,6 +14,7 @@ class Callable;
 class VoraFunction;
 class BlockStmt;
 struct Array;
+struct Dict;
 struct ObjectInstance;
 struct FunctionPrototype;
 struct ClassData;
@@ -24,6 +26,7 @@ using Value = std::variant<
     bool,
     std::string,
     std::shared_ptr<Array>,
+    std::shared_ptr<Dict>,
     std::shared_ptr<Callable>,
     std::shared_ptr<ObjectInstance>,
     std::shared_ptr<FunctionPrototype>,
@@ -32,6 +35,10 @@ using Value = std::variant<
 
 struct Array {
     std::vector<Value> elements;
+};
+
+struct Dict {
+    std::unordered_map<std::string, Value> pairs;
 };
 
 struct ObjectClass {

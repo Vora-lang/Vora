@@ -46,6 +46,18 @@ void printValue(const Value& value) {
             std::cout << "]";
 
         } else if constexpr (
+            std::is_same_v<T, std::shared_ptr<Dict>>
+        ) {
+            std::cout << "{";
+            size_t i = 0;
+            for (const auto& [k, v] : arg->pairs) {
+                if (i > 0) std::cout << ", ";
+                std::cout << k << ": ";
+                printValue(v);
+                i++;
+            }
+            std::cout << "}";
+        } else if constexpr (
             std::is_same_v<T, std::shared_ptr<Callable>>
         ) {
 
@@ -130,6 +142,15 @@ std::string valueToString(const Value& value) {
                 oss << valueToString(arg->elements[i]);
             }
             oss << "]";
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<Dict>>) {
+            oss << "{";
+            size_t i = 0;
+            for (const auto& [k, v] : arg->pairs) {
+                if (i > 0) oss << ", ";
+                oss << k << ": " << valueToString(v);
+                i++;
+            }
+            oss << "}";
         } else if constexpr (std::is_same_v<T, std::shared_ptr<Callable>>) {
             if (auto native = std::dynamic_pointer_cast<NativeFunction>(arg)) {
                 oss << "<native fn " << native->name() << ">";

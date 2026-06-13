@@ -55,6 +55,7 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
                     else if constexpr (std::is_same_v<U, std::shared_ptr<Array>>) return "[array]";
                     else if constexpr (std::is_same_v<U, std::shared_ptr<ObjectInstance>>) return "<object>";
                     else if constexpr (std::is_same_v<U, std::shared_ptr<FunctionPrototype>>) return "<proto>";
+                    else if constexpr (std::is_same_v<U, std::shared_ptr<Dict>>) return "{dict}";
                     else if constexpr (std::is_same_v<U, std::shared_ptr<ClassData>>) return "<class>";
                     else return std::to_string(inner);
                 }, arg->elements[i]);
@@ -67,6 +68,8 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
             return "<" + arg->className + " object>";
         } else if constexpr (std::is_same_v<T, std::shared_ptr<FunctionPrototype>>) {
             return "<proto " + arg->name + ">";
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<Dict>>) {
+            return "{dict}";
         } else if constexpr (std::is_same_v<T, std::shared_ptr<ClassData>>) {
             return "<class " + arg->name + ">";
         } else {
@@ -139,6 +142,18 @@ std::string ASTPrinter::visitArrayExpr(const ArrayExpr& expr) {
     return ss.str();
 }
 
+std::string ASTPrinter::visitDictExpr(const DictExpr& expr) {
+    std::stringstream ss;
+    ss << "{";
+    for (size_t i = 0; i < expr.pairs.size(); ++i) {
+        if (i > 0) ss << ", ";
+        ss << print(expr.pairs[i].first.get()) << ": "
+           << print(expr.pairs[i].second.get());
+    }
+    ss << "}";
+    return ss.str();
+}
+
 std::string ASTPrinter::visitIndexExpr(const IndexExpr& expr) {
     return parenthesize(
         "index",
@@ -157,6 +172,13 @@ std::string ASTPrinter::visitPropertyAssignmentExpr(const PropertyAssignmentExpr
     return parenthesize(
         "property-assign " + expr.property,
         { expr.object.get(), expr.value.get() }
+    );
+}
+
+std::string ASTPrinter::visitIndexAssignmentExpr(const IndexAssignmentExpr& expr) {
+    return parenthesize(
+        "index-assign",
+        { expr.object.get(), expr.index.get(), expr.value.get() }
     );
 }
 

@@ -21,17 +21,16 @@ enum class InterpretResult {
 // A call frame for function execution
 struct CallFrame {
     const uint8_t* returnIp;    // where to resume in caller
-    Value* frameBase;            // base of this frame's locals on the stack
+    size_t frameBase;            // base of this frame's locals on the stack (index)
     const Chunk* callerChunk;    // chunk to restore on return
     std::shared_ptr<VoraFunction> function;  // executing function (for upvalue access)
 };
 
 class VM {
-    static constexpr int STACK_MAX = 1024;
     static constexpr int MAX_LOCALS_PER_FRAME = 256;
 
-    Value stack[STACK_MAX];
-    Value* stackTop;
+    std::vector<Value> stack;
+    size_t stackTopIndex = 0;
 
     // Global variable storage — integer-indexed for O(1) access without string hashing.
     // globalNames[slot] → name, globalValues[slot] → value (parallel arrays).
@@ -45,12 +44,12 @@ class VM {
 
     // Call frame stack
     std::vector<CallFrame> frames;
-    Value* frameBase = nullptr;  // current frame's base (stack for top-level)
+    size_t frameBaseIndex = 0;   // current frame's base (stack for top-level)
 
     // Catch handler stack: { catchIp, catchFrameBase, chunk, frameCount }
     struct CatchHandler {
         const uint8_t* targetIp;
-        Value* targetFrameBase;
+        size_t targetFrameBase;   // stack index where handler was registered
         const Chunk* chunk;        // which chunk the handler lives in
         size_t frameCount;         // frames.size() when handler was registered
     };
@@ -66,9 +65,9 @@ class VM {
     // decide whether to re-throw.
     bool exceptionInFlight = false;
 
-    // Open upvalues: stack slot address → heap-allocated value (for closures)
-    std::unordered_map<Value*, std::shared_ptr<Value>> openUpvalues;
-    std::shared_ptr<Value> captureUpvalue(Value* slot);
+    // Open upvalues: stack slot index → heap-allocated value (for closures)
+    std::unordered_map<size_t, std::shared_ptr<Value>> openUpvalues;
+    std::shared_ptr<Value> captureUpvalue(size_t slotIndex);
 
 public:
     VM();

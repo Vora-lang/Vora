@@ -68,8 +68,9 @@ void Compiler::emitLoop(size_t loopStart) {
 uint8_t Compiler::makeConstant(Value value) {
     if (hadError) return 0;
     size_t index = chunk.addConstant(value);
-    // Guard against constant pool overflow (> 256 entries).
-    // A future OP_CONSTANT_LONG (16-bit index) would lift this limit.
+    // Guard against constant pool overflow (> 256) for 8-bit operand opcodes
+    // (e.g. property names, closure/class indices). OP_CONSTANT_LONG handles
+    // value constants with 16-bit indices — see Chunk::writeConstant().
     if (index > UINT8_MAX) {
         std::cerr << "Compiler error: constant pool overflow ("
                   << index << " entries, max 256)." << std::endl;
@@ -572,6 +573,17 @@ void Compiler::visitArrayExpr(const ArrayExpr& expr) {
               static_cast<uint8_t>(expr.elements.size()));
 }
 
+void Compiler::visitDictExpr(const DictExpr& expr) {
+    currentLine = expr.leftBrace.line;
+    currentColumn = expr.leftBrace.column;
+    for (const auto& [key, value] : expr.pairs) {
+        key->accept(*this);
+        value->accept(*this);
+    }
+    emitBytes(static_cast<uint8_t>(OpCode::OP_DICT),
+              static_cast<uint8_t>(expr.pairs.size()));
+}
+
 void Compiler::visitIndexExpr(const IndexExpr& expr) {
     currentLine = expr.bracket.line;
     currentColumn = expr.bracket.column;
@@ -603,6 +615,15 @@ void Compiler::visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) {
     expr.value->accept(*this);
     uint8_t nameIndex = identifierConstant(expr.property);
     emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), nameIndex);
+}
+
+void Compiler::visitIndexAssignmentExpr(const IndexAssignmentExpr& expr) {
+    currentLine = expr.bracket.line;
+    currentColumn = expr.bracket.column;
+    expr.object->accept(*this);
+    expr.index->accept(*this);
+    expr.value->accept(*this);
+    emitByte(static_cast<uint8_t>(OpCode::OP_SET_INDEX));
 }
 
 void Compiler::visitThisExpr(const ThisExpr& expr) {

@@ -16,6 +16,7 @@ namespace vora {
 static const char* opcodeName(OpCode op) {
     switch (op) {
         case OpCode::OP_CONSTANT:       return "OP_CONSTANT";
+        case OpCode::OP_CONSTANT_LONG: return "OP_CONSTANT_LONG";
         case OpCode::OP_NULL:           return "OP_NULL";
         case OpCode::OP_TRUE:           return "OP_TRUE";
         case OpCode::OP_FALSE:          return "OP_FALSE";
@@ -52,6 +53,7 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_CLOSURE:        return "OP_CLOSURE";
         case OpCode::OP_RETURN:         return "OP_RETURN";
         case OpCode::OP_ARRAY:          return "OP_ARRAY";
+        case OpCode::OP_DICT:           return "OP_DICT";
         case OpCode::OP_INDEX:          return "OP_INDEX";
         case OpCode::OP_SET_INDEX:      return "OP_SET_INDEX";
         case OpCode::OP_GET_PROPERTY:   return "OP_GET_PROPERTY";
@@ -172,8 +174,14 @@ size_t Chunk::addConstant(Value value) {
 
 void Chunk::writeConstant(Value value, int line, int column) {
     size_t index = addConstant(value);
-    write(static_cast<uint8_t>(OpCode::OP_CONSTANT), line, column);
-    write(static_cast<uint8_t>(index), line, column);
+    if (index <= UINT8_MAX) {
+        write(static_cast<uint8_t>(OpCode::OP_CONSTANT), line, column);
+        write(static_cast<uint8_t>(index), line, column);
+    } else {
+        write(static_cast<uint8_t>(OpCode::OP_CONSTANT_LONG), line, column);
+        write(static_cast<uint8_t>(index & 0xFF), line, column);        // lo byte
+        write(static_cast<uint8_t>((index >> 8) & 0xFF), line, column); // hi byte
+    }
 }
 
 // =========================================================================
@@ -235,6 +243,17 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
                 std::printf("'<invalid index %d>'\n", index);
             }
             return offset + 2;
+        }
+        case OpCode::OP_CONSTANT_LONG: {
+            uint16_t index = static_cast<uint16_t>(code[offset + 1])
+                           | (static_cast<uint16_t>(code[offset + 2]) << 8);
+            std::printf("%-16s %4d ", opcodeName(instruction), index);
+            if (index < constants.size()) {
+                std::printf("'%s'\n", constantToString(constants[index]).c_str());
+            } else {
+                std::printf("'<invalid index %d>'\n", index);
+            }
+            return offset + 3;
         }
         case OpCode::OP_GET_LOCAL:
         case OpCode::OP_SET_LOCAL:
@@ -303,7 +322,8 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             return offset + 2 + 1 + static_cast<size_t>(methodCount);
         }
         case OpCode::OP_CALL:
-        case OpCode::OP_ARRAY: {
+        case OpCode::OP_ARRAY:
+        case OpCode::OP_DICT: {
             uint8_t val = code[offset + 1];
             std::printf("%-16s %4d\n", opcodeName(instruction), val);
             return offset + 2;

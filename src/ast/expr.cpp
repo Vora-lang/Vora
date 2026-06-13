@@ -180,6 +180,30 @@ std::unique_ptr<Expr> ArrayExpr::clone() const {
 }
 
 // =========================================================================
+// DictExpr
+// =========================================================================
+
+Value DictExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitDictExpr(*this);
+}
+
+void DictExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitDictExpr(*this);
+}
+
+std::string DictExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitDictExpr(*this);
+}
+
+std::unique_ptr<Expr> DictExpr::clone() const {
+    std::vector<std::pair<std::unique_ptr<Expr>, std::unique_ptr<Expr>>> clonedPairs;
+    for (const auto& [k, v] : pairs) {
+        clonedPairs.push_back({k->clone(), v->clone()});
+    }
+    return std::make_unique<DictExpr>(std::move(clonedPairs), leftBrace);
+}
+
+// =========================================================================
 // IndexExpr
 // =========================================================================
 
@@ -242,6 +266,28 @@ std::string PropertyAssignmentExpr::accept(ExprVisitor<std::string>& visitor) co
 std::unique_ptr<Expr> PropertyAssignmentExpr::clone() const {
     return std::make_unique<PropertyAssignmentExpr>(
         object->clone(), property, value->clone(), dot
+    );
+}
+
+// =========================================================================
+// IndexAssignmentExpr
+// =========================================================================
+
+Value IndexAssignmentExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitIndexAssignmentExpr(*this);
+}
+
+void IndexAssignmentExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitIndexAssignmentExpr(*this);
+}
+
+std::string IndexAssignmentExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitIndexAssignmentExpr(*this);
+}
+
+std::unique_ptr<Expr> IndexAssignmentExpr::clone() const {
+    return std::make_unique<IndexAssignmentExpr>(
+        object->clone(), index->clone(), value->clone(), bracket
     );
 }
 

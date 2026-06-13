@@ -43,6 +43,7 @@ void registerBuiltins(VM& vm) {
                 else if constexpr (std::is_same_v<T, bool>) return "boolean";
                 else if constexpr (std::is_same_v<T, std::string>) return "string";
                 else if constexpr (std::is_same_v<T, std::shared_ptr<Array>>) return "array";
+                else if constexpr (std::is_same_v<T, std::shared_ptr<Dict>>) return "dict";
                 else if constexpr (std::is_same_v<T, std::shared_ptr<Callable>>) return "function";
                 else if constexpr (std::is_same_v<T, std::shared_ptr<ObjectInstance>>) return "object";
                 else if constexpr (std::is_same_v<T, std::shared_ptr<FunctionPrototype>>) return "function";
@@ -58,6 +59,8 @@ void registerBuiltins(VM& vm) {
                 return static_cast<int64_t>(std::get<std::shared_ptr<Array>>(v)->elements.size());
             if (std::holds_alternative<std::string>(v))
                 return static_cast<int64_t>(std::get<std::string>(v).size());
+            if (std::holds_alternative<std::shared_ptr<Dict>>(v))
+                return static_cast<int64_t>(std::get<std::shared_ptr<Dict>>(v)->pairs.size());
             return nullptr;  // will be caught by runtime
         });
 
@@ -292,6 +295,55 @@ std::shared_ptr<NativeFunction> getArrayMethod(
             [arr](const std::vector<Value>&) -> Value {
                 arr->elements.clear();
                 return nullptr;
+            });
+    }
+    return nullptr;
+}
+
+// ============================================================================
+// Dict built-in methods
+// ============================================================================
+
+std::shared_ptr<NativeFunction> getDictMethod(
+    const std::string& name,
+    std::shared_ptr<Dict> dict
+) {
+    if (name == "keys") {
+        return std::make_shared<NativeFunction>("keys", 0,
+            [dict](const std::vector<Value>&) -> Value {
+                auto arr = std::make_shared<Array>();
+                for (const auto& [k, v] : dict->pairs) {
+                    arr->elements.push_back(std::string(k));
+                }
+                return arr;
+            });
+    }
+    if (name == "values") {
+        return std::make_shared<NativeFunction>("values", 0,
+            [dict](const std::vector<Value>&) -> Value {
+                auto arr = std::make_shared<Array>();
+                for (const auto& [k, v] : dict->pairs) {
+                    arr->elements.push_back(v);
+                }
+                return arr;
+            });
+    }
+    if (name == "has") {
+        return std::make_shared<NativeFunction>("has", 1,
+            [dict](const std::vector<Value>& args) -> Value {
+                std::string key = valueToString(args[0]);
+                return dict->pairs.find(key) != dict->pairs.end();
+            });
+    }
+    if (name == "remove") {
+        return std::make_shared<NativeFunction>("remove", 1,
+            [dict](const std::vector<Value>& args) -> Value {
+                std::string key = valueToString(args[0]);
+                auto it = dict->pairs.find(key);
+                if (it == dict->pairs.end()) return nullptr;
+                Value v = it->second;
+                dict->pairs.erase(it);
+                return v;
             });
     }
     return nullptr;

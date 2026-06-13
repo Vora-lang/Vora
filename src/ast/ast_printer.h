@@ -34,9 +34,11 @@ private:
     std::string visitAssignmentExpr(const AssignmentExpr& expr) override;
     std::string visitCallExpr(const CallExpr& expr) override;
     std::string visitArrayExpr(const ArrayExpr& expr) override;
+    std::string visitDictExpr(const DictExpr& expr) override;
     std::string visitIndexExpr(const IndexExpr& expr) override;
     std::string visitPropertyExpr(const PropertyExpr& expr) override;
     std::string visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) override;
+    std::string visitIndexAssignmentExpr(const IndexAssignmentExpr& expr) override;
     std::string visitThisExpr(const ThisExpr& expr) override;
     std::string visitSuperExpr(const SuperExpr& expr) override;
     std::string visitIncDecExpr(const IncDecExpr& expr) override;

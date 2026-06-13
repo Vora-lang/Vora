@@ -6,8 +6,9 @@ namespace vora {
 
 enum class OpCode : uint8_t {
     // Constants & literals
-    OP_CONSTANT,    // push constant from pool (operand: uint8_t index)
-    OP_NULL,        // push null
+    OP_CONSTANT,       // push constant from pool (operand: uint8_t index)
+    OP_CONSTANT_LONG,  // push constant from pool (operand: uint16_t index, little-endian)
+    OP_NULL,           // push null
     OP_TRUE,        // push true
     OP_FALSE,       // push false
 
@@ -67,8 +68,9 @@ enum class OpCode : uint8_t {
     OP_SET_UPVALUE,    // set upvalue, leave value on stack (operand: uint8_t upvalue index)
     OP_CLOSE_UPVALUE,  // move local to heap (operand: uint8_t local slot)
 
-    // Arrays
+    // Arrays / Dicts
     OP_ARRAY,          // create array from N stack values (operand: uint8_t count)
+    OP_DICT,           // create dict from N*2 stack values (operand: uint8_t pairCount)
     OP_INDEX,          // index access a[b] — pops index, pops target, pushes result
     OP_SET_INDEX,      // index assignment a[b] = v — pops value, index, target, pushes value
 

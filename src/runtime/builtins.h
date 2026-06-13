@@ -14,6 +14,7 @@ namespace vora {
 
 class VM;
 struct Array;
+struct Dict;
 class NativeFunction;
 
 // Register all user-facing built-in native functions on a VM.
@@ -33,5 +34,12 @@ std::shared_ptr<NativeFunction> getArrayMethod(
 std::shared_ptr<NativeFunction> getStringMethod(
     const std::string& name,
     std::string str);
+
+// Dict method factory — returns a bound method for the given dict.
+// Used by OP_GET_PROPERTY dispatch in the VM.
+// Returns nullptr if the method name is unknown.
+std::shared_ptr<NativeFunction> getDictMethod(
+    const std::string& name,
+    std::shared_ptr<Dict> dict);
 
 } // namespace vora

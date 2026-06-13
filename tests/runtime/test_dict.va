@@ -1,0 +1,86 @@
+// runtime/test_dict.va — Dict type tests
+// Run: vora tests/runtime/test_dict.va
+
+print("=== Dict Type Tests ===")
+
+// --- Literal syntax ---
+let d = {name: "Vora", version: 1}
+assert(type(d) == "dict", "type is dict")
+assert(len(d) == 2, "two pairs")
+
+// --- Empty dict ---
+let e = {}
+assert(type(e) == "dict", "empty dict type")
+assert(len(e) == 0, "empty dict len")
+
+// --- Subscript access ---
+assert(d["name"] == "Vora", "subscript str key")
+assert(d["version"] == 1, "subscript int value")
+
+// --- Missing key throws ---
+let keyMiss = false
+try { let x = d["nope"] } catch (e) { keyMiss = true }
+assert(keyMiss, "missing key throws")
+
+// --- Subscript assignment ---
+d["year"] = 2026
+assert(d["year"] == 2026, "add via subscript")
+assert(len(d) == 3, "now three pairs")
+
+// Overwrite existing key
+d["name"] = "VoraLang"
+assert(d["name"] == "VoraLang", "overwrite via subscript")
+
+// --- Property-style access for methods ---
+assert(type(d.keys) == "function", "keys method exists")
+assert(type(d.values) == "function", "values method exists")
+assert(type(d.has) == "function", "has method exists")
+assert(type(d.remove) == "function", "remove method exists")
+
+// --- keys() ---
+let k = d.keys()
+assert(type(k) == "array", "keys returns array")
+assert(len(k) == 3, "keys: 3 items")
+
+// --- values() ---
+let v = d.values()
+assert(type(v) == "array", "values returns array")
+assert(len(v) == 3, "values: 3 items")
+
+// --- has() ---
+assert(d.has("name"), "has name")
+assert(d.has("nope") == false, "no nope")
+
+// --- remove() ---
+let removed = d.remove("year")
+assert(removed == 2026, "remove returns value")
+assert(len(d) == 2, "now two pairs")
+assert(d.has("year") == false, "year removed")
+
+// --- Dict + Dict merge ---
+let a = {x: 1, y: 2}
+let b = {y: 99, z: 3}
+let c = a + b
+assert(len(c) == 3, "merge: 3 keys")
+assert(c["x"] == 1, "merge: a's x kept")
+assert(c["y"] == 99, "merge: b's y overrides")
+assert(c["z"] == 3, "merge: b's z added")
+
+// --- Nested dicts ---
+let nd = {outer: {inner: 42}}
+assert(type(nd["outer"]) == "dict", "nested dict")
+assert(nd["outer"]["inner"] == 42, "nested access")
+
+// --- for-in iteration ---
+let f = {a: 1, b: 2, c: 3}
+let fKeys = []
+for k in f { fKeys.add(k) }
+assert(len(fKeys) == 3, "for-in dict keys")
+
+// --- Number keys (auto-converted to string) ---
+let ndict = {}
+ndict[1] = "one"
+ndict[2] = "two"
+assert(ndict["1"] == "one" and ndict["2"] == "two", "numeric keys");
+
+print("Dict tests: ALL PASS")

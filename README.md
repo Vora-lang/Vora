@@ -7,7 +7,7 @@
 [![CI](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml/badge.svg)](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
-[![Version](https://img.shields.io/badge/version-0.12-orange.svg)](#changelog)
+[![Version](https://img.shields.io/badge/version-0.15-orange.svg)](#changelog)
 
 </div>
 
@@ -62,11 +62,11 @@ for name in names {
 | Object-oriented | ✔ | ✔ | ✔ | **✔** |
 | Try/catch/finally | ✔ | | | **✔** |
 | Closures | ✔ | ✔ | ✔ | **✔** |
-| Multiple backends | | | | **✔** |
+| Multiple inheritance | | ✔ | | **✔** |
 | Zero dependencies | | ✔ | ✔ | **✔** |
 | Native cross-platform builds | | | | **✔** |
 
-Vora occupies a practical middle ground: readable syntax for scripting, fast enough execution via bytecode VM, and a tiny C++ runtime that embeds into any host application.
+Vora occupies a practical middle ground: readable syntax for scripting, fast execution via bytecode VM, and a tiny C++ runtime that embeds into any host application.
 
 ---
 
@@ -109,8 +109,7 @@ Vora occupies a practical middle ground: readable syntax for scripting, fast eno
 ### Run
 
 ```bash
-vora examples/main.va                 # Execute script (VM mode, default)
-vora examples/main.va --interpreter   # Tree-walking interpreter
+vora examples/main.va                 # Execute script (VM mode)
 vora --repl                           # Interactive REPL
 vora examples/main.va --ast-printer   # Print AST as S-expressions
 vora examples/main.va --tokens        # Print tokens / bytecode disassembly
@@ -190,6 +189,14 @@ func add(a, b) {
     return a + b
 }
 
+// Default parameters
+func greet(name, greeting = "Hello") {
+    return greeting + ", " + name
+}
+greet("World")        // → "Hello, World"
+greet("Vora", "Hi")   // → "Hi, Vora"
+
+// Closures
 func makeCounter() {
     let count = 0
     return func() { count = count + 1; return count }
@@ -203,6 +210,7 @@ print(c())  // 2
 ### Objects & Inheritance
 
 ```vora
+// Single inheritance
 Obj Animal(name) {
     this.name = name
     func speak() { print("...") }
@@ -216,6 +224,26 @@ Obj Dog : Animal (name, breed) {
 let d = Dog("Rex", "Husky")
 d.speak()       // "Woof! I'm Rex"
 print(d.name)   // "Rex"
+
+// Multiple inheritance with C3 linearization
+Obj Speaker() { func speak() { return "hello" } }
+Obj Walker()  { func walk()  { return "walking" } }
+
+Obj Robot : Speaker, Walker () {    // MRO: Robot, Speaker, Walker
+    func work() { return "working" }
+}
+
+let r = Robot()
+r.speak()  // → "hello"  (first parent wins on conflicts)
+r.walk()   // → "walking"
+
+// super keyword
+Obj Puppy : Dog (name, breed, toy) {
+    this.toy = toy
+    func speak() { return super.speak() + " yip!" }
+}
+let p = Puppy("Max", "Lab", "ball")
+p.speak()  // → "... woof! yip!"
 ```
 
 ### Exception Handling
@@ -294,8 +322,7 @@ print("Hello ${name}!")   // "Hello World!"
 
 ```
 .vasource  →  Lexer  →  Token stream  →  Parser (Pratt)  →  AST (Program)
-                                                         ├→ Interpreter (tree-walk, --interpreter)
-                                                         └→ Compiler → Chunk (bytecode) → VM (default)
+                                                          └→ Compiler → Chunk (bytecode) → VM
 ```
 
 **Execution pipeline** in `src/`:
@@ -305,14 +332,12 @@ print("Hello ${name}!")   // "Hello World!"
 | `lexer/` | ~687 | Hand-written scanner, 21 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b |
 | `parser/` | ~1,185 | Pratt (precedence climbing), 7-level precedence table, panic-mode error recovery |
 | `ast/` | ~1,629 | 27 node types (14 expressions + 13 statements), templated Visitor pattern |
-| `interpreter/` | ~1,621 | Tree-walking backend, 12 built-in functions, 18 built-in methods |
 | `vm/` | ~3,175 | Bytecode compiler + stack-based VM, 50 opcodes, constant folding, fast numeric ops |
-| `runtime/` | ~800 | `Value` (std::variant), `Environment` (lexical scope chain), `Callable` abstraction |
+| `runtime/` | ~1,200 | `Value` (std::variant), `Environment` (lexical scope chain), `Callable` abstraction, `builtins` module |
 
 **Design highlights:**
 
-- **Templated Visitor** — A single generic `ExprVisitor<R>` / `StmtVisitor<R>` interface serves three backends: Interpreter (`R=Value`), Compiler (`R=void`), ASTPrinter (`R=string`).
-- **Dual backends** — The same AST feeds both a fast bytecode VM and a clean tree-walking interpreter, enabling both performance and reference-quality clarity.
+- **Templated Visitor** — A single generic `ExprVisitor<R>` / `StmtVisitor<R>` interface serves multiple backends: Compiler (`R=void`), ASTPrinter (`R=string`).
 - **Zero external dependencies** — Pure C++17 standard library. No Boost, no LLVM, no third-party code.
 - **Enterprise build system** — CMakePresets with 20 presets, 6 cross-compilation toolchains, 18-matrix CI, native packaging for Windows (.msi), Linux (.deb/.rpm), macOS (.tar.gz).
 
@@ -335,16 +360,14 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 ```powershell
 # Windows (PowerShell)
 .\tests\run_tests.ps1                   # VM mode
-.\tests\run_tests.ps1 -Interpreter     # Interpreter mode
 ```
 
 ```bash
 # Linux / macOS
 ./tests/run_tests.sh                    # VM mode
-./tests/run_tests.sh --interpreter      # Interpreter mode
 ```
 
-**Current status:** 13/13 VM tests pass + 13/13 Interpreter tests pass + 24/24 examples pass.
+**Current status:** 16/16 VM tests pass + 16/16 Interpreter tests pass + 24/24 examples pass. C++ unit tests: 6 modules (~100+ cases).
 
 ---
 
@@ -353,7 +376,10 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 | Version | Status | Milestone |
 |---------|--------|-----------|
 | v0.01 ~ v0.12 | **Done** | Literals, variables, scope, functions, closures, objects, inheritance, try/catch/finally, bytecode VM, performance optimization, multi-platform builds, int64/float64, `len()`, `type()`, 17 built-in methods |
-| v0.13 | Planned | Module system (`import` / `export`), standard library |
+| v0.13 | **Done** | C++ unit test system (doctest), builtins module centralization, P0/P1 correctness fixes |
+| v0.14 | **Done** | `weak_ptr` cycle breaking, runtime error call stack traces |
+| v0.15 | **Done** | Default parameters, multi-inheritance C3 linearization, `super` keyword |
+| v0.16 | Planned | Module system (`import` / `export`), standard library |
 | v0.2 | Planned | Further optimization / JIT compilation |
 
 ---

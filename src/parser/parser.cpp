@@ -776,6 +776,42 @@ std::unique_ptr<Expr> Parser::primary() {
         );
     }
 
+    if (match(TokenType::LEFT_BRACE)) {
+        Token leftBrace = previous();
+
+        std::vector<std::pair<std::unique_ptr<Expr>, std::unique_ptr<Expr>>> pairs;
+
+        if (!check(TokenType::RIGHT_BRACE)) {
+            do {
+                auto key = expression();
+                if (!key) return nullptr;
+
+                // Bare identifiers in dict keys are treated as string literals
+                // (e.g. {name: "Vora"} — "name" is the string key, not a variable).
+                if (auto varKey = dynamic_cast<VariableExpr*>(key.get())) {
+                    key = std::make_unique<LiteralExpr>(varKey->name);
+                }
+
+                if (!match(TokenType::COLON)) {
+                    error("Expected ':' after dict key");
+                    return nullptr;
+                }
+
+                auto value = expression();
+                if (!value) return nullptr;
+
+                pairs.push_back({std::move(key), std::move(value)});
+            } while (match(TokenType::COMMA));
+        }
+
+        if (!match(TokenType::RIGHT_BRACE)) {
+            error("Expected '}' after dict literal");
+            return nullptr;
+        }
+
+        return std::make_unique<DictExpr>(std::move(pairs), leftBrace);
+    }
+
     if (match(TokenType::LEFT_PAREN)) {
         auto expr = expression();
 
@@ -998,6 +1034,18 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
                     property->property,
                     std::move(right),
                     property->dot
+                );
+            }
+
+            auto indexExpr =
+                dynamic_cast<IndexExpr*>(left.get());
+
+            if (indexExpr) {
+                return std::make_unique<IndexAssignmentExpr>(
+                    std::move(indexExpr->array),
+                    std::move(indexExpr->index),
+                    std::move(right),
+                    indexExpr->bracket
                 );
             }
 
