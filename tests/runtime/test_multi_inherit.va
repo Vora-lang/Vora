@@ -1,0 +1,94 @@
+// runtime/test_multi_inherit.va — Multiple inheritance tests
+// Run: vora tests/runtime/test_multi_inherit.va
+
+print("=== Runtime: Multiple Inheritance Tests ===")
+
+// === Diamond inheritance with C3 MRO ===
+//    A
+//   / \
+//  B   C
+//   \ /
+//    D
+// MRO: D, B, C, A  (first parent B wins over C)
+
+Obj A() {
+    func who() { return "A" }
+    func fromA() { return "from A" }
+}
+
+Obj B : A () {
+    func who() { return "B" }
+    func fromB() { return "from B" }
+}
+
+Obj C : A () {
+    func who() { return "C" }
+    func fromC() { return "from C" }
+}
+
+Obj D : B, C () {
+    // D inherits from B and C — B listed first, so B wins conflicts
+    // MRO should be: D, B, C, A
+}
+
+let d = D()
+// Method from B (first parent wins)
+assert(d.who() == "B", "first parent method wins")
+assert(d.fromA() == "from A", "grandparent method")
+assert(d.fromB() == "from B", "first parent own method")
+assert(d.fromC() == "from C", "second parent own method")
+
+// === Super with multiple inheritance ===
+Obj E : B, C () {
+    func who() {
+        return super.who() + " from E"
+    }
+    func fromB() {
+        return super.fromB() + " from E"
+    }
+}
+
+let e = E()
+// super.who() in E should call B.who() (first parent in MRO)
+assert(e.who() == "B from E", "super with multi-inherit calls first parent")
+assert(e.fromB() == "from B from E", "super call through first parent method")
+
+// === Three parents ===
+Obj X() { func tag() { return "X" } }
+Obj Y : X () { func tag() { return "Y" } }
+Obj Z : X () { func tag() { return "Z" } }
+
+Obj W : Y, Z () {
+    // MRO: W, Y, Z, X
+    // Y wins over Z
+}
+
+let w = W()
+assert(w.tag() == "Y", "three parents, first wins")
+
+// === Constructor chain with multiple parents ===
+// All parent constructors receive ALL child arguments (Python-style).
+// Each constructor consumes the first N arguments where N is its arity.
+// Parents with different parameter names must list shared params first
+// so the parameter positions align.
+Obj PA(name) {
+    this.name = name
+    func getName() { return this.name }
+}
+
+Obj PB(name, age) {  // name first to align with PA and child
+    this.age = age
+    func getAge() { return this.age }
+}
+
+Obj Child : PA, PB (name, age, hobby) {
+    this.hobby = hobby
+    func getHobby() { return this.hobby }
+}
+
+let c = Child("Alice", 30, "coding")
+assert(c.getName() == "Alice", "constructor from first parent")
+assert(c.getAge() == 30, "constructor from second parent")
+assert(c.getHobby() == "coding", "own constructor")
+
+print("Runtime multiple inheritance tests: PASS")

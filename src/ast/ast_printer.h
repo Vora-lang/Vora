@@ -38,6 +38,7 @@ private:
     std::string visitPropertyExpr(const PropertyExpr& expr) override;
     std::string visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) override;
     std::string visitThisExpr(const ThisExpr& expr) override;
+    std::string visitSuperExpr(const SuperExpr& expr) override;
     std::string visitIncDecExpr(const IncDecExpr& expr) override;
     std::string visitTernaryExpr(const TernaryExpr& expr) override;
 

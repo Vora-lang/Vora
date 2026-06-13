@@ -16,6 +16,7 @@ namespace vora {
         {"in", TokenType::IN},
         {"Obj", TokenType::OBJ},
         {"this", TokenType::THIS},
+        {"super", TokenType::SUPER},
         {"break", TokenType::BREAK},
         {"continue", TokenType::CONTINUE},
         {"try", TokenType::TRY},

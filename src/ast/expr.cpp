@@ -266,6 +266,26 @@ std::unique_ptr<Expr> ThisExpr::clone() const {
 }
 
 // =========================================================================
+// SuperExpr
+// =========================================================================
+
+Value SuperExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitSuperExpr(*this);
+}
+
+void SuperExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitSuperExpr(*this);
+}
+
+std::string SuperExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitSuperExpr(*this);
+}
+
+std::unique_ptr<Expr> SuperExpr::clone() const {
+    return std::make_unique<SuperExpr>(keyword);
+}
+
+// =========================================================================
 // IncDecExpr
 // =========================================================================
 

@@ -276,6 +276,22 @@ public:
     Token keyword;
 };
 
+class SuperExpr : public Expr {
+public:
+    explicit SuperExpr(
+        Token keyword
+    )
+        : keyword(std::move(keyword)) {
+    }
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    Token keyword;
+};
+
 class IncDecExpr : public Expr {
 public:
     IncDecExpr(

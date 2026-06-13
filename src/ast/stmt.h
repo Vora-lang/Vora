@@ -152,11 +152,21 @@ public:
     Token forToken;
 };
 
+// Parameter declaration for functions/constructors.
+// Supports optional default value expressions.
+struct ParamDecl {
+    std::string name;
+    std::unique_ptr<Expr> defaultValue;  // nullptr = required param
+
+    ParamDecl(std::string name, std::unique_ptr<Expr> defaultValue = nullptr)
+        : name(std::move(name)), defaultValue(std::move(defaultValue)) {}
+};
+
 class FuncStmt : public Stmt {
 public:
     FuncStmt(
         std::string name,
-        std::vector<std::string> params,
+        std::vector<ParamDecl> params,
         std::shared_ptr<BlockStmt> body
     )
         : name(std::move(name)),
@@ -169,7 +179,7 @@ public:
 
     std::string name;
 
-    std::vector<std::string> params;
+    std::vector<ParamDecl> params;
 
     std::shared_ptr<BlockStmt> body;
 };
@@ -178,13 +188,13 @@ class ObjStmt : public Stmt {
 public:
     ObjStmt(
         std::string name,
-        std::string parentName,
-        std::vector<std::string> params,
+        std::vector<std::string> parentNames,
+        std::vector<ParamDecl> params,
         std::vector<std::unique_ptr<Stmt>> methods,
         std::shared_ptr<BlockStmt> body
     )
         : name(std::move(name)),
-          parentName(std::move(parentName)),
+          parentNames(std::move(parentNames)),
           params(std::move(params)),
           methods(std::move(methods)),
           body(std::move(body)) {
@@ -195,9 +205,9 @@ public:
 
     std::string name;
 
-    std::string parentName;  // empty = no inheritance
+    std::vector<std::string> parentNames;  // empty = no inheritance
 
-    std::vector<std::string> params;
+    std::vector<ParamDecl> params;
 
     std::vector<std::unique_ptr<Stmt>> methods;
 

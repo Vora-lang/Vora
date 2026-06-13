@@ -315,7 +315,7 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
         return nullptr;
     }
 
-    std::vector<std::string> params;
+    std::vector<ParamDecl> params;
 
     if (!check(TokenType::RIGHT_PAREN)) {
 
@@ -328,9 +328,24 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
                 return nullptr;
             }
 
-            params.push_back(
-                previous().lexeme
-            );
+            std::string paramName = previous().lexeme;
+
+            // Optional default value: param = expr
+            std::unique_ptr<Expr> defaultValue;
+            if (match(TokenType::EQUAL)) {
+                defaultValue = expression();
+                if (!defaultValue) {
+                    return nullptr;
+                }
+            } else {
+                // Validate: required params cannot follow default params
+                if (!params.empty() && params.back().defaultValue) {
+                    error("Required parameter cannot follow a parameter with a default value\n");
+                    return nullptr;
+                }
+            }
+
+            params.emplace_back(std::move(paramName), std::move(defaultValue));
         }
         while (match(TokenType::COMMA));
     }
@@ -373,14 +388,16 @@ std::unique_ptr<Stmt> Parser::objStatement() {
 
     std::string name = previous().lexeme;
 
-    // Optional inheritance: Obj Child : Parent (params) { ... }
-    std::string parentName;
+    // Optional inheritance: Obj Child : Parent1, Parent2, ... (params) { ... }
+    std::vector<std::string> parentNames;
     if (match(TokenType::COLON)) {
-        if (!match(TokenType::IDENTIFIER)) {
-            error("Expected parent class name after ':'\n");
-            return nullptr;
-        }
-        parentName = previous().lexeme;
+        do {
+            if (!match(TokenType::IDENTIFIER)) {
+                error("Expected parent class name after ':'\n");
+                return nullptr;
+            }
+            parentNames.push_back(previous().lexeme);
+        } while (match(TokenType::COMMA));
     }
 
     if (!match(TokenType::LEFT_PAREN)) {
@@ -390,7 +407,7 @@ std::unique_ptr<Stmt> Parser::objStatement() {
         return nullptr;
     }
 
-    std::vector<std::string> params;
+    std::vector<ParamDecl> params;
 
     if (!check(TokenType::RIGHT_PAREN)) {
 
@@ -403,9 +420,27 @@ std::unique_ptr<Stmt> Parser::objStatement() {
                 return nullptr;
             }
 
-            params.push_back(
-                previous().lexeme
-            );
+            std::string paramName = previous().lexeme;
+
+            // Optional default value: param = expr
+            std::unique_ptr<Expr> defaultValue;
+            if (match(TokenType::EQUAL)) {
+                defaultValue = expression();
+                if (!defaultValue) {
+                    return nullptr;
+                }
+                if (!params.empty() && !params.back().defaultValue) {
+                    error("Required parameter cannot follow a parameter with a default value\n");
+                    return nullptr;
+                }
+            } else {
+                if (!params.empty() && params.back().defaultValue) {
+                    error("Required parameter cannot follow a parameter with a default value\n");
+                    return nullptr;
+                }
+            }
+
+            params.emplace_back(std::move(paramName), std::move(defaultValue));
         }
         while (match(TokenType::COMMA));
     }
@@ -465,7 +500,7 @@ std::unique_ptr<Stmt> Parser::objStatement() {
 
     return std::make_unique<ObjStmt>(
         name,
-        parentName,
+        std::move(parentNames),
         std::move(params),
         std::move(methods),
         body
@@ -625,6 +660,12 @@ std::unique_ptr<Expr> Parser::primary() {
 
     if (match(TokenType::THIS)) {
         return std::make_unique<ThisExpr>(
+            previous()
+        );
+    }
+
+    if (match(TokenType::SUPER)) {
+        return std::make_unique<SuperExpr>(
             previous()
         );
     }

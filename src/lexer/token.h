@@ -73,6 +73,7 @@ namespace vora {
         IN, // in
         OBJ, // Obj
         THIS, // this
+        SUPER, // super
         BREAK, // break
         CONTINUE, // continue
         TRY, // try

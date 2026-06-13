@@ -1,10 +1,360 @@
-// interpreter/test_edge_cases.va — Edge case tests
+// interpreter/test_edge_cases.va — Comprehensive edge case tests
 // Run: vora tests/interpreter/test_edge_cases.va
 
 print("=== Edge Case Tests ===")
 
-// TODO: Add edge case tests (large numbers, deep recursion, etc.)
+// =========================================================================
+// 1. Numeric Limits
+// =========================================================================
+print("--- 1. Numeric Limits ---")
 
-assert(true, "edge cases placeholder")
+assert(0 == 0 and -0 == 0, "nZ")
+assert(1 > 0 and -1 < 0, "nU")
 
-print("Edge case tests: PASS")
+let bigP = 9223372036854775800
+let bigN = -9223372036854775800
+assert(bigP > 0 and bigN < 0 and bigP > bigN, "nL")
+
+// IEEE 754 precision
+assert(0.1 + 0.2 > 0.299999 and 0.1 + 0.2 < 0.300001, "nFp")
+assert(1.0/3.0*3.0 > 0.99999 and 1.0/3.0*3.0 < 1.00001, "nFr")
+
+// Zero / division-by-zero catchable
+assert(0 + 0 == 0 and 0 * 999 == 0, "n0")
+let dz = false
+try { let b = 1 / 0 } catch (e) { dz = true }
+assert(dz, "nDZ")
+
+// Modulo / power
+assert(5 % 2 == 1 and 2 ** 0 == 1.0 and 0 ** 5 == 0.0, "nMP")
+assert(2 ** 10 == 1024.0, "nP2")
+
+// =========================================================================
+// 2. Deep Recursion
+// =========================================================================
+print("--- 2. Deep Recursion ---")
+
+func fact(n) {
+    if (n <= 1) return 1
+    return n * fact(n - 1)
+}
+assert(fact(0) == 1 and fact(10) == 3628800, "rf")
+
+// Tail-recursive
+func sumTo(n, acc) {
+    if (n <= 0) return acc
+    return sumTo(n - 1, acc + n)
+}
+assert(sumTo(0, 0) == 0 and sumTo(100, 0) == 5050, "rT")
+
+// Mutual recursion
+func isEven(n) {
+    if (n == 0) return true
+    return isOdd(n - 1)
+}
+func isOdd(n) {
+    if (n == 0) return false
+    return isEven(n - 1)
+}
+assert(isEven(0) and isEven(1) == false and isEven(8), "rM")
+assert(isOdd(1) and isOdd(2) == false and isOdd(9), "rM2")
+
+// =========================================================================
+// 3. Closure Nesting
+// =========================================================================
+print("--- 3. Closure Nesting ---")
+
+func makeAdder(x) {
+    func inner(y) { return x + y }
+    return inner
+}
+let add5 = makeAdder(5)
+let add10 = makeAdder(10)
+assert(add5(3) == 8 and add10(3) == 13, "cB")
+
+// Mutable counter
+func makeCnt(init) {
+    let v = init
+    func inc() { let t = v; v = v + 1; return t }
+    return inc
+}
+let c1 = makeCnt(0)
+let c2 = makeCnt(100)
+assert(c1() == 0 and c1() == 1, "cCt")
+assert(c2() == 100 and c1() == 2, "cCi")
+
+// 3-level nesting
+func outer(a) {
+    func mid(b) {
+        func inr(c) { return a + b + c }
+        return inr
+    }
+    return mid
+}
+assert(outer(1)(2)(3) == 6, "c3L")
+assert(outer(10)(20)(30) == 60, "c3L2")
+
+// Loop closures
+func mkAdds(n) {
+    let fns = []
+    let i = 0
+    while (i < n) {
+        let cap = i
+        func add(x) { return x + cap }
+        fns.add(add)
+        i = i + 1
+    }
+    return fns
+}
+let adds = mkAdds(3)
+assert(adds[0](10) == 10 and adds[2](10) == 12, "cLp")
+
+// =========================================================================
+// 4. Exception + Control Flow Interaction
+// =========================================================================
+print("--- 4. Exception + Control Flow ---")
+
+// break in try-finally
+let bf = false
+let bi = 0
+while (bi < 3) {
+    bi = bi + 1
+    try { if (bi == 2) break } finally { bf = true }
+}
+assert(bf, "xBr")
+
+// return in try-finally
+let rf = false
+func rtf() {
+    try { return "v" } finally { rf = true }
+}
+assert(rtf() == "v" and rf, "xRt")
+
+// continue in try-finally
+let cf = false
+let cs = 0
+let cx = 0
+while (cx < 5) {
+    cx = cx + 1
+    try { if (cx < 3) continue } finally { cf = true }
+    cs = cs + cx
+}
+assert(cf and cs == 12, "xCt")
+
+// nested try: outer does not catch when inner caught
+let no = false
+try {
+    try { throw "i" } catch (e) {}
+} catch (e) { no = true }
+assert(!no, "xNs")
+
+// try/finally without catch propagates
+let nc = false
+try { try { throw "x" } finally {} } catch (e) { nc = true }
+assert(nc, "xNc")
+
+// return inside catch
+let ricVal = "FAIL"
+func tryRetInCatch() {
+    try { throw "e" } catch (e) { return "c:" + e }
+}
+ricVal = tryRetInCatch()
+assert(ricVal == "c:e", "xRi")
+
+// =========================================================================
+// 5. Null Propagation
+// =========================================================================
+print("--- 5. Null Propagation ---")
+
+assert(null == null, "nN")
+assert(null != false and null != 0 and null != "", "nN2")
+assert(!null, "nF")
+
+// Null in logic
+assert((null or 42) == 42, "nLo")
+assert((42 or null) == 42, "nLo2")
+
+// Null in arrays
+assert([null, 1][0] == null and [null, 1][1] == 1, "nAr")
+
+// Null concatenation
+assert("a" + null == "anull" and type(null) == "null", "nTc")
+
+// Variable null reassignment
+let nv = null
+nv = 42
+assert(nv == 42, "nV1")
+nv = null
+assert(nv == null, "nV2")
+
+// =========================================================================
+// 6. Unicode Handling
+// =========================================================================
+print("--- 6. Unicode Handling ---")
+
+assert(len("hello") == 5 and "hello"[0] == "h", "uAs")
+assert(len("€") == 3 and len("中文") == 6, "uMb")
+assert("" == "" and len("") == 0, "uEs")
+assert(len("ß") == 2 and len("🎉") == 4, "uHi")
+assert("cafe".upper() == "CAFE", "uUp")
+
+// =========================================================================
+// 7. Constant Pool Dedup
+// =========================================================================
+print("--- 7. Constant Pool ---")
+
+let dup1 = "dedup"
+let dup2 = "dedup"
+assert(dup1 == dup2, "cpD")
+
+// =========================================================================
+// 8. Type Coercion
+// =========================================================================
+print("--- 8. Type Coercion ---")
+
+assert(2 + 3 == 5 and type(2 + 3) == "int", "tI")
+assert(type(1 + 2.0) == "float", "tIF")
+assert("x" + 1 == "x1" and 1 + "x" == "1x", "tSC")
+assert(type(null) == "null" and type(true) == "boolean", "tT1")
+assert(type(42) == "int" and type(3.14) == "float", "tT2")
+assert(type("hi") == "string" and type([1]) == "array", "tT3")
+
+func dummy() {}
+Obj DummyType() {}
+assert(type(dummy) == "function" and type(DummyType()) == "object", "tTF")
+assert(int(3.9) == 3 and int("42") == 42, "tIv")
+assert(float(42) == 42.0 and type(float(42)) == "float", "tFv")
+
+// =========================================================================
+// 9. Array Edge Cases
+// =========================================================================
+print("--- 9. Array Edge Cases ---")
+
+assert(len([]) == 0, "aE")
+assert(type([]) == "array", "aTy")
+
+let a1 = [1, 2]
+let a2 = a1 + [3, 4]
+assert(len(a2) == 4 and a2[0] == 1 and a2[3] == 4, "aCt")
+
+// Array OOB
+let ao = false
+try { let bad = [1][100] } catch (e) { ao = true }
+assert(ao, "aOoB")
+
+// =========================================================================
+// 10. String Edge Cases
+// =========================================================================
+print("--- 10. String Edge Cases ---")
+
+let iName = "Vora"
+assert("Hello ${iName}!" == "Hello Vora!", "sIp")
+
+Obj S(n) { this.name = n }
+let sp = S("X")
+assert("Hi ${sp.name}!" == "Hi X!", "sIp2")
+
+assert("hello".substring(1,3) == "el" and "hello".startsWith("he"), "sM")
+assert("hello".include("ell"), "sM2")
+assert("  hi  ".trim() == "hi", "sTr")
+
+// String OOB
+let so = false
+try { let b = "x"[9] } catch (e) { so = true }
+assert(so, "sOoB")
+
+// =========================================================================
+// 11. Object + Inheritance Edge Cases
+// =========================================================================
+print("--- 11. Object + Inheritance ---")
+
+Obj Empty() {}
+assert(type(Empty()) == "object", "oE")
+
+// Deep chain (5 levels)
+Obj L1(x) { this.x = x }
+Obj L2 : L1 (x, y) { this.y = y }
+Obj L3 : L2 (x, y, z) { this.z = z }
+Obj L4 : L3 (x, y, z, w) { this.w = w }
+Obj L5 : L4 (x, y, z, w, v) { this.v = v }
+let l5 = L5(1, 2, 3, 4, 5)
+assert(l5.x == 1 and l5.v == 5, "oL")
+
+// Method override
+Obj MA() { func tag() { return "A" } }
+Obj MB : MA () { func tag() { return "B" } }
+Obj MC : MB () {}
+assert(MC().tag() == "B", "oOv")
+
+// Diamond: first parent wins
+Obj DA() { func n() { return "A" } }
+Obj DB : DA () { func n() { return "B" } }
+Obj DC : DA () { func n() { return "C" } }
+Obj DD : DB, DC () {}
+assert(DD().n() == "B", "oDi")
+
+// Independent instances
+Obj Ctr(v) {
+    this.v = v
+    func inc() { this.v = this.v + 1; return this.v }
+}
+let ct1 = Ctr(0)
+let ct2 = Ctr(100)
+assert(ct1.inc() == 1 and ct2.inc() == 101, "oIi")
+
+// Super chain
+Obj SA() { func t() { return "A" } }
+Obj SB : SA () { func t() { return "B" } }
+Obj SC : SB () { func t() { return super.t() + "C" } }
+assert(SC().t() == "BC", "oSp")
+
+// =========================================================================
+// 12. Control Flow Edge Cases
+// =========================================================================
+print("--- 12. Control Flow ---")
+
+// Empty blocks
+while (false) { }
+if (true) { }
+
+// Ternary
+assert((true?1:2) == 1 and (false?1:2) == 2, "cT")
+
+let tScore = 85
+assert((tScore>90?"A":tScore>80?"B":"C") == "B", "cTn")
+
+// for-in
+let rSum = 0
+for i in range(5) { rSum = rSum + i }
+assert(rSum == 10, "cFR")
+
+let aSum = 0
+for x in [10,20,30] { aSum = aSum + x }
+assert(aSum == 60, "cFA")
+
+// Nested break
+let nb = 0
+let nx = 0
+while (nx < 5) {
+    let ny = 0
+    while (ny < 5) {
+        if (ny == 2) { break }
+        nb = nb + 1
+        ny = ny + 1
+    }
+    nx = nx + 1
+}
+assert(nb == 10, "cNb")
+
+// Continue
+let cSum = 0
+let ci = 0
+while (ci < 10) {
+    ci = ci + 1
+    if (ci % 2 == 0) continue
+    cSum = cSum + ci
+}
+assert(cSum == 25, "cCn")
+
+// =========================================================================
+print("Edge case tests: ALL PASS")

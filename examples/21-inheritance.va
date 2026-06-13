@@ -64,3 +64,29 @@ print("getName: " + p.getName())    // From Animal, through Dog
 
 print("\n=== 7. Method from intermediate class ===")
 print("getBreed: " + p.getBreed())  // From Dog, through inheritance
+
+print("\n=== 8. Multiple inheritance ===")
+// D inherits from B and C — B listed first wins on conflicts
+
+Obj Speaker() {
+    func speak() { return "hello from Speaker" }
+    func greet() { return "hi from Speaker" }
+}
+
+Obj Walker() {
+    func walk() { return "walking from Walker" }
+    func greet() { return "hi from Walker" }
+}
+
+Obj Robot : Speaker, Walker () {
+    // Robot inherits from Speaker (first) and Walker (second)
+    // MRO: Robot, Speaker, Walker
+    // Speaker.greet wins over Walker.greet
+    func work() { return "working" }
+}
+
+let r = Robot()
+print("speak: " + r.speak())   // From Speaker
+print("walk: " + r.walk())     // From Walker
+print("greet: " + r.greet())   // From Speaker (first parent wins)
+print("work: " + r.work())     // Own method

@@ -144,8 +144,8 @@ TEST_CASE("parser_func_statement") {
     REQUIRE(func != nullptr);
     CHECK(func->name == "add");
     REQUIRE(func->params.size() == 2);
-    CHECK(func->params[0] == "a");
-    CHECK(func->params[1] == "b");
+    CHECK(func->params[0].name == "a");
+    CHECK(func->params[1].name == "b");
 }
 
 TEST_CASE("parser_func_no_params") {
@@ -163,8 +163,8 @@ TEST_CASE("parser_obj_statement") {
     REQUIRE(obj != nullptr);
     CHECK(obj->name == "Point");
     REQUIRE(obj->params.size() == 2);
-    CHECK(obj->params[0] == "x");
-    CHECK(obj->params[1] == "y");
+    CHECK(obj->params[0].name == "x");
+    CHECK(obj->params[1].name == "y");
 }
 
 TEST_CASE("parser_obj_inheritance") {
@@ -173,7 +173,8 @@ TEST_CASE("parser_obj_inheritance") {
     auto* obj = dynamic_cast<ObjStmt*>(prog->statements[0].get());
     REQUIRE(obj != nullptr);
     CHECK(obj->name == "Child");
-    CHECK(obj->parentName == "Parent");
+    REQUIRE(obj->parentNames.size() == 1);
+    CHECK(obj->parentNames[0] == "Parent");
 }
 
 TEST_CASE("parser_break_continue") {

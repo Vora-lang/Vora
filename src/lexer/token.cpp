@@ -54,6 +54,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::IN: return "IN";
         case TokenType::OBJ: return "OBJ";
         case TokenType::THIS: return "THIS";
+        case TokenType::SUPER: return "SUPER";
         case TokenType::BREAK: return "BREAK";
         case TokenType::CONTINUE: return "CONTINUE";
         case TokenType::TRY: return "TRY";

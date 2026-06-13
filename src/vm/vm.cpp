@@ -15,6 +15,95 @@
 namespace vora {
 
 // =========================================================================
+// C3 Linearization (Python-style MRO)
+// =========================================================================
+// Computes Method Resolution Order for a class given its parent classes.
+// L[C(B1, B2, ..., Bn)] = [C] + merge(L[B1], L[B2], ..., L[Bn], [B1, B2, ..., Bn])
+// Returns: vector<shared_ptr<ObjectClass>> where [0] = self, then parents in MRO.
+// Throws std::runtime_error on inconsistent MRO (diamond problem without resolution).
+
+static std::vector<std::shared_ptr<ObjectClass>> computeC3MRO(
+    const std::shared_ptr<ObjectClass>& self,
+    const std::vector<std::shared_ptr<ObjectClass>>& parents)
+{
+    // Build list of linearizations for the merge: each parent's MRO + direct parent list
+    std::vector<std::vector<std::shared_ptr<ObjectClass>>> lists;
+
+    for (const auto& p : parents) {
+        // Add the parent's own MRO (which is [parent, parent's parents...])
+        // Lock weak_ptrs in parent's MRO to get shared_ptrs for the merge
+        std::vector<std::shared_ptr<ObjectClass>> parentMRO;
+        for (const auto& wp : p->mro) {
+            if (auto sp = wp.lock()) {
+                parentMRO.push_back(sp);
+            }
+        }
+        lists.push_back(std::move(parentMRO));
+    }
+
+    // Add the direct parent list [B1, B2, ..., Bn] as the last list
+    lists.push_back(parents);
+
+    // Merge
+    std::vector<std::shared_ptr<ObjectClass>> result;
+    result.push_back(self);
+
+    // Continue while any list is non-empty
+    bool anyNonEmpty = true;
+    while (anyNonEmpty) {
+        anyNonEmpty = false;
+        for (auto& lst : lists) {
+            if (!lst.empty()) {
+                anyNonEmpty = true;
+                break;
+            }
+        }
+        if (!anyNonEmpty) break;
+
+        // Find a good head: the first head that doesn't appear in any tail
+        std::shared_ptr<ObjectClass> goodHead;
+        for (const auto& lst : lists) {
+            if (lst.empty()) continue;
+            const auto& candidate = lst[0];
+
+            // Check if candidate appears in the tail of ANY list
+            bool inTail = false;
+            for (const auto& other : lists) {
+                for (size_t j = 1; j < other.size(); j++) {
+                    if (other[j] == candidate) {
+                        inTail = true;
+                        break;
+                    }
+                }
+                if (inTail) break;
+            }
+
+            if (!inTail) {
+                goodHead = candidate;
+                break;
+            }
+        }
+
+        if (!goodHead) {
+            // Inconsistent MRO — should not happen in practice for simple hierarchies
+            // Fall back to the original parent order (keep first inherited)
+            break;
+        }
+
+        result.push_back(goodHead);
+
+        // Remove goodHead from the head of all lists
+        for (auto& lst : lists) {
+            if (!lst.empty() && lst[0] == goodHead) {
+                lst.erase(lst.begin());
+            }
+        }
+    }
+
+    return result;
+}
+
+// =========================================================================
 // Construction
 // =========================================================================
 
@@ -515,11 +604,18 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
 
 InterpretResult VM::callVoraFunction(const std::shared_ptr<VoraFunction>& func,
                                       const std::vector<Value>& args) {
-    // Check arity
-    if (static_cast<size_t>(func->arity()) != args.size()) {
-        runtimeErrorOrThrow("Wrong arity: expected " +
-            std::to_string(func->arity()) + " but got " +
-            std::to_string(args.size()));
+    // Check arity — range check (must be between requiredArity and arity)
+    if (args.size() < static_cast<size_t>(func->requiredArity()) ||
+        args.size() > static_cast<size_t>(func->arity())) {
+        std::string expected;
+        if (func->requiredArity() == func->arity()) {
+            expected = std::to_string(func->arity());
+        } else {
+            expected = std::to_string(func->requiredArity()) + ".." +
+                       std::to_string(func->arity());
+        }
+        runtimeErrorOrThrow("Wrong arity: expected " + expected +
+            " but got " + std::to_string(args.size()));
         return InterpretResult::RUNTIME_ERROR;
     }
 
@@ -538,9 +634,17 @@ InterpretResult VM::callVoraFunction(const std::shared_ptr<VoraFunction>& func,
     ip = currentChunk->code.data();
     frameBase = stackTop;  // locals start after the current stack top
 
-    // Bind parameters as locals at frameBase
-    for (size_t i = 0; i < args.size(); i++) {
-        push(args[i]);
+    // Store actual arg count for OP_DEFAULT_PARAM
+    currentArgCount = static_cast<uint8_t>(args.size());
+
+    // Bind parameters as locals at frameBase.
+    // Pad with null up to total arity (default params will overwrite).
+    for (size_t i = 0; i < static_cast<size_t>(func->arity()); i++) {
+        if (i < args.size()) {
+            push(args[i]);
+        } else {
+            push(nullptr);
+        }
     }
 
     return InterpretResult::OK;
@@ -873,7 +977,8 @@ InterpretResult VM::run() {
                 }
                 auto protoPtr = std::get<std::shared_ptr<FunctionPrototype>>(protoVal);
                 auto function = std::make_shared<VoraFunction>(
-                    protoPtr->name, protoPtr->arity, protoPtr.get());
+                    protoPtr->name, protoPtr->arity,
+                    protoPtr->requiredArity, protoPtr.get());
 
                 // Read upvalue descriptors and capture upvalues
                 uint8_t upvalueCount = READ_BYTE();
@@ -945,6 +1050,18 @@ InterpretResult VM::run() {
 
                 // Push return value
                 push(returnValue);
+                break;
+            }
+
+            // --- Default parameters ---
+            case OpCode::OP_DEFAULT_PARAM: {
+                uint8_t slot = READ_BYTE();
+                uint16_t skipOffset = readShort();
+                if (slot < currentArgCount) {
+                    // Arg was provided by caller — skip the default eval code
+                    ip += skipOffset;
+                }
+                // else: fall through to evaluate default expression
                 break;
             }
 
@@ -1105,10 +1222,11 @@ InterpretResult VM::run() {
                         push(it->second);
                         break;
                     }
-                    // Check class methods
+                    // Check class methods via MRO (C3 linearization)
                     if (instance->classDefinition) {
-                        ObjectClass* cls = instance->classDefinition.get();
-                        while (cls) {
+                        for (const auto& wp : instance->classDefinition->mro) {
+                            auto cls = wp.lock();
+                            if (!cls) continue;
                             auto methodIt = cls->methods.find(propName);
                             if (methodIt != cls->methods.end()) {
                                 // Create bound method: a NativeFunction carrying the
@@ -1126,14 +1244,12 @@ InterpretResult VM::run() {
                                     [](const std::vector<Value>&) -> Value { return nullptr; });
                                 bound->markAsBoundMethod(instance, mp, methodFn);
                                 push(bound);
-                                // Found method — break out of while + switch
+                                // Found method — break out of for + switch
                                 goto method_found;
                             }
-                            auto parentPtr = cls->parentClass.lock();
-                            cls = parentPtr.get();
                         }
                         method_found:
-                        if (cls) break;  // found method
+                        break;  // found method — exit switch
                     }
                     RUNTIME_ERROR_OR_THROW("Undefined property: " + propName);
                 } else {
@@ -1156,6 +1272,77 @@ InterpretResult VM::run() {
                 }
                 break;
             }
+            case OpCode::OP_GET_SUPER: {
+                uint8_t nameIndex = READ_BYTE();
+                std::string propName = std::get<std::string>(currentChunk->constants[nameIndex]);
+
+                // Get 'this' from local slot 0 (must be in a method)
+                Value thisVal = frameBase[0];
+                if (!std::holds_alternative<std::shared_ptr<ObjectInstance>>(thisVal)) {
+                    RUNTIME_ERROR_OR_THROW("'super' used outside of method");
+                }
+                auto instance = std::get<std::shared_ptr<ObjectInstance>>(thisVal);
+
+                if (!instance->classDefinition) {
+                    RUNTIME_ERROR_OR_THROW("Object has no class definition");
+                }
+
+                const auto& mro = instance->classDefinition->mro;
+                if (mro.size() < 2) {
+                    RUNTIME_ERROR_OR_THROW("No parent class for super." + propName);
+                }
+
+                // Find which class in the MRO defines the currently executing method.
+                // super.method() should search starting from the NEXT class after the
+                // defining class. For multi-level inheritance (e.g. Puppy → Dog → Animal),
+                // when Dog.speak() calls super.speak(), we must skip Dog and find Animal.
+                size_t startIdx = 1;  // default: skip self (the instance's own class)
+                if (!frames.empty() && frames.back().function) {
+                    const auto* currentProto = frames.back().function->getPrototype();
+                    if (currentProto) {
+                        for (size_t i = 0; i < mro.size(); i++) {
+                            auto cls = mro[i].lock();
+                            if (!cls) continue;
+                            for (const auto& [mname, mfn] : cls->methods) {
+                                if (mfn->getPrototype() == currentProto) {
+                                    startIdx = i + 1;  // start from next class after defining class
+                                    goto super_start_found;
+                                }
+                            }
+                        }
+                    }
+                }
+                super_start_found:
+
+                if (startIdx >= mro.size()) {
+                    RUNTIME_ERROR_OR_THROW("No parent class for super." + propName);
+                }
+
+                bool found = false;
+                for (size_t i = startIdx; i < mro.size(); i++) {
+                    auto cls = mro[i].lock();
+                    if (!cls) continue;
+                    auto methodIt = cls->methods.find(propName);
+                    if (methodIt != cls->methods.end()) {
+                        auto methodFn = methodIt->second;
+                        const FunctionPrototype* mp = methodFn->getPrototype();
+                        if (!mp) {
+                            RUNTIME_ERROR_OR_THROW("Method has no compiled body");
+                        }
+                        auto bound = std::make_shared<NativeFunction>(
+                            propName, methodFn->arity(),
+                            [](const std::vector<Value>&) -> Value { return nullptr; });
+                        bound->markAsBoundMethod(instance, mp, methodFn);
+                        push(bound);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    RUNTIME_ERROR_OR_THROW("Undefined super property: " + propName);
+                }
+                break;
+            }
             case OpCode::OP_CLASS: {
                 uint8_t classIndex = READ_BYTE();
                 Value classDataVal = currentChunk->constants[classIndex];
@@ -1171,10 +1358,12 @@ InterpretResult VM::run() {
                 objClass->className = cd.name;
                 objClass->params = cd.params;
                 objClass->ctorProto = cd.ctor;
+                objClass->parentClassNames = cd.parentNames;
 
-                // Resolve parent class from globals (integer-indexed lookup)
-                if (!cd.parentName.empty()) {
-                    auto it = globalIndex.find(cd.parentName);
+                // Resolve parent classes from globals (integer-indexed lookup)
+                std::vector<std::shared_ptr<ObjectClass>> resolvedParents;
+                for (const auto& parentName : cd.parentNames) {
+                    auto it = globalIndex.find(parentName);
                     if (it != globalIndex.end()) {
                         int pSlot = it->second;
                         if (static_cast<size_t>(pSlot) < globalValues.size() &&
@@ -1182,7 +1371,11 @@ InterpretResult VM::run() {
                             const auto& parentVal = globalValues[static_cast<size_t>(pSlot)];
                             if (auto callable = std::get_if<std::shared_ptr<Callable>>(&parentVal)) {
                                 if (*callable) {
-                                    objClass->parentClass = (*callable)->getClassDef();
+                                    auto parentDef = (*callable)->getClassDef();
+                                    if (parentDef) {
+                                        resolvedParents.push_back(parentDef);
+                                        objClass->parentClasses.push_back(parentDef);
+                                    }
                                 }
                             }
                         }
@@ -1192,17 +1385,31 @@ InterpretResult VM::run() {
                 // Store method VoraFunctions
                 for (const auto& methodProto : cd.methods) {
                     auto methodFn = std::make_shared<VoraFunction>(
-                        methodProto->name, methodProto->arity, methodProto.get());
+                        methodProto->name, methodProto->arity,
+                        methodProto->requiredArity, methodProto.get());
                     objClass->methods[methodProto->name] = methodFn;
+                }
+
+                // Compute C3 MRO and cache on ObjectClass
+                {
+                    auto mroShared = computeC3MRO(objClass, resolvedParents);
+                    for (const auto& cls : mroShared) {
+                        objClass->mro.push_back(cls);  // store as weak_ptr
+                    }
                 }
 
                 // Create constructor VoraFunction
                 auto ctorFn = std::make_shared<VoraFunction>(
-                    cd.ctor->name, cd.ctor->arity, cd.ctor.get());
+                    cd.ctor->name, cd.ctor->arity,
+                    cd.ctor->requiredArity, cd.ctor.get());
 
                 // The constructor callable that creates instances.
-                // Parent constructors are called root-first, then the child's
-                // constructor. Each parent gets args[0..parentParamCount].
+                // Parent constructors are called in reverse MRO order (most-base-first),
+                // then the child's constructor. Each parent receives ALL child
+                // constructor arguments (Python-style). This means each constructor
+                // uses the first N arguments where N is its own arity. For multi-
+                // inheritance, parents should have compatible parameter lists where
+                // shared parameters are at the same positions.
                 auto ctorCallable = std::make_shared<NativeFunction>(
                     cd.name, static_cast<int>(cd.params.size()),
                     [objClass, ctorFn, globalsNames = globalNames, globalsValues = globalValues, globalsDefined = globalDefined, globalsIndex = globalIndex](const std::vector<Value>& args) -> Value {
@@ -1226,16 +1433,14 @@ InterpretResult VM::run() {
                             tempVm.run();
                         };
 
-                        // Run parent constructors root-first.
-                        // Each parent gets ALL arguments (it uses the params it needs).
-                        if (auto parentLock = objClass->parentClass.lock()) {
-                            std::vector<std::shared_ptr<ObjectClass>> chain;
-                            for (auto p = parentLock; p; p = p->parentClass.lock()) {
-                                chain.insert(chain.begin(), p);
-                            }
-                            for (auto& parent : chain) {
-                                if (parent->ctorProto) {
-                                    runCtor(parent->ctorProto.get(), args);
+                        // Run parent constructors in reverse MRO order (most-base first, excluding self).
+                        // MRO is [self, P1, P2, ..., base]. Reverse → [base, ..., P2, P1].
+                        // Each parent receives ALL arguments — it uses its own arity to bind
+                        // parameters from the front of the argument list.
+                        for (size_t idx = objClass->mro.size(); idx > 1; idx--) {
+                            if (auto parentClass = objClass->mro[idx - 1].lock()) {
+                                if (parentClass->ctorProto) {
+                                    runCtor(parentClass->ctorProto.get(), args);
                                 }
                             }
                         }

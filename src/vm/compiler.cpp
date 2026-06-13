@@ -583,6 +583,14 @@ void Compiler::visitIndexExpr(const IndexExpr& expr) {
 void Compiler::visitPropertyExpr(const PropertyExpr& expr) {
     currentLine = expr.dot.line;
     currentColumn = expr.dot.column;
+
+    // super.method → emit OP_GET_SUPER instead of OP_GET_PROPERTY
+    if (dynamic_cast<const SuperExpr*>(expr.object.get())) {
+        uint8_t nameIndex = identifierConstant(expr.property);
+        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_SUPER), nameIndex);
+        return;
+    }
+
     expr.object->accept(*this);
     uint8_t nameIndex = identifierConstant(expr.property);
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), nameIndex);
@@ -611,6 +619,14 @@ void Compiler::visitThisExpr(const ThisExpr& expr) {
         emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL),
                   static_cast<uint8_t>(slot));
     }
+}
+
+void Compiler::visitSuperExpr(const SuperExpr& /*expr*/) {
+    // 'super' alone is an error — only 'super.method()' is valid.
+    // The parser allows `super` as a primary expression, but the compiler
+    // rejects it because OP_GET_SUPER needs a property name.
+    hadError = true;
+    std::fprintf(stderr, "[line %d] Error: 'super' must be followed by '.method'\n", currentLine);
 }
 
 void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
@@ -995,9 +1011,53 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     // Function body starts a new scope with parameters as locals
     fnCompiler.beginScope();
 
+    // Count required params (without defaults)
+    int requiredArity = 0;
+    for (const auto& param : stmt.params) {
+        if (!param.defaultValue) requiredArity++;
+        else break;  // defaults must come after required params (parser enforces)
+    }
+    int totalArity = static_cast<int>(stmt.params.size());
+
     // Add parameters as locals (they'll be set by OP_CALL binding)
     for (const auto& param : stmt.params) {
-        fnCompiler.addLocal(param);
+        fnCompiler.addLocal(param.name);
+    }
+
+    // Emit default-parameter preamble for params with defaults
+    for (int i = requiredArity; i < totalArity; i++) {
+        const auto& param = stmt.params[static_cast<size_t>(i)];
+
+        // OP_DEFAULT_PARAM <slot> <skipOffset>
+        // If slot < actualArgCount, skip the default evaluation.
+        fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_DEFAULT_PARAM));
+        fnCompiler.emitByte(static_cast<uint8_t>(i));  // local slot
+        size_t skipOffsetPos = fnCompiler.chunk.code.size();
+        fnCompiler.emitByte(0xFF);  // placeholder skip offset (low)
+        fnCompiler.emitByte(0xFF);  // placeholder skip offset (high)
+
+        // Compile the default value expression (result on stack)
+        param.defaultValue->accept(fnCompiler);
+
+        // Store into the local slot and pop leftover
+        fnCompiler.emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                             static_cast<uint8_t>(i));
+        fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+        // Patch the skip offset to jump over the default eval code
+        if (!fnCompiler.hadError) {
+            size_t jumpEnd = fnCompiler.chunk.code.size();
+            size_t offset = static_cast<size_t>(jumpEnd - skipOffsetPos - 2);
+            if (offset > 0xFFFF) {
+                // Jump offset overflow
+                fnCompiler.hadError = true;
+            } else {
+                fnCompiler.chunk.code[skipOffsetPos] =
+                    static_cast<uint8_t>(offset & 0xFF);
+                fnCompiler.chunk.code[skipOffsetPos + 1] =
+                    static_cast<uint8_t>((offset >> 8) & 0xFF);
+            }
+        }
     }
 
     // Compile the function body
@@ -1016,7 +1076,8 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     auto capturedUpvalues = fnCompiler.upvalues;  // copy before move
     FunctionPrototype proto;
     proto.name = stmt.name;
-    proto.arity = static_cast<int>(stmt.params.size());
+    proto.arity = totalArity;
+    proto.requiredArity = requiredArity;
     proto.upvalues = std::move(fnCompiler.upvalues);
     proto.chunk = std::move(fnCompiler.chunk);
 
@@ -1064,13 +1125,53 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
             Compiler methodCompiler;
             methodCompiler.enclosing = this;
 
+            // Count required params for methods
+            int mRequiredArity = 0;
+            for (const auto& mp : funcStmt->params) {
+                if (!mp.defaultValue) mRequiredArity++;
+                else break;
+            }
+            int mTotalArity = static_cast<int>(funcStmt->params.size());
+
             methodCompiler.beginScope();
             // Add 'this' as local at slot 0
             methodCompiler.addLocal("this");
-            // Add parameters
+            // Add parameters (slots 1, 2, ...)
             for (const auto& param : funcStmt->params) {
-                methodCompiler.addLocal(param);
+                methodCompiler.addLocal(param.name);
             }
+
+            // Emit default-parameter preamble for method params with defaults
+            for (int i = mRequiredArity; i < mTotalArity; i++) {
+                const auto& param = funcStmt->params[static_cast<size_t>(i)];
+                int slot = i + 1;  // slot 0 is 'this', params start at slot 1
+
+                methodCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_DEFAULT_PARAM));
+                methodCompiler.emitByte(static_cast<uint8_t>(slot));
+                size_t skipPos = methodCompiler.chunk.code.size();
+                methodCompiler.emitByte(0xFF);
+                methodCompiler.emitByte(0xFF);
+
+                param.defaultValue->accept(methodCompiler);
+
+                methodCompiler.emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                                         static_cast<uint8_t>(slot));
+                methodCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                if (!methodCompiler.hadError) {
+                    size_t jumpEnd = methodCompiler.chunk.code.size();
+                    size_t off = static_cast<size_t>(jumpEnd - skipPos - 2);
+                    if (off > 0xFFFF) {
+                        methodCompiler.hadError = true;
+                    } else {
+                        methodCompiler.chunk.code[skipPos] =
+                            static_cast<uint8_t>(off & 0xFF);
+                        methodCompiler.chunk.code[skipPos + 1] =
+                            static_cast<uint8_t>((off >> 8) & 0xFF);
+                    }
+                }
+            }
+
             // Compile method body
             for (const auto& s : funcStmt->body->statements) {
                 s->accept(methodCompiler);
@@ -1083,20 +1184,61 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
 
             auto proto = std::make_shared<FunctionPrototype>();
             proto->name = funcStmt->name;
-            proto->arity = static_cast<int>(funcStmt->params.size());
+            proto->arity = mTotalArity;
+            proto->requiredArity = mRequiredArity;
             proto->chunk = std::move(methodCompiler.chunk);
             methodProtos.push_back(proto);
         }
     }
 
     // Compile constructor body
+    // Count required params
+    int ctorRequiredArity = 0;
+    for (const auto& cp : stmt.params) {
+        if (!cp.defaultValue) ctorRequiredArity++;
+        else break;
+    }
+    int ctorTotalArity = static_cast<int>(stmt.params.size());
+
     Compiler ctorCompiler;
     ctorCompiler.enclosing = this;
     ctorCompiler.beginScope();
     ctorCompiler.addLocal("this");  // slot 0
     for (const auto& param : stmt.params) {
-        ctorCompiler.addLocal(param);
+        ctorCompiler.addLocal(param.name);
     }
+
+    // Emit default-parameter preamble for constructor params with defaults
+    for (int i = ctorRequiredArity; i < ctorTotalArity; i++) {
+        const auto& param = stmt.params[static_cast<size_t>(i)];
+        int slot = i + 1;  // slot 0 is 'this'
+
+        ctorCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_DEFAULT_PARAM));
+        ctorCompiler.emitByte(static_cast<uint8_t>(slot));
+        size_t skipPos = ctorCompiler.chunk.code.size();
+        ctorCompiler.emitByte(0xFF);
+        ctorCompiler.emitByte(0xFF);
+
+        param.defaultValue->accept(ctorCompiler);
+
+        ctorCompiler.emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                               static_cast<uint8_t>(slot));
+        ctorCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+        if (!ctorCompiler.hadError) {
+            size_t jumpEnd = ctorCompiler.chunk.code.size();
+            size_t off = static_cast<size_t>(jumpEnd - skipPos - 2);
+            if (off > 0xFFFF) {
+                ctorCompiler.hadError = true;
+            } else {
+                ctorCompiler.chunk.code[skipPos] =
+                    static_cast<uint8_t>(off & 0xFF);
+                ctorCompiler.chunk.code[skipPos + 1] =
+                    static_cast<uint8_t>((off >> 8) & 0xFF);
+            }
+        }
+    }
+
     for (const auto& s : stmt.body->statements) {
         s->accept(ctorCompiler);
     }
@@ -1106,14 +1248,21 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
 
     auto ctorProto = std::make_shared<FunctionPrototype>();
     ctorProto->name = stmt.name;
-    ctorProto->arity = static_cast<int>(stmt.params.size());
+    ctorProto->arity = ctorTotalArity;
+    ctorProto->requiredArity = ctorRequiredArity;
     ctorProto->chunk = std::move(ctorCompiler.chunk);
+
+    // Extract param names for ClassData
+    std::vector<std::string> paramNames;
+    for (const auto& p : stmt.params) {
+        paramNames.push_back(p.name);
+    }
 
     // Store class data in constant pool
     auto classData = std::make_shared<ClassData>();
     classData->name = stmt.name;
-    classData->parentName = stmt.parentName;
-    classData->params = stmt.params;
+    classData->parentNames = stmt.parentNames;
+    classData->params = paramNames;
     classData->ctor = ctorProto;
     classData->methods = methodProtos;
 

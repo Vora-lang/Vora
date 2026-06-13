@@ -57,6 +57,8 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_GET_PROPERTY:   return "OP_GET_PROPERTY";
         case OpCode::OP_SET_PROPERTY:   return "OP_SET_PROPERTY";
         case OpCode::OP_CLASS:          return "OP_CLASS";
+        case OpCode::OP_GET_SUPER:      return "OP_GET_SUPER";
+        case OpCode::OP_DEFAULT_PARAM:  return "OP_DEFAULT_PARAM";
         case OpCode::OP_PUSH_CATCH:     return "OP_PUSH_CATCH";
         case OpCode::OP_POP_CATCH:      return "OP_POP_CATCH";
         case OpCode::OP_CLEAR_EXCEPTION: return "OP_CLEAR_EXCEPTION";
@@ -256,7 +258,8 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             return offset + 2;
         }
         case OpCode::OP_GET_PROPERTY:
-        case OpCode::OP_SET_PROPERTY: {
+        case OpCode::OP_SET_PROPERTY:
+        case OpCode::OP_GET_SUPER: {
             uint8_t index = code[offset + 1];
             std::printf("%-16s %4d ", opcodeName(instruction), index);
             if (index < constants.size()) {
@@ -304,6 +307,14 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             uint8_t val = code[offset + 1];
             std::printf("%-16s %4d\n", opcodeName(instruction), val);
             return offset + 2;
+        }
+        case OpCode::OP_DEFAULT_PARAM: {
+            uint8_t slot = code[offset + 1];
+            uint16_t skipOffset = static_cast<uint16_t>(code[offset + 2])
+                                | (static_cast<uint16_t>(code[offset + 3]) << 8);
+            std::printf("%-16s slot %d skip=%d -> %zu\n", opcodeName(instruction),
+                       slot, skipOffset, offset + 4 + skipOffset);
+            return offset + 4;
         }
         case OpCode::OP_JUMP:
         case OpCode::OP_JUMP_IF_FALSE: {

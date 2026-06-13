@@ -56,6 +56,11 @@ class VM {
     };
     std::vector<CatchHandler> catchHandlers;
 
+    // Number of arguments actually passed to the current function call.
+    // Used by OP_DEFAULT_PARAM to determine whether a default value should
+    // be evaluated for a parameter slot.
+    uint8_t currentArgCount = 0;
+
     // True when throwException() has just routed an exception through a catch
     // handler and the value is on the stack. OP_FINALLY_END checks this to
     // decide whether to re-throw.

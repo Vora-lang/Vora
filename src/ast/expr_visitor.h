@@ -33,6 +33,7 @@ public:
     virtual R visitPropertyExpr(const PropertyExpr& expr) = 0;
     virtual R visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) = 0;
     virtual R visitThisExpr(const ThisExpr& expr) = 0;
+    virtual R visitSuperExpr(const SuperExpr& expr) = 0;
     virtual R visitIncDecExpr(const IncDecExpr& expr) = 0;
     virtual R visitTernaryExpr(const TernaryExpr& expr) = 0;
 };

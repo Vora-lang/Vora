@@ -39,9 +39,10 @@ struct ObjectClass {
     std::vector<std::string> params;
     std::shared_ptr<BlockStmt> body;
     std::map<std::string, std::shared_ptr<VoraFunction>> methods;
-    std::string parentClassName;              // empty = no parent
-    std::weak_ptr<ObjectClass> parentClass;     // weak_ptr to break inheritance cycle (GC prep)
-    std::shared_ptr<FunctionPrototype> ctorProto;  // compiled constructor
+    std::vector<std::string> parentClassNames;                      // names of parent classes
+    std::vector<std::weak_ptr<ObjectClass>> parentClasses;          // resolved parent classes
+    std::vector<std::weak_ptr<ObjectClass>> mro;                    // C3 linearization cache (self + parents in MRO order)
+    std::shared_ptr<FunctionPrototype> ctorProto;                   // compiled constructor
 };
 
 struct ObjectInstance {

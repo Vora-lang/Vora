@@ -164,6 +164,10 @@ std::string ASTPrinter::visitThisExpr(const ThisExpr& /*expr*/) {
     return "this";
 }
 
+std::string ASTPrinter::visitSuperExpr(const SuperExpr& /*expr*/) {
+    return "super";
+}
+
 std::string ASTPrinter::visitIncDecExpr(const IncDecExpr& expr) {
     std::stringstream ss;
     if (expr.isPrefix) {
@@ -206,7 +210,11 @@ std::string ASTPrinter::visitFuncStmt(const FuncStmt& stmt) {
     ss << "(func " << stmt.name;
 
     for (const auto& param : stmt.params) {
-        ss << " " << param;
+        if (param.defaultValue) {
+            ss << " (" << param.name << " " << print(param.defaultValue.get()) << ")";
+        } else {
+            ss << " " << param.name;
+        }
     }
 
     ss << " ";
@@ -287,12 +295,19 @@ std::string ASTPrinter::visitObjStmt(const ObjStmt& stmt) {
 
     ss << "(obj " << stmt.name;
 
-    if (!stmt.parentName.empty()) {
-        ss << " : " << stmt.parentName;
+    if (!stmt.parentNames.empty()) {
+        ss << " :";
+        for (const auto& pn : stmt.parentNames) {
+            ss << " " << pn;
+        }
     }
 
     for (const auto& param : stmt.params) {
-        ss << " " << param;
+        if (param.defaultValue) {
+            ss << " (" << param.name << " " << print(param.defaultValue.get()) << ")";
+        } else {
+            ss << " " << param.name;
+        }
     }
 
     ss << " ";

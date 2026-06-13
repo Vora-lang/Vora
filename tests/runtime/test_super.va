@@ -1,0 +1,57 @@
+// runtime/test_super.va — super keyword tests
+// Run: vora tests/runtime/test_super.va
+
+print("=== Runtime: super Keyword Tests ===")
+
+// Basic inheritance with super method call
+Obj Animal(name) {
+    this.name = name
+    func speak() {
+        return "..."
+    }
+}
+
+Obj Dog : Animal(name, breed) {
+    this.breed = breed
+    func speak() {
+        return super.speak() + " woof!"
+    }
+}
+
+let d = Dog("Rex", "Shepherd")
+assert(d.speak() == "... woof!", "super method call")
+
+// Multi-level inheritance with super
+Obj Puppy : Dog(name, breed, toy) {
+    this.toy = toy
+    func speak() {
+        return super.speak() + " yip!"
+    }
+    func getToy() {
+        return this.toy
+    }
+}
+
+let p = Puppy("Max", "Lab", "ball")
+assert(p.speak() == "... woof! yip!", "multi-level super call")
+assert(p.getToy() == "ball", "own method on multi-level object")
+
+// Super calls grandparent method when parent doesn't override
+Obj Cat : Animal(name) {
+    // Cat doesn't override speak
+    func purr() {
+        return "purr"
+    }
+}
+let c = Cat("Whiskers")
+assert(c.speak() == "...", "inherited method without super")
+
+Obj Kitten : Cat(name) {
+    func speak() {
+        return super.speak() + " mew!"
+    }
+}
+let k = Kitten("Tiny")
+assert(k.speak() == "... mew!", "super calls grandparent method")
+
+print("Runtime super tests: PASS")

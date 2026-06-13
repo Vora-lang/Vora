@@ -26,7 +26,8 @@ struct UpvalueDescriptor {
 // Compiled function prototype stored in constant pool.
 struct FunctionPrototype {
     std::string name;
-    int arity;
+    int arity;            // total arity (max params including defaults)
+    int requiredArity;    // params without default values
     Chunk chunk;
     std::vector<UpvalueDescriptor> upvalues;  // captured variables
 };
@@ -34,7 +35,7 @@ struct FunctionPrototype {
 // Class data stored in constant pool for OP_CLASS.
 struct ClassData {
     std::string name;
-    std::string parentName;
+    std::vector<std::string> parentNames;
     std::vector<std::string> params;
     std::shared_ptr<FunctionPrototype> ctor;
     std::vector<std::shared_ptr<FunctionPrototype>> methods;
@@ -75,6 +76,7 @@ public:
     void visitPropertyExpr(const PropertyExpr& expr) override;
     void visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) override;
     void visitThisExpr(const ThisExpr& expr) override;
+    void visitSuperExpr(const SuperExpr& expr) override;
     void visitIncDecExpr(const IncDecExpr& expr) override;
     void visitTernaryExpr(const TernaryExpr& expr) override;
 

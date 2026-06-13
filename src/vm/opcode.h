@@ -76,6 +76,11 @@ enum class OpCode : uint8_t {
     OP_GET_PROPERTY,   // property access (operand: uint8_t name index)
     OP_SET_PROPERTY,   // property assignment (operand: uint8_t name index)
     OP_CLASS,          // create class from prototype (operand: uint8_t constIndex)
+    OP_GET_SUPER,      // super.method — resolve method from parent class (operand: uint8_t nameIndex)
+
+    // Default parameters
+    OP_DEFAULT_PARAM,  // check if param was passed, skip default eval if so
+                       // (operand: uint8_t slot, uint16_t skipOffset)
 
     // Exception handling
     OP_PUSH_CATCH,     // push catch handler info (operand: uint16_t catch offset)
