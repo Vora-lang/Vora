@@ -116,6 +116,12 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     },
     {
+      "name": "linux-x64-sanitizers",
+      "description": "Linux x64 with ASan+UBSan (clang)",
+      "inherits": ["linux-x64", "sanitizer-base"],
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
       "name": "linux-x86",
       "description": "Linux x86 32-bit cross-compile",
       "inherits": "linux-base",
@@ -170,6 +176,25 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     },
     {
+      "name": "sanitizer-base",
+      "description": "Sanitizer flags (ASan + UBSan) — Linux/clang only",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -g",
+        "CMAKE_C_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined",
+        "CMAKE_SHARED_LINKER_FLAGS": "-fsanitize=address,undefined",
+        "ASAN_OPTIONS": "detect_leaks=1:check_initialization_order=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
       "name": "macos-base",
       "description": "macOS - Ninja generator",
       "hidden": true,
@@ -209,6 +234,7 @@
     { "name": "windows-arm64-release",   "configurePreset": "windows-arm64-release",   "configuration": "Release" },
     { "name": "linux-x64-debug",         "configurePreset": "linux-x64-debug",         "configuration": "Debug"   },
     { "name": "linux-x64-release",       "configurePreset": "linux-x64-release",       "configuration": "Release" },
+    { "name": "linux-x64-sanitizers",   "configurePreset": "linux-x64-sanitizers",   "configuration": "Debug"   },
     { "name": "linux-x86-debug",         "configurePreset": "linux-x86-debug",         "configuration": "Debug"   },
     { "name": "linux-x86-release",       "configurePreset": "linux-x86-release",       "configuration": "Release" },
     { "name": "linux-aarch64-debug",     "configurePreset": "linux-aarch64-debug",     "configuration": "Debug"   },
@@ -233,6 +259,11 @@
       "name": "default",
       "configurePreset": "linux-x64-debug",
       "description": "Run tests (Debug)"
+    },
+    {
+      "name": "linux-x64-sanitizers",
+      "configurePreset": "linux-x64-sanitizers",
+      "description": "Run tests with ASan+UBSan instrumentation"
     }
   ]
 }

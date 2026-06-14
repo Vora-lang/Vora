@@ -1,0 +1,12 @@
+var sum = 0;
+for (var i = 0; i < 10; i = i + 1) {
+    sum = sum + i;
+}
+assert(sum == 45);
+
+var arr = [1, 2, 3];
+var s = 0;
+for (var v in arr) {
+    s = s + v;
+}
+assert(s == 6);

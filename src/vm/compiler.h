@@ -24,21 +24,34 @@ struct UpvalueDescriptor {
 };
 
 // Compiled function prototype stored in constant pool.
-struct FunctionPrototype {
+struct FunctionPrototype : GcObject {
     std::string name;
     int arity;            // total arity (max params including defaults)
     int requiredArity;    // params without default values
     Chunk chunk;
     std::vector<UpvalueDescriptor> upvalues;  // captured variables
+
+    void trace(std::vector<GcObject*>& wl) override {
+        // FunctionPrototype doesn't directly reference other GcObjects.
+    }
+    size_t gcSize() const override { return sizeof(FunctionPrototype); }
 };
 
 // Class data stored in constant pool for OP_CLASS.
-struct ClassData {
+struct ClassData : GcObject {
     std::string name;
     std::vector<std::string> parentNames;
     std::vector<std::string> params;
-    std::shared_ptr<FunctionPrototype> ctor;
-    std::vector<std::shared_ptr<FunctionPrototype>> methods;
+    GcPtr<FunctionPrototype> ctor;
+    std::vector<GcPtr<FunctionPrototype>> methods;
+
+    void trace(std::vector<GcObject*>& wl) override {
+        if (ctor) wl.push_back(ctor.get());
+        for (auto& m : methods) {
+            if (m) wl.push_back(m.get());
+        }
+    }
+    size_t gcSize() const override { return sizeof(ClassData); }
 };
 
 // Compiler: AST → bytecode (side-effectful emission into a Chunk).
@@ -115,7 +128,9 @@ private:
     // Global variable interning
     // =========================================================================
     std::vector<std::string> globalNames;
-    int resolveGlobal(const std::string& name);  // returns slot index
+    std::vector<bool> globalDefined;  // parallel: true if OP_DEFINE_GLOBAL emitted
+    int resolveGlobal(const std::string& name);  // returns slot index (allocates if needed)
+    int defineGlobal(const std::string& name);   // like resolveGlobal but errors on redefinition
 
     // =========================================================================
     // Local variable tracking

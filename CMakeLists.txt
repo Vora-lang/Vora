@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(Vora VERSION 0.15.0 DESCRIPTION "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.")
+project(Vora VERSION 0.17.0 DESCRIPTION "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,6 +25,8 @@ add_library(vora_lib OBJECT
     src/ast/program.cpp
     src/ast/expr.cpp
     src/ast/stmt.cpp
+
+    src/gc/gc_heap.cpp
 
     src/lexer/token.cpp
     src/lexer/lexer.cpp
@@ -167,6 +169,42 @@ vora_unit_test(tests/unit/test_parser.cpp   "parser")
 vora_unit_test(tests/unit/test_compiler.cpp "compiler")
 vora_unit_test(tests/unit/test_vm.cpp       "vm")
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Fuzzer target (libFuzzer) — Linux/clang only
+# ═══════════════════════════════════════════════════════════════════════════
+
+option(VORA_FUZZER "Build libFuzzer harness for VM execution layer" OFF)
+
+if(VORA_FUZZER)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "VORA_FUZZER requires Clang (libFuzzer is clang-only)")
+    endif()
+
+    add_executable(Vora_fuzzer
+        $<TARGET_OBJECTS:vora_lib>
+        tests/fuzz/fuzz_vm.cpp
+    )
+
+    target_include_directories(Vora_fuzzer PRIVATE src)
+
+    target_compile_features(Vora_fuzzer PRIVATE cxx_std_17)
+
+    target_compile_options(Vora_fuzzer PRIVATE
+        -fsanitize=fuzzer,address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(Vora_fuzzer PRIVATE
+        -fsanitize=fuzzer,address,undefined
+    )
+
+    # Seed corpus directory
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/corpus")
+
+    message(STATUS "Fuzzer target enabled (Vora_fuzzer)")
+endif()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Install rules

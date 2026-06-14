@@ -191,3 +191,72 @@ jobs:
           name: vora-macos-universal
           path: |
             build/macos-universal-${{ env.cfg }}/vora-*.tar.gz
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # Sanitizer + Fuzzer (Linux, clang, ASan+UBSan)
+  # ═════════════════════════════════════════════════════════════════════════
+
+  sanitizer-fuzzer:
+    name: "Sanitizers (ASan+UBSan) + Fuzz"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get install -y ninja-build
+
+      - name: Install clang
+        run: |
+          sudo apt-get install -y clang
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "CXX=clang++" >> $GITHUB_ENV
+
+      # ── Sanitizer build + test ─────────────────────────────────────────
+      - name: Configure (ASan+UBSan)
+        run: cmake --preset linux-x64-sanitizers
+
+      - name: Build
+        run: cmake --build --preset linux-x64-sanitizers
+
+      - name: Test (VM mode)
+        run: ctest --test-dir build/linux-x64-sanitizers -R "^vm-" --output-on-failure
+
+      - name: Test (C++ Unit)
+        run: ctest --test-dir build/linux-x64-sanitizers -R "^unit-" --output-on-failure
+
+      # ── Fuzzer build + short run ────────────────────────────────────────
+      # libFuzzer needs coverage instrumentation on ALL translation units.
+      # We build in a separate directory with -fsanitize=fuzzer-no-link
+      # on compilation, and -fsanitize=fuzzer at link time.
+      - name: Configure (libFuzzer)
+        run: |
+          cmake -S . -B build/fuzzer -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DVORA_FUZZER=ON \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_FLAGS="-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer -g" \
+            -DCMAKE_C_FLAGS="-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer -g" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=fuzzer,address,undefined"
+
+      - name: Build fuzzer
+        run: cmake --build build/fuzzer --target Vora_fuzzer
+
+      - name: Run fuzzer (60s smoke test)
+        run: |
+          mkdir -p fuzz_results
+          ./build/fuzzer/Vora_fuzzer \
+            -max_len=4096 \
+            -max_total_time=60 \
+            -print_final_stats=1 \
+            tests/fuzz/corpus/ \
+            2>&1 | tee fuzz_results/fuzz.log || true
+
+      - name: Upload fuzz results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-results
+          path: fuzz_results/

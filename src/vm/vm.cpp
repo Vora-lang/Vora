@@ -2,6 +2,7 @@
 #include "opcode.h"
 #include "value_ops.h"
 
+#include "../gc/gc_heap.h"
 #include "../runtime/builtins.h"
 #include "../runtime/native_function.h"
 #include "../runtime/vora_function.h"
@@ -23,19 +24,19 @@ namespace vora {
 // Returns: vector<shared_ptr<ObjectClass>> where [0] = self, then parents in MRO.
 // Throws std::runtime_error on inconsistent MRO (diamond problem without resolution).
 
-static std::vector<std::shared_ptr<ObjectClass>> computeC3MRO(
-    const std::shared_ptr<ObjectClass>& self,
-    const std::vector<std::shared_ptr<ObjectClass>>& parents)
+static std::vector<GcPtr<ObjectClass>> computeC3MRO(
+    const GcPtr<ObjectClass>& self,
+    const std::vector<GcPtr<ObjectClass>>& parents)
 {
     // Build list of linearizations for the merge: each parent's MRO + direct parent list
-    std::vector<std::vector<std::shared_ptr<ObjectClass>>> lists;
+    std::vector<std::vector<GcPtr<ObjectClass>>> lists;
 
     for (const auto& p : parents) {
         // Add the parent's own MRO (which is [parent, parent's parents...])
         // Lock weak_ptrs in parent's MRO to get shared_ptrs for the merge
-        std::vector<std::shared_ptr<ObjectClass>> parentMRO;
+        std::vector<GcPtr<ObjectClass>> parentMRO;
         for (const auto& wp : p->mro) {
-            if (auto sp = wp.lock()) {
+            if (auto sp = wp) {
                 parentMRO.push_back(sp);
             }
         }
@@ -46,7 +47,7 @@ static std::vector<std::shared_ptr<ObjectClass>> computeC3MRO(
     lists.push_back(parents);
 
     // Merge
-    std::vector<std::shared_ptr<ObjectClass>> result;
+    std::vector<GcPtr<ObjectClass>> result;
     result.push_back(self);
 
     // Continue while any list is non-empty
@@ -62,7 +63,7 @@ static std::vector<std::shared_ptr<ObjectClass>> computeC3MRO(
         if (!anyNonEmpty) break;
 
         // Find a good head: the first head that doesn't appear in any tail
-        std::shared_ptr<ObjectClass> goodHead;
+        GcPtr<ObjectClass> goodHead;
         for (const auto& lst : lists) {
             if (lst.empty()) continue;
             const auto& candidate = lst[0];
@@ -362,7 +363,7 @@ void VM::defineNative(const std::string& name, int arity,
         globalIndex[name] = slot;
     }
     globalValues[static_cast<size_t>(slot)] =
-        std::make_shared<NativeFunction>(name, arity, std::move(fn));
+        GcHeap::instance().alloc<NativeFunction>(name, arity, std::move(fn));
     globalDefined[static_cast<size_t>(slot)] = true;
 }
 
@@ -379,20 +380,20 @@ void VM::initGlobals(const std::vector<std::string>& names) {
     defineNative("_vora_len", 1,
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
-            if (std::holds_alternative<std::shared_ptr<Array>>(arg)) {
+            if (std::holds_alternative<GcPtr<Array>>(arg)) {
                 return static_cast<double>(
-                    std::get<std::shared_ptr<Array>>(arg)->elements.size());
+                    std::get<GcPtr<Array>>(arg)->elements.size());
             }
             if (std::holds_alternative<std::string>(arg)) {
                 return static_cast<double>(std::get<std::string>(arg).size());
             }
-            if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(arg)) {
+            if (std::holds_alternative<GcPtr<ObjectInstance>>(arg)) {
                 return static_cast<double>(
-                    std::get<std::shared_ptr<ObjectInstance>>(arg)->properties.size());
+                    std::get<GcPtr<ObjectInstance>>(arg)->properties.size());
             }
-            if (std::holds_alternative<std::shared_ptr<Dict>>(arg)) {
+            if (std::holds_alternative<GcPtr<Dict>>(arg)) {
                 return static_cast<double>(
-                    std::get<std::shared_ptr<Dict>>(arg)->pairs.size());
+                    std::get<GcPtr<Dict>>(arg)->pairs.size());
             }
             return 0.0;
         });
@@ -419,11 +420,11 @@ void VM::adoptGlobals(const std::vector<std::string>& names,
 // =========================================================================
 
 bool VM::callValue(const Value& callee, uint8_t argCount) {
-    if (std::holds_alternative<std::shared_ptr<Callable>>(callee)) {
-        auto callable = std::get<std::shared_ptr<Callable>>(callee);
+    if (std::holds_alternative<GcPtr<Callable>>(callee)) {
+        auto callable = std::get<GcPtr<Callable>>(callee);
 
         // Native function
-        if (auto native = std::dynamic_pointer_cast<NativeFunction>(callable)) {
+        if (auto native = dynamic_cast<NativeFunction*>(callable.get())) {
             // Bound method: dispatch through the current VM so globals
             // and builtins remain accessible (no temp VM).
             if (native->isBoundMethod()) {
@@ -496,7 +497,7 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
         }
 
         // Vora function
-        if (auto voraFn = std::dynamic_pointer_cast<VoraFunction>(callable)) {
+        if (auto voraFn = dynamic_cast<VoraFunction*>(callable.get())) {
             // Collect arguments from stack (in reverse)
             std::vector<Value> arguments(argCount);
             for (int i = argCount - 1; i >= 0; i--) {
@@ -504,7 +505,7 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
             }
             pop(); // pop the callable itself
 
-            return callVoraFunction(voraFn, arguments) == InterpretResult::OK;
+            return callVoraFunction(GcPtr<VoraFunction>(voraFn), arguments) == InterpretResult::OK;
         }
     }
 
@@ -512,7 +513,7 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
     return false;
 }
 
-InterpretResult VM::callVoraFunction(const std::shared_ptr<VoraFunction>& func,
+InterpretResult VM::callVoraFunction(const GcPtr<VoraFunction>& func,
                                       const std::vector<Value>& args) {
     // Check arity — range check (must be between requiredArity and arity)
     if (args.size() < static_cast<size_t>(func->requiredArity()) ||
@@ -576,6 +577,38 @@ InterpretResult VM::interpret(const Chunk& chunk) {
     nativeErrorValue = nullptr;
     lastErrorStackTrace.clear();
     return run();
+}
+
+// =========================================================================
+// Garbage collection — gather roots from VM state and run mark-sweep
+// =========================================================================
+
+void VM::collectGarbage() {
+    std::vector<GcObject*> roots;
+
+    // 1. Stack values
+    for (size_t i = 0; i < stackTopIndex; i++) {
+        pushGcRefs(stack[i], roots);
+    }
+
+    // 2. Global variables
+    for (auto& v : globalValues) {
+        pushGcRefs(v, roots);
+    }
+
+    // 3. Open upvalues (shared_ptr<Value> heap-allocated Values)
+    for (auto& [slot, uv] : openUpvalues) {
+        pushGcRefs(*uv, roots);
+    }
+
+    // 4. Call frames — the executing functions
+    for (auto& frame : frames) {
+        if (frame.function) {
+            roots.push_back(frame.function.get());
+        }
+    }
+
+    GcHeap::instance().collect(roots);
 }
 
 // =========================================================================
@@ -883,6 +916,11 @@ InterpretResult VM::run() {
 
             // --- Functions ---
             case OpCode::OP_CALL: {
+                // Safe point: collect garbage if threshold exceeded.
+                if (GcHeap::instance().needsGC()) {
+                    collectGarbage();
+                }
+
                 uint8_t argCount = READ_BYTE();
                 Value callee = peek(argCount);
                 if (!callValue(callee, argCount)) {
@@ -893,11 +931,11 @@ InterpretResult VM::run() {
             case OpCode::OP_CLOSURE: {
                 uint8_t constIndex = READ_BYTE();
                 Value protoVal = currentChunk->constants[constIndex];
-                if (!std::holds_alternative<std::shared_ptr<FunctionPrototype>>(protoVal)) {
+                if (!std::holds_alternative<GcPtr<FunctionPrototype>>(protoVal)) {
                     RUNTIME_ERROR_OR_THROW("OP_CLOSURE: expected function prototype in constant pool");
                 }
-                auto protoPtr = std::get<std::shared_ptr<FunctionPrototype>>(protoVal);
-                auto function = std::make_shared<VoraFunction>(
+                auto protoPtr = std::get<GcPtr<FunctionPrototype>>(protoVal);
+                auto function = GcHeap::instance().alloc<VoraFunction>(
                     protoPtr->name, protoPtr->arity,
                     protoPtr->requiredArity, protoPtr.get());
 
@@ -988,7 +1026,7 @@ InterpretResult VM::run() {
             // --- Upvalues ---
             case OpCode::OP_GET_UPVALUE: {
                 uint8_t idx = READ_BYTE();
-                std::shared_ptr<VoraFunction> fn;
+                GcPtr<VoraFunction> fn;
                 if (!frames.empty()) {
                     fn = frames.back().function;
                 }
@@ -1001,7 +1039,7 @@ InterpretResult VM::run() {
             }
             case OpCode::OP_SET_UPVALUE: {
                 uint8_t idx = READ_BYTE();
-                std::shared_ptr<VoraFunction> fn;
+                GcPtr<VoraFunction> fn;
                 if (!frames.empty()) {
                     fn = frames.back().function;
                 }
@@ -1029,7 +1067,7 @@ InterpretResult VM::run() {
             // --- Arrays ---
             case OpCode::OP_ARRAY: {
                 uint8_t count = READ_BYTE();
-                auto arr = std::make_shared<Array>();
+                auto arr = GcHeap::instance().alloc<Array>();
                 arr->elements.reserve(count);
                 size_t startIdx = stackTopIndex - count;
                 for (uint8_t i = 0; i < count; i++) {
@@ -1041,7 +1079,7 @@ InterpretResult VM::run() {
             }
             case OpCode::OP_DICT: {
                 uint8_t pairCount = READ_BYTE();
-                auto dict = std::make_shared<Dict>();
+                auto dict = GcHeap::instance().alloc<Dict>();
                 size_t startIdx = stackTopIndex - pairCount * 2;
                 for (uint8_t i = 0; i < pairCount; i++) {
                     std::string key = valueToString(stack[startIdx + i * 2]);
@@ -1056,9 +1094,9 @@ InterpretResult VM::run() {
                 Value target = pop();
 
                 // Dict: string key lookup, or numeric index for for-in iteration
-                if (std::holds_alternative<std::shared_ptr<Dict>>(target)) {
+                if (std::holds_alternative<GcPtr<Dict>>(target)) {
                     const auto& dpairs =
-                        std::get<std::shared_ptr<Dict>>(target)->pairs;
+                        std::get<GcPtr<Dict>>(target)->pairs;
                     if (isNumeric(indexVal)) {
                         // Numeric index: return Nth key (for for-in iteration)
                         size_t idx = static_cast<size_t>(toDouble(indexVal));
@@ -1097,16 +1135,16 @@ InterpretResult VM::run() {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
                     push(std::string(1, str[index]));
-                } else if (std::holds_alternative<std::shared_ptr<Array>>(target)) {
+                } else if (std::holds_alternative<GcPtr<Array>>(target)) {
                     const auto& elements =
-                        std::get<std::shared_ptr<Array>>(target)->elements;
+                        std::get<GcPtr<Array>>(target)->elements;
                     if (index >= elements.size()) {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
                     push(elements[index]);
-                } else if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(target)) {
+                } else if (std::holds_alternative<GcPtr<ObjectInstance>>(target)) {
                     const auto& props =
-                        std::get<std::shared_ptr<ObjectInstance>>(target)->properties;
+                        std::get<GcPtr<ObjectInstance>>(target)->properties;
                     if (index >= props.size()) {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
@@ -1124,9 +1162,9 @@ InterpretResult VM::run() {
                 Value target = pop();
 
                 // Dict: string-keyed assignment (handled first since keys are non-numeric)
-                if (std::holds_alternative<std::shared_ptr<Dict>>(target)) {
+                if (std::holds_alternative<GcPtr<Dict>>(target)) {
                     std::string key = valueToString(indexVal);
-                    std::get<std::shared_ptr<Dict>>(target)->pairs[key] = value;
+                    std::get<GcPtr<Dict>>(target)->pairs[key] = value;
                     push(value);
                     break;
                 }
@@ -1142,9 +1180,9 @@ InterpretResult VM::run() {
 
                 size_t index = static_cast<size_t>(rawIndex);
 
-                if (std::holds_alternative<std::shared_ptr<Array>>(target)) {
+                if (std::holds_alternative<GcPtr<Array>>(target)) {
                     auto& elements =
-                        std::get<std::shared_ptr<Array>>(target)->elements;
+                        std::get<GcPtr<Array>>(target)->elements;
                     if (index >= elements.size()) {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
@@ -1165,8 +1203,8 @@ InterpretResult VM::run() {
                 Value obj = pop();
 
                 // Array built-in methods & properties
-                if (std::holds_alternative<std::shared_ptr<Array>>(obj)) {
-                    auto arr = std::get<std::shared_ptr<Array>>(obj);
+                if (std::holds_alternative<GcPtr<Array>>(obj)) {
+                    auto arr = std::get<GcPtr<Array>>(obj);
                     if (propName == "length") {
                         push(static_cast<int64_t>(arr->elements.size()));
                         break;
@@ -1189,8 +1227,8 @@ InterpretResult VM::run() {
                 }
 
                 // Dict built-in methods & properties
-                if (std::holds_alternative<std::shared_ptr<Dict>>(obj)) {
-                    auto dict = std::get<std::shared_ptr<Dict>>(obj);
+                if (std::holds_alternative<GcPtr<Dict>>(obj)) {
+                    auto dict = std::get<GcPtr<Dict>>(obj);
                     if (propName == "length") {
                         push(static_cast<int64_t>(dict->pairs.size()));
                         break;
@@ -1200,8 +1238,8 @@ InterpretResult VM::run() {
                     RUNTIME_ERROR_OR_THROW("Unknown dict method: " + propName);
                 }
 
-                if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(obj)) {
-                    auto instance = std::get<std::shared_ptr<ObjectInstance>>(obj);
+                if (std::holds_alternative<GcPtr<ObjectInstance>>(obj)) {
+                    auto instance = std::get<GcPtr<ObjectInstance>>(obj);
                     // Check instance properties
                     auto it = instance->properties.find(propName);
                     if (it != instance->properties.end()) {
@@ -1211,7 +1249,7 @@ InterpretResult VM::run() {
                     // Check class methods via MRO (C3 linearization)
                     if (instance->classDefinition) {
                         for (const auto& wp : instance->classDefinition->mro) {
-                            auto cls = wp.lock();
+                            auto cls = wp;
                             if (!cls) continue;
                             auto methodIt = cls->methods.find(propName);
                             if (methodIt != cls->methods.end()) {
@@ -1224,7 +1262,7 @@ InterpretResult VM::run() {
                                 if (!mp) {
                                     RUNTIME_ERROR_OR_THROW("Method has no compiled body");
                                 }
-                                auto bound = std::make_shared<NativeFunction>(
+                                auto bound = GcHeap::instance().alloc<NativeFunction>(
                                     propName, methodFn->arity(),
                                     /*no-op lambda — callValue intercepts before calling this*/
                                     [](const std::vector<Value>&) -> Value { return nullptr; });
@@ -1249,8 +1287,8 @@ InterpretResult VM::run() {
                 Value value = pop();
                 Value obj = pop();
 
-                if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(obj)) {
-                    auto instance = std::get<std::shared_ptr<ObjectInstance>>(obj);
+                if (std::holds_alternative<GcPtr<ObjectInstance>>(obj)) {
+                    auto instance = std::get<GcPtr<ObjectInstance>>(obj);
                     instance->properties[propName] = value;
                     push(value);
                 } else {
@@ -1264,10 +1302,10 @@ InterpretResult VM::run() {
 
                 // Get 'this' from local slot 0 (must be in a method)
                 Value thisVal = stack[frameBaseIndex];
-                if (!std::holds_alternative<std::shared_ptr<ObjectInstance>>(thisVal)) {
+                if (!std::holds_alternative<GcPtr<ObjectInstance>>(thisVal)) {
                     RUNTIME_ERROR_OR_THROW("'super' used outside of method");
                 }
-                auto instance = std::get<std::shared_ptr<ObjectInstance>>(thisVal);
+                auto instance = std::get<GcPtr<ObjectInstance>>(thisVal);
 
                 if (!instance->classDefinition) {
                     RUNTIME_ERROR_OR_THROW("Object has no class definition");
@@ -1287,7 +1325,7 @@ InterpretResult VM::run() {
                     const auto* currentProto = frames.back().function->getPrototype();
                     if (currentProto) {
                         for (size_t i = 0; i < mro.size(); i++) {
-                            auto cls = mro[i].lock();
+                            auto cls = mro[i];
                             if (!cls) continue;
                             for (const auto& [mname, mfn] : cls->methods) {
                                 if (mfn->getPrototype() == currentProto) {
@@ -1306,7 +1344,7 @@ InterpretResult VM::run() {
 
                 bool found = false;
                 for (size_t i = startIdx; i < mro.size(); i++) {
-                    auto cls = mro[i].lock();
+                    auto cls = mro[i];
                     if (!cls) continue;
                     auto methodIt = cls->methods.find(propName);
                     if (methodIt != cls->methods.end()) {
@@ -1315,7 +1353,7 @@ InterpretResult VM::run() {
                         if (!mp) {
                             RUNTIME_ERROR_OR_THROW("Method has no compiled body");
                         }
-                        auto bound = std::make_shared<NativeFunction>(
+                        auto bound = GcHeap::instance().alloc<NativeFunction>(
                             propName, methodFn->arity(),
                             [](const std::vector<Value>&) -> Value { return nullptr; });
                         bound->markAsBoundMethod(instance, mp, methodFn);
@@ -1333,21 +1371,21 @@ InterpretResult VM::run() {
                 uint8_t classIndex = READ_BYTE();
                 Value classDataVal = currentChunk->constants[classIndex];
 
-                if (!std::holds_alternative<std::shared_ptr<ClassData>>(classDataVal)) {
+                if (!std::holds_alternative<GcPtr<ClassData>>(classDataVal)) {
                     RUNTIME_ERROR_OR_THROW("OP_CLASS: expected class data in constant pool");
                 }
-                auto cdPtr = std::get<std::shared_ptr<ClassData>>(classDataVal);
+                auto cdPtr = std::get<GcPtr<ClassData>>(classDataVal);
                 const auto& cd = *cdPtr;
 
                 // Build ObjectClass
-                auto objClass = std::make_shared<ObjectClass>();
+                auto objClass = GcHeap::instance().alloc<ObjectClass>();
                 objClass->className = cd.name;
                 objClass->params = cd.params;
                 objClass->ctorProto = cd.ctor;
                 objClass->parentClassNames = cd.parentNames;
 
                 // Resolve parent classes from globals (integer-indexed lookup)
-                std::vector<std::shared_ptr<ObjectClass>> resolvedParents;
+                std::vector<GcPtr<ObjectClass>> resolvedParents;
                 for (const auto& parentName : cd.parentNames) {
                     auto it = globalIndex.find(parentName);
                     if (it != globalIndex.end()) {
@@ -1355,7 +1393,7 @@ InterpretResult VM::run() {
                         if (static_cast<size_t>(pSlot) < globalValues.size() &&
                             globalDefined[static_cast<size_t>(pSlot)]) {
                             const auto& parentVal = globalValues[static_cast<size_t>(pSlot)];
-                            if (auto callable = std::get_if<std::shared_ptr<Callable>>(&parentVal)) {
+                            if (auto callable = std::get_if<GcPtr<Callable>>(&parentVal)) {
                                 if (*callable) {
                                     auto parentDef = (*callable)->getClassDef();
                                     if (parentDef) {
@@ -1370,7 +1408,7 @@ InterpretResult VM::run() {
 
                 // Store method VoraFunctions
                 for (const auto& methodProto : cd.methods) {
-                    auto methodFn = std::make_shared<VoraFunction>(
+                    auto methodFn = GcHeap::instance().alloc<VoraFunction>(
                         methodProto->name, methodProto->arity,
                         methodProto->requiredArity, methodProto.get());
                     objClass->methods[methodProto->name] = methodFn;
@@ -1385,7 +1423,7 @@ InterpretResult VM::run() {
                 }
 
                 // Create constructor VoraFunction
-                auto ctorFn = std::make_shared<VoraFunction>(
+                auto ctorFn = GcHeap::instance().alloc<VoraFunction>(
                     cd.ctor->name, cd.ctor->arity,
                     cd.ctor->requiredArity, cd.ctor.get());
 
@@ -1396,22 +1434,32 @@ InterpretResult VM::run() {
                 // uses the first N arguments where N is its own arity. For multi-
                 // inheritance, parents should have compatible parameter lists where
                 // shared parameters are at the same positions.
-                auto ctorCallable = std::make_shared<NativeFunction>(
+                auto ctorCallable = GcHeap::instance().alloc<NativeFunction>(
                     cd.name, static_cast<int>(cd.params.size()),
                     [objClass, ctorFn, globalsNames = globalNames, globalsValues = globalValues, globalsDefined = globalDefined, globalsIndex = globalIndex](const std::vector<Value>& args) -> Value {
-                        auto instance = std::make_shared<ObjectInstance>();
+                        auto instance = GcHeap::instance().alloc<ObjectInstance>();
                         instance->className = objClass->className;
                         instance->classDefinition = objClass;
 
-                        // Helper: run a constructor prototype on the instance
-                        auto runCtor = [&instance, &globalsNames, &globalsValues, &globalsDefined, &globalsIndex](const FunctionPrototype* cp,
-                                                   const std::vector<Value>& ctorArgs) {
+                        // Single temporary VM reused for all constructor runs.
+                        // Globals are adopted once (O(globals)) instead of once per
+                        // constructor in the MRO chain.
+                        VM tempVm;
+                        tempVm.adoptGlobals(globalsNames, globalsValues, globalsDefined, globalsIndex);
+
+                        // Helper: run a constructor prototype on the instance.
+                        // Reuses the same tempVm — resets stack/frames/handlers
+                        // between calls.
+                        auto runCtor = [&](const FunctionPrototype* cp,
+                                          const std::vector<Value>& ctorArgs) {
                             if (!cp) return;
-                            VM tempVm;
-                            tempVm.adoptGlobals(globalsNames, globalsValues, globalsDefined, globalsIndex);
+                            tempVm.resetStack();
+                            tempVm.frameBaseIndex = 0;
+                            tempVm.frames.clear();
+                            tempVm.catchHandlers.clear();
+                            tempVm.exceptionInFlight = false;
                             tempVm.currentChunk = &cp->chunk;
                             tempVm.ip = cp->chunk.code.data();
-                            tempVm.frameBaseIndex = tempVm.stackTopIndex;
                             tempVm.push(instance);  // 'this' at slot 0
                             for (const auto& a : ctorArgs) {
                                 tempVm.push(a);
@@ -1424,7 +1472,7 @@ InterpretResult VM::run() {
                         // Each parent receives ALL arguments — it uses its own arity to bind
                         // parameters from the front of the argument list.
                         for (size_t idx = objClass->mro.size(); idx > 1; idx--) {
-                            if (auto parentClass = objClass->mro[idx - 1].lock()) {
+                            if (auto parentClass = objClass->mro[idx - 1]) {
                                 if (parentClass->ctorProto) {
                                     runCtor(parentClass->ctorProto.get(), args);
                                 }

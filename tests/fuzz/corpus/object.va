@@ -1,0 +1,9 @@
+class Point {
+    init(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+}
+var p = Point(3, 4);
+assert(p.x == 3);
+assert(p.y == 4);

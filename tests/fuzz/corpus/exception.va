@@ -1,0 +1,5 @@
+try {
+    throw "test error";
+} catch (e) {
+    assert(e == "test error");
+}

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <variant>
 
+#include "../gc/gc_heap.h"
 #include "../runtime/vora_function.h"
 
 namespace vora {
@@ -93,7 +94,7 @@ uint8_t Compiler::identifierConstant(const std::string& name) {
 
 uint8_t Compiler::addFunctionPrototype(FunctionPrototype proto) {
     // Store as a shared_ptr in the constant pool
-    auto ptr = std::make_shared<FunctionPrototype>(std::move(proto));
+    auto ptr = GcHeap::instance().alloc<FunctionPrototype>(std::move(proto));
     return makeConstant(ptr);
 }
 
@@ -140,7 +141,10 @@ void Compiler::addLocal(const std::string& name) {
     for (int i = static_cast<int>(locals.size()) - 1; i >= 0; i--) {
         if (locals[i].depth == -1 || locals[i].depth < scopeDepth) break;
         if (locals[i].name == name) {
-            // Error: redefinition in same scope (silently ignore for now)
+            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                            "Variable '" + name + "' already defined in this scope",
+                            "CompilerError");
+            hadError = true;
             return;
         }
     }
@@ -177,6 +181,37 @@ int Compiler::resolveGlobal(const std::string& name) {
     }
     int slot = static_cast<int>(root->globalNames.size());
     root->globalNames.push_back(name);
+    root->globalDefined.push_back(false);
+    return slot;
+}
+
+int Compiler::defineGlobal(const std::string& name) {
+    // Walk to root compiler (same as resolveGlobal).
+    Compiler* root = this;
+    while (root->enclosing) {
+        root = root->enclosing;
+    }
+
+    // Check for redefinition.
+    for (size_t i = 0; i < root->globalNames.size(); i++) {
+        if (root->globalNames[i] == name) {
+            if (root->globalDefined[i]) {
+                printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                                "Global variable '" + name + "' already defined",
+                                "CompilerError");
+                hadError = true;
+            } else {
+                // Forward reference created the slot — mark as defined now.
+                root->globalDefined[i] = true;
+            }
+            return static_cast<int>(i);
+        }
+    }
+
+    // New global — allocate slot and mark defined.
+    int slot = static_cast<int>(root->globalNames.size());
+    root->globalNames.push_back(name);
+    root->globalDefined.push_back(true);
     return slot;
 }
 

@@ -1,0 +1,10 @@
+func makeCounter() {
+    var count = 0;
+    return func() {
+        count = count + 1;
+        return count;
+    };
+}
+var c = makeCounter();
+assert(c() == 1);
+assert(c() == 2);

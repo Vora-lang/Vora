@@ -4,6 +4,7 @@
 #include <iostream>
 #include <variant>
 
+#include "../gc/gc_heap.h"
 #include "../runtime/vora_function.h"
 
 namespace vora {
@@ -20,8 +21,9 @@ void Compiler::visitLetStmt(const LetStmt& stmt) {
     }
 
     if (scopeDepth == 0) {
-        // Global variable — use interned slot ID
-        int slot = resolveGlobal(stmt.name);
+        // Global variable — use interned slot ID (errors on redefinition).
+        int slot = defineGlobal(stmt.name);
+        if (hadError) return;
         emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
                   static_cast<uint8_t>(slot));
     } else {
@@ -344,8 +346,9 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
 
     // Bind to name
     if (scopeDepth == 0) {
-        // Global function — use interned slot ID
-        int slot = resolveGlobal(stmt.name);
+        // Global function — use interned slot ID (errors on redefinition).
+        int slot = defineGlobal(stmt.name);
+        if (hadError) return;
         emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
                   static_cast<uint8_t>(slot));
     } else {
@@ -368,7 +371,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     // compiled methods map, and constructor body
 
     // First, compile each method
-    std::vector<std::shared_ptr<FunctionPrototype>> methodProtos;
+    std::vector<GcPtr<FunctionPrototype>> methodProtos;
     for (const auto& methodStmt : stmt.methods) {
         if (auto funcStmt = dynamic_cast<const FuncStmt*>(methodStmt.get())) {
             Compiler methodCompiler;
@@ -432,7 +435,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
 
             methodCompiler.endScope();
 
-            auto proto = std::make_shared<FunctionPrototype>();
+            auto proto = GcHeap::instance().alloc<FunctionPrototype>();
             proto->name = funcStmt->name;
             proto->arity = mTotalArity;
             proto->requiredArity = mRequiredArity;
@@ -497,7 +500,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     ctorCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
     ctorCompiler.endScope();
 
-    auto ctorProto = std::make_shared<FunctionPrototype>();
+    auto ctorProto = GcHeap::instance().alloc<FunctionPrototype>();
     ctorProto->name = stmt.name;
     ctorProto->arity = ctorTotalArity;
     ctorProto->requiredArity = ctorRequiredArity;
@@ -510,7 +513,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     }
 
     // Store class data in constant pool
-    auto classData = std::make_shared<ClassData>();
+    auto classData = GcHeap::instance().alloc<ClassData>();
     classData->name = stmt.name;
     classData->parentNames = stmt.parentNames;
     classData->params = paramNames;
@@ -524,7 +527,8 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
 
     // Bind to name
     if (scopeDepth == 0) {
-        int slot = resolveGlobal(stmt.name);
+        int slot = defineGlobal(stmt.name);
+        if (hadError) return;
         emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
                   static_cast<uint8_t>(slot));
     } else {
