@@ -27,6 +27,7 @@ public:
     virtual R visitUnaryExpr(const UnaryExpr& expr) = 0;
     virtual R visitVariableExpr(const VariableExpr& expr) = 0;
     virtual R visitAssignmentExpr(const AssignmentExpr& expr) = 0;
+    virtual R visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) = 0;
     virtual R visitCallExpr(const CallExpr& expr) = 0;
     virtual R visitArrayExpr(const ArrayExpr& expr) = 0;
     virtual R visitDictExpr(const DictExpr& expr) = 0;

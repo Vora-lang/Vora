@@ -128,6 +128,28 @@ std::unique_ptr<Expr> AssignmentExpr::clone() const {
 }
 
 // =========================================================================
+// CompoundAssignmentExpr
+// =========================================================================
+
+Value CompoundAssignmentExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitCompoundAssignmentExpr(*this);
+}
+
+void CompoundAssignmentExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitCompoundAssignmentExpr(*this);
+}
+
+std::string CompoundAssignmentExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitCompoundAssignmentExpr(*this);
+}
+
+std::unique_ptr<Expr> CompoundAssignmentExpr::clone() const {
+    return std::make_unique<CompoundAssignmentExpr>(
+        target->clone(), op, value->clone()
+    );
+}
+
+// =========================================================================
 // CallExpr
 // =========================================================================
 

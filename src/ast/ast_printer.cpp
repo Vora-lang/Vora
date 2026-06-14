@@ -40,7 +40,7 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
             return arg ? "true" : "false";
         } else if constexpr (std::is_same_v<T, std::string>) {
             return arg;
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<Array>>) {
+        } else if constexpr (std::is_same_v<T, GcPtr<Array>>) {
             std::string out = "[";
             for (size_t i = 0; i < arg->elements.size(); ++i) {
                 if (i > 0) {
@@ -51,26 +51,26 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
                     if constexpr (std::is_same_v<U, std::nullptr_t>) return "null";
                     else if constexpr (std::is_same_v<U, bool>) return inner ? "true" : "false";
                     else if constexpr (std::is_same_v<U, std::string>) return inner;
-                    else if constexpr (std::is_same_v<U, std::shared_ptr<Callable>>) return "<fn>";
-                    else if constexpr (std::is_same_v<U, std::shared_ptr<Array>>) return "[array]";
-                    else if constexpr (std::is_same_v<U, std::shared_ptr<ObjectInstance>>) return "<object>";
-                    else if constexpr (std::is_same_v<U, std::shared_ptr<FunctionPrototype>>) return "<proto>";
-                    else if constexpr (std::is_same_v<U, std::shared_ptr<Dict>>) return "{dict}";
-                    else if constexpr (std::is_same_v<U, std::shared_ptr<ClassData>>) return "<class>";
+                    else if constexpr (std::is_same_v<U, GcPtr<Callable>>) return "<fn>";
+                    else if constexpr (std::is_same_v<U, GcPtr<Array>>) return "[array]";
+                    else if constexpr (std::is_same_v<U, GcPtr<ObjectInstance>>) return "<object>";
+                    else if constexpr (std::is_same_v<U, GcPtr<FunctionPrototype>>) return "<proto>";
+                    else if constexpr (std::is_same_v<U, GcPtr<Dict>>) return "{dict}";
+                    else if constexpr (std::is_same_v<U, GcPtr<ClassData>>) return "<class>";
                     else return std::to_string(inner);
                 }, arg->elements[i]);
             }
             out += "]";
             return out;
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<Callable>>) {
+        } else if constexpr (std::is_same_v<T, GcPtr<Callable>>) {
             return "<fn>";
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<ObjectInstance>>) {
+        } else if constexpr (std::is_same_v<T, GcPtr<ObjectInstance>>) {
             return "<" + arg->className + " object>";
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<FunctionPrototype>>) {
+        } else if constexpr (std::is_same_v<T, GcPtr<FunctionPrototype>>) {
             return "<proto " + arg->name + ">";
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<Dict>>) {
+        } else if constexpr (std::is_same_v<T, GcPtr<Dict>>) {
             return "{dict}";
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<ClassData>>) {
+        } else if constexpr (std::is_same_v<T, GcPtr<ClassData>>) {
             return "<class " + arg->name + ">";
         } else {
             return std::to_string(arg);
@@ -109,6 +109,14 @@ std::string ASTPrinter::visitAssignmentExpr(const AssignmentExpr& expr) {
         "assign " + expr.name,
         { expr.value.get() }
     );
+}
+
+std::string ASTPrinter::visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) {
+    std::stringstream ss;
+    ss << "(" << expr.op.lexeme << " ";
+    ss << print(expr.target.get()) << " ";
+    ss << print(expr.value.get()) << ")";
+    return ss.str();
 }
 
 std::string ASTPrinter::visitCallExpr(const CallExpr& expr) {

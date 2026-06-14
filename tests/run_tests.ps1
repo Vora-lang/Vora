@@ -38,7 +38,7 @@ Write-Host "  Vora Test Suite"
 Write-Host "============================================"
 Write-Host ""
 
-Get-ChildItem -Path "$ProjectDir\tests\lexer", "$ProjectDir\tests\parser", "$ProjectDir\tests\runtime", "$ProjectDir\tests\interpreter" -Filter *.va | ForEach-Object {
+Get-ChildItem -Path "$ProjectDir\tests\lexer", "$ProjectDir\tests\parser", "$ProjectDir\tests\runtime", "$ProjectDir\tests\interpreter", "$ProjectDir\tests\formatter" -Filter *.va | ForEach-Object {
     $file = $_.FullName
     $name = $_.FullName -replace [regex]::Escape("$ProjectDir\tests\"), ""
     Write-Host ("  {0,-45} " -f $name) -NoNewline

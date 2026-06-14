@@ -26,6 +26,8 @@ add_library(vora_lib OBJECT
     src/ast/expr.cpp
     src/ast/stmt.cpp
 
+    src/formatter/formatter.cpp
+
     src/gc/gc_heap.cpp
 
     src/lexer/token.cpp
@@ -92,13 +94,14 @@ file(GLOB TEST_LEXER        tests/lexer/*.va)
 file(GLOB TEST_PARSER       tests/parser/*.va)
 file(GLOB TEST_RUNTIME      tests/runtime/*.va)
 file(GLOB TEST_INTERPRETER  tests/interpreter/*.va)
+file(GLOB TEST_FORMATTER    tests/formatter/*.va)
 
 # file(GLOB) may return absolute or relative paths depending on generator.
 # Use WORKING_DIRECTORY so relative paths resolve correctly, and strip the
 # source-dir prefix if the path is already absolute.
 
 # VM mode (default) tests
-foreach(test_file ${TEST_LEXER} ${TEST_PARSER} ${TEST_RUNTIME} ${TEST_INTERPRETER})
+foreach(test_file ${TEST_LEXER} ${TEST_PARSER} ${TEST_RUNTIME} ${TEST_INTERPRETER} ${TEST_FORMATTER})
     get_filename_component(test_name ${test_file} NAME_WLE)
     # Strip CMAKE_CURRENT_SOURCE_DIR prefix if present (handles abs paths)
     set(rel_path "${test_file}")
@@ -135,6 +138,7 @@ add_executable(Vora_tests
     tests/unit/test_parser.cpp
     tests/unit/test_compiler.cpp
     tests/unit/test_vm.cpp
+    tests/unit/test_formatter.cpp
 )
 
 target_include_directories(Vora_tests PRIVATE
@@ -168,6 +172,7 @@ vora_unit_test(tests/unit/test_lexer.cpp    "lexer")
 vora_unit_test(tests/unit/test_parser.cpp   "parser")
 vora_unit_test(tests/unit/test_compiler.cpp "compiler")
 vora_unit_test(tests/unit/test_vm.cpp       "vm")
+vora_unit_test(tests/unit/test_formatter.cpp "fmt")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -32,6 +32,7 @@ private:
     std::string visitUnaryExpr(const UnaryExpr& expr) override;
     std::string visitVariableExpr(const VariableExpr& expr) override;
     std::string visitAssignmentExpr(const AssignmentExpr& expr) override;
+    std::string visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) override;
     std::string visitCallExpr(const CallExpr& expr) override;
     std::string visitArrayExpr(const ArrayExpr& expr) override;
     std::string visitDictExpr(const DictExpr& expr) override;

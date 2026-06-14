@@ -225,7 +225,7 @@ TEST_CASE("compiler_function_closure_emission") {
     // Function prototype should be in constant pool
     bool found = false;
     for (const auto& c : chunk.constants) {
-        if (std::holds_alternative<std::shared_ptr<FunctionPrototype>>(c)) {
+        if (std::holds_alternative<GcPtr<FunctionPrototype>>(c)) {
             found = true;
             break;
         }
@@ -284,4 +284,102 @@ TEST_CASE("compiler_implicit_return_null") {
     CHECK(containsOpcode(chunk, OpCode::OP_CLOSURE));
     // The closure constant contains the function prototype with its own chunk
     REQUIRE(chunk.constants.size() >= 1);
+}
+
+// ============================================================================
+// Compound assignment
+// ============================================================================
+
+TEST_CASE("compiler_compound_assignment_plus") {
+    // Top-level → globals (OP_SET_GLOBAL, not OP_SET_LOCAL)
+    auto chunk = compile("let x = 0; x += 5;");
+    CHECK(containsOpcode(chunk, OpCode::OP_ADD));
+    CHECK(containsOpcode(chunk, OpCode::OP_SET_GLOBAL));
+}
+
+TEST_CASE("compiler_compound_assignment_minus") {
+    auto chunk = compile("let x = 0; x -= 5;");
+    CHECK(containsOpcode(chunk, OpCode::OP_SUB_NN));
+    CHECK(containsOpcode(chunk, OpCode::OP_SET_GLOBAL));
+}
+
+TEST_CASE("compiler_compound_assignment_multiply") {
+    auto chunk = compile("let x = 0; x *= 5;");
+    CHECK(containsOpcode(chunk, OpCode::OP_MUL_NN));
+    CHECK(containsOpcode(chunk, OpCode::OP_SET_GLOBAL));
+}
+
+TEST_CASE("compiler_compound_assignment_divide") {
+    auto chunk = compile("let x = 10; x /= 2;");
+    CHECK(containsOpcode(chunk, OpCode::OP_DIV_NN));
+    CHECK(containsOpcode(chunk, OpCode::OP_SET_GLOBAL));
+}
+
+TEST_CASE("compiler_compound_assignment_modulo") {
+    auto chunk = compile("let x = 10; x %= 3;");
+    CHECK(containsOpcode(chunk, OpCode::OP_MOD_NN));
+    CHECK(containsOpcode(chunk, OpCode::OP_SET_GLOBAL));
+}
+
+TEST_CASE("compiler_compound_assignment_global") {
+    auto chunk = compile("x += 5;");
+    CHECK(containsOpcode(chunk, OpCode::OP_ADD));
+    CHECK(containsOpcode(chunk, OpCode::OP_SET_GLOBAL));
+}
+
+TEST_CASE("compiler_compound_assignment_property") {
+    auto chunk = compile(
+        "Obj T() { this.n = 0 }"
+        "let t = T();"
+        "t.n += 5;");
+    CHECK(containsOpcode(chunk, OpCode::OP_GET_PROPERTY));
+    CHECK(containsOpcode(chunk, OpCode::OP_SET_PROPERTY));
+    CHECK(containsOpcode(chunk, OpCode::OP_ADD));
+}
+
+TEST_CASE("compiler_compound_assignment_index") {
+    auto chunk = compile(
+        "let arr = [1, 2, 3];"
+        "arr[0] += 10;");
+    CHECK(containsOpcode(chunk, OpCode::OP_INDEX));
+    CHECK(containsOpcode(chunk, OpCode::OP_SET_INDEX));
+    CHECK(containsOpcode(chunk, OpCode::OP_ADD));
+}
+
+TEST_CASE("compiler_compound_assignment_string_concat") {
+    auto chunk = compile(
+        "let s = \"hello\";"
+        "s += \" world\";");
+    CHECK(containsOpcode(chunk, OpCode::OP_ADD));
+    CHECK(containsOpcode(chunk, OpCode::OP_SET_GLOBAL));
+}
+
+TEST_CASE("compiler_compound_assignment_array_concat") {
+    auto chunk = compile(
+        "let arr = [1];"
+        "arr += [2];");
+    CHECK(containsOpcode(chunk, OpCode::OP_ADD));
+    CHECK(containsOpcode(chunk, OpCode::OP_SET_GLOBAL));
+}
+
+TEST_CASE("compiler_compound_assignment_right_associative") {
+    // x += y += 1 → x += (y += 1), right side is itself a compound assign
+    auto chunk = compile("let x = 0; let y = 0; x += y += 1;");
+    // Both should compile to compound assignments
+    CHECK(countOpcodes(chunk, OpCode::OP_ADD) >= 2);
+}
+
+TEST_CASE("compiler_compound_assignment_in_while") {
+    auto chunk = compile("let i = 0; while (i < 10) { i += 1 }");
+    CHECK(containsOpcode(chunk, OpCode::OP_ADD));
+    // The variable i is a global at top level
+    CHECK(containsOpcode(chunk, OpCode::OP_SET_GLOBAL));
+}
+
+TEST_CASE("compiler_compound_assignment_complex_rhs") {
+    // RHS: a * b + 4 (use variables to avoid constant folding)
+    auto chunk = compile("let a = 2; let b = 3; let x = 1; x += a * b + 4;");
+    CHECK(containsOpcode(chunk, OpCode::OP_MUL_NN));
+    // Multiple OP_ADD: one for the RHS, one for the compound (+=)
+    CHECK(countOpcodes(chunk, OpCode::OP_ADD) >= 2);
 }

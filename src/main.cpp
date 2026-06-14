@@ -10,6 +10,8 @@
 
 #include "ast/ast_printer.h"
 
+#include "formatter/formatter.h"
+
 #include "runtime/builtins.h"
 #include "runtime/runtime_error.h"
 
@@ -33,6 +35,40 @@ static std::string readFile(
     buffer << file.rdbuf();
 
     return buffer.str();
+}
+
+static int runFmt(
+    const std::string& source,
+    const std::string& path,
+    bool writeBack
+) {
+    Lexer lexer(source);
+    auto tokens = lexer.scanTokens();
+
+    Parser parser(tokens);
+    parser.setSource(source);
+    auto program = parser.parse();
+
+    if (!program) {
+        std::cerr << "vora fmt: parse failed for " << path << std::endl;
+        return 1;
+    }
+
+    SourceFormatter formatter;
+    std::string formatted = formatter.format(program.get());
+
+    if (writeBack) {
+        std::ofstream out(path);
+        if (!out.is_open()) {
+            std::cerr << "vora fmt: failed to write to " << path << std::endl;
+            return 1;
+        }
+        out << formatted;
+        return 0;
+    }
+
+    std::cout << formatted;
+    return 0;
 }
 
 static int runScript(
@@ -150,10 +186,17 @@ int main(
     bool printAst = false;
     bool printTokens = false;
     bool repl = false;
+    bool fmtMode = false;
+    bool fmtWrite = false;
     std::string path;
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
+
+        if (arg == "fmt") {
+            fmtMode = true;
+            continue;
+        }
 
         if (arg == "--ast-printer") {
             printAst = true;
@@ -176,6 +219,11 @@ int main(
             continue;
         }
 
+        if (arg == "-w" || arg == "--write") {
+            fmtWrite = true;
+            continue;
+        }
+
         if (path.empty()) {
             path = arg;
             continue;
@@ -189,6 +237,33 @@ int main(
         return 1;
     }
 
+    if (fmtMode) {
+        if (path.empty()) {
+            std::cerr
+                << "Usage:\n"
+                << "  vora fmt <file>          format to stdout\n"
+                << "  vora fmt -w <file>       format file in-place\n";
+            return 1;
+        }
+
+        try {
+            std::string source = readFile(path);
+
+            if (source.size() >= 3 &&
+                (unsigned char)source[0] == 0xEF &&
+                (unsigned char)source[1] == 0xBB &&
+                (unsigned char)source[2] == 0xBF) {
+                source.erase(0, 3);
+            }
+
+            return runFmt(source, path, fmtWrite);
+        }
+        catch (const std::runtime_error& error) {
+            std::cerr << error.what() << std::endl;
+            return 1;
+        }
+    }
+
     if (repl) {
         runREPL();
         return 0;
@@ -200,8 +275,9 @@ int main(
             << "  vora <file>\n"
             << "  vora <file> --ast-printer\n"
             << "  vora <file> --tokens\n"
-            << "  vora --repl\n";
-
+            << "  vora --repl\n"
+            << "  vora fmt <file>\n"
+            << "  vora fmt -w <file>\n";
         return 1;
     }
 

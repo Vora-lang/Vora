@@ -58,7 +58,8 @@ echo ""
 for file in "$PROJECT_DIR"/tests/lexer/*.va \
             "$PROJECT_DIR"/tests/parser/*.va \
             "$PROJECT_DIR"/tests/runtime/*.va \
-            "$PROJECT_DIR"/tests/interpreter/*.va; do
+            "$PROJECT_DIR"/tests/interpreter/*.va \
+            "$PROJECT_DIR"/tests/formatter/*.va; do
     [ -f "$file" ] || continue
     name="${file#$PROJECT_DIR/tests/}"
     printf "  %-45s " "$name"

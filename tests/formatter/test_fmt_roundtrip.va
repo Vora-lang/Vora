@@ -1,0 +1,135 @@
+// =========================================================================
+// Formatter round-trip test — all features exercised through fmt → run
+// Verifies the formatter produces valid, executable Vora code.
+// =========================================================================
+
+// Literals
+let n = 42
+let pi = 3.14
+let s = "hello"
+let t = true
+let f = false
+let nothing = null
+print(n, pi, s, t, f, nothing)
+
+// Arithmetic with precedence
+let arith = 1 + 2 * 3 ** 2
+assert(arith == 19, "1 + 2 * 9 should be 19")
+
+// Parenthesized expressions
+let paren = (1 + 2) * 3 ** 2
+assert(paren == 27, "(1 + 2) * 9 should be 27")
+
+// Compound assignments
+let x = 10
+x += 5
+x -= 3
+x *= 2
+x /= 4
+x %= 4
+assert(x == 2, "compound assignment chain should give 2")
+
+// Blocks
+let z = 1
+{
+    let z = 2
+    assert(z == 2, "inner z should be 2")
+}
+assert(z == 1, "outer z should be 1")
+
+// If / else if / else
+let score = 85
+if (score >= 90) {
+    print("A")
+} else if (score >= 80) {
+    print("B")
+} else {
+    print("C")
+}
+
+// While loop
+let i = 0
+while (i < 3) {
+    i += 1
+}
+assert(i == 3, "i should be 3 after while loop")
+
+// For-in loop
+let arr = [1, 2, 3]
+let forSum = 0
+for item in arr {
+    forSum += item
+}
+assert(forSum == 6, "forSum should be 6")
+
+// Functions
+func add(a, b) {
+    return a + b
+}
+assert(add(3, 4) == 7, "add(3, 4) should be 7")
+
+func noop() {}
+assert(noop() == null, "noop() should return null")
+
+// Closures
+func makeAdder(n) {
+    func adder(x) {
+        return x + n
+    }
+    return adder
+}
+let add5 = makeAdder(5)
+assert(add5(10) == 15, "add5(10) should be 15")
+
+// Objects
+Obj Point(x, y) {
+    this.x = x
+    this.y = y
+}
+let p = Point(3, 4)
+assert(p.x == 3, "p.x should be 3")
+assert(p.y == 4, "p.y should be 4")
+
+// Property compound assignment
+p.x += 1
+assert(p.x == 4, "p.x += 1 should be 4")
+
+// Index compound assignment
+let nums = [10, 20]
+nums[0] += 5
+assert(nums[0] == 15, "nums[0] += 5 should be 15")
+
+// Ternary
+let max = 10 > 5 ? 10 : 5
+assert(max == 10, "max should be 10")
+
+let nested = true ? false ? 1 : 2 : 3
+assert(nested == 2, "nested ternary should be 2")
+
+// Try/catch
+try {
+    throw "test error"
+} catch (e) {
+    assert(e == "test error", "caught error should match")
+}
+
+// Logical operators
+assert(true and 42 == 42, "true and 42 should be 42")
+assert(false or "fallback" == "fallback", "false or fallback works")
+assert(null || 42 == 42, "null || 42 should be 42")
+
+// Inc/Dec
+let incVal = 5
+let preInc = ++incVal
+assert(incVal == 6 and preInc == 6, "++incVal: both should be 6")
+let postInc = incVal++
+assert(incVal == 7 and postInc == 6, "incVal++: incVal=7, postInc=6")
+
+// Property inc/dec
+let ct = Point(0, 0)
+ct.x++
+assert(ct.x == 1, "ct.x++ should give 1")
+++ct.y
+assert(ct.y == 1, "++ct.y should give 1")
+
+print("All formatter round-trip tests passed!")

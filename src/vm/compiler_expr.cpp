@@ -323,6 +323,87 @@ void Compiler::visitAssignmentExpr(const AssignmentExpr& expr) {
     }
 }
 
+void Compiler::visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) {
+    currentLine = expr.op.line;
+    currentColumn = expr.op.column;
+
+    // Map compound op to base binary opcode
+    uint8_t binOp;
+    switch (expr.op.type) {
+        case TokenType::PLUS_EQUAL:     binOp = static_cast<uint8_t>(OpCode::OP_ADD);     break;
+        case TokenType::MINUS_EQUAL:    binOp = static_cast<uint8_t>(OpCode::OP_SUB_NN);  break;
+        case TokenType::MULTIPLY_EQUAL: binOp = static_cast<uint8_t>(OpCode::OP_MUL_NN);  break;
+        case TokenType::DIVIDE_EQUAL:   binOp = static_cast<uint8_t>(OpCode::OP_DIV_NN);  break;
+        case TokenType::MODULO_EQUAL:   binOp = static_cast<uint8_t>(OpCode::OP_MOD_NN);  break;
+        default: return;
+    }
+
+    // --- VariableExpr target: x += y ---
+    if (auto* var = dynamic_cast<VariableExpr*>(expr.target.get())) {
+        // Read current value
+        var->accept(*this);
+        // Compile RHS
+        expr.value->accept(*this);
+        // Binary op
+        emitByte(binOp);
+        // Store back — mirror visitAssignmentExpr resolution
+        int localSlot = resolveLocal(var->name);
+        if (localSlot >= 0) {
+            emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                      static_cast<uint8_t>(localSlot));
+        } else {
+            int upvalueIdx = resolveUpvalue(this, var->name);
+            if (upvalueIdx >= 0) {
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_UPVALUE),
+                          static_cast<uint8_t>(upvalueIdx));
+            } else {
+                int slot = resolveGlobal(var->name);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
+                          static_cast<uint8_t>(slot));
+            }
+        }
+        return;
+    }
+
+    // --- PropertyExpr target: obj.prop += y ---
+    if (auto* prop = dynamic_cast<PropertyExpr*>(expr.target.get())) {
+        // Compile object reference (used by SET_PROPERTY which pops value then obj)
+        prop->object->accept(*this);
+        // Compile property read: clone object + GET_PROPERTY
+        auto objClone = prop->object->clone();
+        objClone->accept(*this);
+        uint8_t nameIndex = identifierConstant(prop->property);
+        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), nameIndex);
+        // Compile RHS
+        expr.value->accept(*this);
+        // Binary op
+        emitByte(binOp);
+        // Store back
+        emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), nameIndex);
+        return;
+    }
+
+    // --- IndexExpr target: arr[i] += y ---
+    if (auto* idx = dynamic_cast<IndexExpr*>(expr.target.get())) {
+        // Compile array + index (used by OP_SET_INDEX which pops value, index, target)
+        idx->array->accept(*this);
+        idx->index->accept(*this);
+        // Compile index read: clone array + clone index + OP_INDEX
+        auto arrClone = idx->array->clone();
+        auto indexClone = idx->index->clone();
+        arrClone->accept(*this);
+        indexClone->accept(*this);
+        emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+        // Compile RHS
+        expr.value->accept(*this);
+        // Binary op
+        emitByte(binOp);
+        // Store back
+        emitByte(static_cast<uint8_t>(OpCode::OP_SET_INDEX));
+        return;
+    }
+}
+
 void Compiler::visitCallExpr(const CallExpr& expr) {
     currentLine = expr.paren.line;
     currentColumn = expr.paren.column;

@@ -83,6 +83,7 @@ public:
     void visitUnaryExpr(const UnaryExpr& expr) override;
     void visitVariableExpr(const VariableExpr& expr) override;
     void visitAssignmentExpr(const AssignmentExpr& expr) override;
+    void visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) override;
     void visitCallExpr(const CallExpr& expr) override;
     void visitArrayExpr(const ArrayExpr& expr) override;
     void visitDictExpr(const DictExpr& expr) override;

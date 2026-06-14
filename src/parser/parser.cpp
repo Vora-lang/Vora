@@ -1058,7 +1058,7 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
 
         // =========================
         // COMPOUND ASSIGNMENT (+=, -=, *=, /=, %=)
-        // Desugar: x += y  →  x = x + y
+        // Preserved as first-class AST node (not desugared).
         // =========================
         if (op.type == TokenType::PLUS_EQUAL ||
             op.type == TokenType::MINUS_EQUAL ||
@@ -1066,43 +1066,14 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
             op.type == TokenType::DIVIDE_EQUAL ||
             op.type == TokenType::MODULO_EQUAL) {
 
-            // Map compound op to base op
-            TokenType baseOp;
-            switch (op.type) {
-                case TokenType::PLUS_EQUAL:     baseOp = TokenType::PLUS;     break;
-                case TokenType::MINUS_EQUAL:    baseOp = TokenType::MINUS;    break;
-                case TokenType::MULTIPLY_EQUAL: baseOp = TokenType::MULTIPLY; break;
-                case TokenType::DIVIDE_EQUAL:   baseOp = TokenType::DIVIDE;   break;
-                case TokenType::MODULO_EQUAL:   baseOp = TokenType::MODULO;   break;
-                default: break;
-            }
-
-            Token baseToken(baseOp, op.lexeme.substr(0, 1), op.line, op.column);
-
-            // Build the binary: left op right
-            auto bin = std::make_unique<BinaryExpr>(
-                std::unique_ptr<Expr>(left->clone()),  // clone left for the read
-                baseToken,
-                std::move(right)
-            );
-
-            // Reuse the same assignment logic
-            auto variable = dynamic_cast<VariableExpr*>(left.get());
-            if (variable) {
-                return std::make_unique<AssignmentExpr>(
-                    variable->name,
-                    std::move(bin),
-                    variable->nameToken
-                );
-            }
-
-            auto property = dynamic_cast<PropertyExpr*>(left.get());
-            if (property) {
-                return std::make_unique<PropertyAssignmentExpr>(
-                    std::unique_ptr<Expr>(property->object->clone()),
-                    property->property,
-                    std::move(bin),
-                    property->dot
+            // Validate target: VariableExpr, PropertyExpr, or IndexExpr
+            if (dynamic_cast<VariableExpr*>(left.get()) ||
+                dynamic_cast<PropertyExpr*>(left.get()) ||
+                dynamic_cast<IndexExpr*>(left.get())) {
+                return std::make_unique<CompoundAssignmentExpr>(
+                    std::move(left),
+                    op,
+                    std::move(right)
                 );
             }
 

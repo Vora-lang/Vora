@@ -147,6 +147,31 @@ public:
     Token nameToken;
 };
 
+// CompoundAssignmentExpr — x += y, obj.prop -= z, arr[i] *= 3
+// Stored as a first-class AST node (not desugared) so the formatter can
+// reproduce the original syntax. The compiler desugars it internally.
+class CompoundAssignmentExpr : public Expr {
+public:
+    CompoundAssignmentExpr(
+        std::unique_ptr<Expr> target,
+        Token op,
+        std::unique_ptr<Expr> value
+    )
+        : target(std::move(target)),
+          op(std::move(op)),
+          value(std::move(value)) {
+    }
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::unique_ptr<Expr> target;  // VariableExpr, PropertyExpr, or IndexExpr
+    Token op;                        // +=, -=, *=, /=, %=
+    std::unique_ptr<Expr> value;    // right-hand side
+};
+
 class CallExpr : public Expr {
 public:
     CallExpr(
