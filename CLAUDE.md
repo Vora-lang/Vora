@@ -59,8 +59,8 @@ cmake --preset windows-x64-release
 cmake --build --preset windows-x64-release --config Release
 
 # Package (Release only)
-cmake --build build/linux-x64-release --target package  # → .deb/.rpm
-cmake --build build/windows-x64-release --target package --config Release  # → .msi
+cmake --build --preset linux-x64-release --target package    # → .deb/.rpm
+cmake --build --preset windows-x64-release --target package --config Release  # → .msi
 ```
 
 See `docs/09-构建系统指南.md` for detailed cross-compilation setup, toolchain requirements, and CI architecture.
@@ -74,37 +74,14 @@ Before every commit, run **all examples and tests**. Never skip this.
 ### Windows (PowerShell)
 
 ```powershell
-# Test suite
 .\tests\run_tests.ps1
-
-# All examples
-Get-ChildItem examples/*.va | ForEach-Object {
-  $n=$_.Name
-  if ($n -eq '17-type-annotations.va') {
-    $out = "42`n3.14`n100`ntest`n" | & .\build\Debug\Vora.exe $_.FullName 2>&1
-  } else {
-    $out = & .\build\Debug\Vora.exe $_.FullName 2>&1
-  }
-  if ($LASTEXITCODE -eq 0) { Write-Host "PASS $n" -F Green }
-  else { Write-Host "FAIL $n : $out" -F Red }
-}
+.\tests\run_examples.ps1
 ```
 
 ### Linux / macOS (bash)
 
 ```bash
-# Test suite
 ./tests/run_tests.sh
-
-# All examples
-for f in examples/*.va; do
-  n=$(basename "$f")
-  if [ "$n" = "17-type-annotations.va" ]; then
-    out=$(printf '42\n3.14\n100\ntest\n' | ./build/Vora "$f" 2>&1) && echo "PASS $n" || echo "FAIL $n : $out"
-  else
-    out=$(./build/Vora "$f" 2>&1) && echo "PASS $n" || echo "FAIL $n : $out"
-  fi
-done
 ```
 
 ### Current expected results (2026-06-15)

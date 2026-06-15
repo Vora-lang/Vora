@@ -5,8 +5,8 @@
 #   sudo apt-get install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
 #
 # Usage:
-#   cmake -S . -B build --toolchain cmake/toolchains/linux-armhf.cmake
-#   cmake --build build
+#   cmake --preset linux-armhf-debug
+#   cmake --build --preset linux-armhf-debug
 
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR arm)

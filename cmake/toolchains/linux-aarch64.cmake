@@ -5,8 +5,8 @@
 #   sudo apt-get install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 #
 # Usage:
-#   cmake -S . -B build --toolchain cmake/toolchains/linux-aarch64.cmake
-#   cmake --build build
+#   cmake --preset linux-aarch64-debug
+#   cmake --build --preset linux-aarch64-debug
 
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)

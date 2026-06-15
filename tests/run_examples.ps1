@@ -1,10 +1,41 @@
-$Vora = ".\build\Debug\Vora.exe"
+# run_examples.ps1 — Vora examples runner (PowerShell)
+# Usage:
+#   .\tests\run_examples.ps1
+
+$ErrorActionPreference = "Continue"
+
+# Locate the Vora binary — preset paths (consistent with build.ps1)
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectDir = Split-Path -Parent $ScriptDir
+$Vora = $null
+foreach ($candidate in @(
+        "$ProjectDir\build\windows-x64-debug\Debug\Vora.exe",
+        "$ProjectDir\build\windows-x64-release\Release\Vora.exe",
+        "$ProjectDir\build\windows-x86-debug\Debug\Vora.exe",
+        "$ProjectDir\build\windows-x86-release\Release\Vora.exe",
+        "$ProjectDir\build\windows-arm64-debug\Debug\Vora.exe",
+        "$ProjectDir\build\windows-arm64-release\Release\Vora.exe"
+    )) {
+    if (Test-Path $candidate) {
+        $Vora = $candidate
+        break
+    }
+}
+if (-not $Vora) {
+    Write-Host "Error: Vora binary not found. Build the project first:" -ForegroundColor Red
+    Write-Host "  .\build.ps1"
+    exit 1
+}
+
+Write-Host "Using: $Vora"
+Write-Host ""
+
 $Pass = 0
 $Fail = 0
 
 Write-Host "=== Vora Examples ==="
 
-Get-ChildItem examples/*.va | ForEach-Object {
+Get-ChildItem "$ProjectDir\examples\*.va" | ForEach-Object {
     $name = $_.Name
     Write-Host "  $name " -NoNewline
 

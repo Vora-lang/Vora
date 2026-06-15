@@ -5,12 +5,12 @@
 # "architecture": "Win32", this file is not strictly needed, but it
 # provides a fallback for direct cmake invocations.
 #
-# Usage (with MSVC generator):
-#   cmake -S . -B build -A Win32
+# Usage:
+#   cmake --preset windows-x86-debug
+#   cmake --build --preset windows-x86-debug
 #
-# Or with Ninja + MSVC:
-#   cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl ^
-#       -DCMAKE_GENERATOR_PLATFORM=Win32
+# Or with a custom generator:
+#   cmake -S . -B build/windows-x86 -G Ninja -DCMAKE_GENERATOR_PLATFORM=Win32
 
 if(NOT DEFINED CMAKE_GENERATOR_PLATFORM)
     set(CMAKE_GENERATOR_PLATFORM Win32 CACHE STRING "MSVC target platform (Win32 = 32-bit x86)")

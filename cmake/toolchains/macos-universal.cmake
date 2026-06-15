@@ -4,8 +4,8 @@
 # Intel Macs (x86_64) and Apple Silicon Macs (arm64).
 #
 # Usage:
-#   cmake -S . -B build --toolchain cmake/toolchains/macos-universal.cmake
-#   cmake --build build
+#   cmake --preset macos-universal-debug
+#   cmake --build --preset macos-universal-debug
 
 set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Build universal binary for Intel + Apple Silicon")
 
