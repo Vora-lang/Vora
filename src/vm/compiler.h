@@ -22,6 +22,7 @@ namespace vora {
 struct UpvalueDescriptor {
     uint8_t index;   // local slot index (if isLocal) or enclosing upvalue index
     bool isLocal;    // true = captured from immediate enclosing function's local
+    bool isConst = false;  // true if the captured variable was declared const
 };
 
 // Compiled function prototype stored in constant pool.
@@ -137,8 +138,10 @@ private:
     // =========================================================================
     std::vector<std::string> globalNames;
     std::vector<bool> globalDefined;  // parallel: true if OP_DEFINE_GLOBAL emitted
+    std::vector<bool> globalIsConst;  // parallel: true if declared with 'const'
     int resolveGlobal(const std::string& name);  // returns slot index (allocates if needed)
     int defineGlobal(const std::string& name);   // like resolveGlobal but errors on redefinition
+    int defineGlobalConst(const std::string& name);  // like defineGlobal but for const
 
     // =========================================================================
     // Local variable tracking
@@ -147,6 +150,7 @@ private:
         std::string name;
         int depth;       // scope depth where declared
         bool captured;   // true if referenced by a nested closure
+        bool isConst;    // true if declared with 'const' keyword
     };
     std::vector<Local> locals;
     int scopeDepth = 0;
@@ -154,8 +158,9 @@ private:
 
     void beginScope();
     void endScope();
-    void addLocal(const std::string& name);
+    void addLocal(const std::string& name, bool isConst = false);
     int resolveLocal(const std::string& name) const;  // returns -1 if not found
+    bool isLocalConst(const std::string& name) const;  // check if a local is const
     int currentLocalCount() const;
 
     // =========================================================================
@@ -193,6 +198,7 @@ private:
     // =========================================================================
     std::vector<UpvalueDescriptor> upvalues;
     int resolveUpvalue(Compiler* compiler, const std::string& name);
+    bool isUpvalueConst(int upvalueIdx) const;  // check if captured upvalue is const
 
     // =========================================================================
     // Bytecode emission

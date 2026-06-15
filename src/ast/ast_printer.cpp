@@ -242,7 +242,7 @@ std::string ASTPrinter::visitExprStmt(const ExprStmt& stmt) {
 }
 
 std::string ASTPrinter::visitLetStmt(const LetStmt& stmt) {
-    std::string label = "let " + stmt.name;
+    std::string label = (stmt.isConst ? "const " : "let ") + stmt.name;
     if (!stmt.typeAnnotation.empty()) {
         label += ":" + stmt.typeAnnotation;
     }

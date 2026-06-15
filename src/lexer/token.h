@@ -64,6 +64,7 @@ namespace vora {
 
         // Keywords
         LET, // let
+        CONST, // const
         FUNC, // func
         RETURN, // return
         IF, // if

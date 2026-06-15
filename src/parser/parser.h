@@ -50,6 +50,7 @@ private:
     std::unique_ptr<Stmt> statement();
 
     std::unique_ptr<Stmt> letStatement();
+    std::unique_ptr<Stmt> constStatement();
 
     std::unique_ptr<BlockStmt> blockStatement();
 

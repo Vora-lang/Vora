@@ -492,7 +492,7 @@ std::string SourceFormatter::visitExprStmt(const ExprStmt& stmt) {
 
 std::string SourceFormatter::visitLetStmt(const LetStmt& stmt) {
     std::stringstream ss;
-    ss << "let " << stmt.name;
+    ss << (stmt.isConst ? "const " : "let ") << stmt.name;
 
     if (!stmt.typeAnnotation.empty()) {
         ss << ": " << stmt.typeAnnotation;

@@ -287,11 +287,13 @@ std::shared_ptr<Upvalue> VM::captureUpvalue(size_t slotIndex) {
     if (it != openUpvalues.end()) {
         return it->second;
     }
-    // Create a new Upvalue whose location points directly to the
-    // live stack slot. This ensures all closures that capture the
-    // same local share the same indirection and see live updates.
+    // Create a new Upvalue pointing to the live stack slot via
+    // stable index (stackPtr + slotIndex). The stack vector itself
+    // is a member of VM and has a stable address — only its internal
+    // buffer moves on reallocation, which the index handles correctly.
     auto uv = std::make_shared<Upvalue>();
-    uv->location = &stack[slotIndex];
+    uv->stackPtr = &stack;
+    uv->slotIndex = slotIndex;
     openUpvalues[slotIndex] = uv;
     return uv;
 }
@@ -961,6 +963,145 @@ InterpretResult VM::run() {
                 }
                 break;
             }
+            case OpCode::OP_TAIL_CALL: {
+                // Tail call optimization: reuse the current call frame
+                // instead of pushing a new one. This enables infinite
+                // tail recursion without stack overflow.
+                //
+                // If the callee is a VoraFunction, we replace the current
+                // frame with it. Otherwise, we fall back to a regular call
+                // followed by a return from the current frame.
+                if (GcHeap::instance().needsGC()) {
+                    collectGarbage();
+                }
+
+                uint8_t argCount = READ_BYTE();
+                Value callee = peek(argCount);
+
+                if (!std::holds_alternative<GcPtr<Callable>>(callee)) {
+                    RUNTIME_ERROR_OR_THROW("Can only call functions");
+                }
+
+                auto callable = std::get<GcPtr<Callable>>(callee);
+                auto voraFn = dynamic_cast<VoraFunction*>(callable.get());
+
+                // Only optimize VoraFunction tail calls. For native functions,
+                // bound methods, and class constructors, fall back to a regular
+                // call + return sequence.
+                if (voraFn) {
+                    const FunctionPrototype* proto = voraFn->getPrototype();
+                    if (!proto) {
+                        RUNTIME_ERROR_OR_THROW("Function has no compiled body");
+                    }
+
+                    // Check arity
+                    if (argCount < static_cast<uint8_t>(voraFn->requiredArity()) ||
+                        argCount > static_cast<uint8_t>(voraFn->arity())) {
+                        std::string expected;
+                        if (voraFn->requiredArity() == voraFn->arity()) {
+                            expected = std::to_string(voraFn->arity());
+                        } else {
+                            expected = std::to_string(voraFn->requiredArity()) + ".." +
+                                       std::to_string(voraFn->arity());
+                        }
+                        RUNTIME_ERROR_OR_THROW("Wrong arity: expected " + expected +
+                            " but got " + std::to_string(argCount));
+                    }
+
+                    // Collect arguments from the stack
+                    std::vector<Value> arguments(argCount);
+                    for (int i = argCount - 1; i >= 0; i--) {
+                        arguments[static_cast<size_t>(i)] = pop();
+                    }
+                    pop(); // pop the callee itself
+
+                    // Close open upvalues for the current frame
+                    for (auto it = openUpvalues.begin(); it != openUpvalues.end(); ) {
+                        if (it->first >= frameBaseIndex &&
+                            it->first < frameBaseIndex + MAX_LOCALS_PER_FRAME) {
+                            it->second->close();
+                            it = openUpvalues.erase(it);
+                        } else {
+                            ++it;
+                        }
+                    }
+
+                    // Clean up catch handlers
+                    while (!catchHandlers.empty() &&
+                           catchHandlers.back().frameCount > frames.size()) {
+                        catchHandlers.pop_back();
+                    }
+
+                    // Reset exception flag
+                    exceptionInFlight = false;
+
+                    // Reuse the current frame
+                    if (!frames.empty()) {
+                        frames.back().function = GcPtr<VoraFunction>(voraFn);
+                    } else {
+                        frames.push_back({ip, frameBaseIndex, currentChunk,
+                                          GcPtr<VoraFunction>(voraFn)});
+                    }
+
+                    // Switch to callee's chunk
+                    currentChunk = &proto->chunk;
+                    ip = currentChunk->code.data();
+
+                    // Replace locals with new arguments
+                    stackTopIndex = frameBaseIndex;
+                    currentArgCount = argCount;
+                    for (size_t i = 0; i < static_cast<size_t>(voraFn->arity()); i++) {
+                        if (i < arguments.size()) {
+                            push(arguments[i]);
+                        } else {
+                            push(nullptr);
+                        }
+                    }
+                } else {
+                    // Non-Vora callee: fall back to regular call.
+                    // callValue pops callee+args and pushes the result.
+                    if (!callValue(callee, argCount)) {
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                    // Now the result is on the stack. Return from current frame.
+                    Value returnValue = pop();
+                    stackTopIndex = frameBaseIndex;
+
+                    // Close open upvalues for this frame
+                    for (auto it = openUpvalues.begin(); it != openUpvalues.end(); ) {
+                        if (it->first >= frameBaseIndex &&
+                            it->first < frameBaseIndex + MAX_LOCALS_PER_FRAME) {
+                            it->second->close();
+                            it = openUpvalues.erase(it);
+                        } else {
+                            ++it;
+                        }
+                    }
+
+                    // Restore caller's frame
+                    if (frames.empty()) {
+                        push(returnValue);
+                        // Top-level: nothing to return to — just push and continue?
+                        // This shouldn't happen; emit OP_RETURN would've been used.
+                        break;
+                    }
+                    CallFrame frame = frames.back();
+                    frames.pop_back();
+                    ip = frame.returnIp;
+                    frameBaseIndex = frame.frameBase;
+                    currentChunk = frame.callerChunk;
+
+                    // Clean up catch handlers
+                    while (!catchHandlers.empty() &&
+                           catchHandlers.back().frameCount > frames.size()) {
+                        catchHandlers.pop_back();
+                    }
+
+                    push(returnValue);
+                }
+
+                break;
+            }
             case OpCode::OP_CLOSURE: {
                 uint8_t constIndex = READ_BYTE();
                 Value protoVal = currentChunk->constants[constIndex];
@@ -991,14 +1132,14 @@ InterpretResult VM::run() {
                                 function->upvalues.push_back(encFn->upvalues[index]);
                             } else {
                                 auto fallback = std::make_shared<Upvalue>();
+                                fallback->isClosed = true;
                                 fallback->closed = nullptr;
-                                fallback->location = &fallback->closed;
                                 function->upvalues.push_back(fallback);
                             }
                         } else {
                             auto fallback = std::make_shared<Upvalue>();
+                            fallback->isClosed = true;
                             fallback->closed = nullptr;
-                            fallback->location = &fallback->closed;
                             function->upvalues.push_back(fallback);
                         }
                     }

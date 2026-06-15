@@ -303,10 +303,19 @@ void Compiler::visitVariableExpr(const VariableExpr& expr) {
 void Compiler::visitAssignmentExpr(const AssignmentExpr& expr) {
     currentLine = expr.nameToken.line;
     currentColumn = expr.nameToken.column;
+
+    // Check const before compiling the value (avoid wasted work)
+    int localSlot = resolveLocal(expr.name);
+    if (localSlot >= 0 && isLocalConst(expr.name)) {
+        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                        "Cannot assign to const variable '" + expr.name + "'",
+                        "CompilerError");
+        hadError = true;
+        return;
+    }
+
     expr.value->accept(*this);
 
-    // Check locals first
-    int localSlot = resolveLocal(expr.name);
     if (localSlot >= 0) {
         // Value is on stack; copy and assign to local slot
         emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
@@ -315,10 +324,28 @@ void Compiler::visitAssignmentExpr(const AssignmentExpr& expr) {
         // Check upvalues
         int upvalueIdx = resolveUpvalue(this, expr.name);
         if (upvalueIdx >= 0) {
+            if (isUpvalueConst(upvalueIdx)) {
+                printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                                "Cannot assign to const variable '" + expr.name + "'",
+                                "CompilerError");
+                hadError = true;
+                return;
+            }
             emitBytes(static_cast<uint8_t>(OpCode::OP_SET_UPVALUE),
                       static_cast<uint8_t>(upvalueIdx));
         } else {
             int slot = resolveGlobal(expr.name);
+            // Check global const (walk to root compiler)
+            Compiler* root = this;
+            while (root->enclosing) root = root->enclosing;
+            if (slot >= 0 && static_cast<size_t>(slot) < root->globalIsConst.size() &&
+                root->globalIsConst[static_cast<size_t>(slot)]) {
+                printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                                "Cannot assign to const variable '" + expr.name + "'",
+                                "CompilerError");
+                hadError = true;
+                return;
+            }
             emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
                       static_cast<uint8_t>(slot));
         }
@@ -342,6 +369,42 @@ void Compiler::visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) {
 
     // --- VariableExpr target: x += y ---
     if (auto* var = dynamic_cast<VariableExpr*>(expr.target.get())) {
+        // Check const — local, upvalue, and global
+        if (isLocalConst(var->name)) {
+            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                            "Cannot assign to const variable '" + var->name + "'",
+                            "CompilerError");
+            hadError = true;
+            return;
+        }
+        // Check upvalue const
+        int uvIdx = resolveUpvalue(this, var->name);
+        if (uvIdx >= 0 && isUpvalueConst(uvIdx)) {
+            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                            "Cannot assign to const variable '" + var->name + "'",
+                            "CompilerError");
+            hadError = true;
+            return;
+        }
+        // Also check global const
+        {
+            Compiler* root = this;
+            while (root->enclosing) root = root->enclosing;
+            int gSlot = resolveLocal(var->name);
+            if (gSlot < 0 && uvIdx < 0) {  // not a local or upvalue, check global
+                auto it = std::find(root->globalNames.begin(), root->globalNames.end(), var->name);
+                if (it != root->globalNames.end()) {
+                    size_t idx = static_cast<size_t>(it - root->globalNames.begin());
+                    if (idx < root->globalIsConst.size() && root->globalIsConst[idx]) {
+                        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                                        "Cannot assign to const variable '" + var->name + "'",
+                                        "CompilerError");
+                        hadError = true;
+                        return;
+                    }
+                }
+            }
+        }
         // Read current value
         var->accept(*this);
         // Compile RHS
@@ -514,6 +577,42 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
         : Value(static_cast<int64_t>(-1));
 
     if (auto var = dynamic_cast<const VariableExpr*>(expr.target.get())) {
+        // Check const — local, upvalue, and global
+        if (isLocalConst(var->name)) {
+            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                            "Cannot modify const variable '" + var->name + "'",
+                            "CompilerError");
+            hadError = true;
+            return;
+        }
+        // Check upvalue const
+        int uvIdx = resolveUpvalue(this, var->name);
+        if (uvIdx >= 0 && isUpvalueConst(uvIdx)) {
+            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                            "Cannot modify const variable '" + var->name + "'",
+                            "CompilerError");
+            hadError = true;
+            return;
+        }
+        // Also check global const
+        {
+            Compiler* root = this;
+            while (root->enclosing) root = root->enclosing;
+            int lSlot = resolveLocal(var->name);
+            if (lSlot < 0 && uvIdx < 0) {
+                auto it = std::find(root->globalNames.begin(), root->globalNames.end(), var->name);
+                if (it != root->globalNames.end()) {
+                    size_t idx = static_cast<size_t>(it - root->globalNames.begin());
+                    if (idx < root->globalIsConst.size() && root->globalIsConst[idx]) {
+                        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                                        "Cannot modify const variable '" + var->name + "'",
+                                        "CompilerError");
+                        hadError = true;
+                        return;
+                    }
+                }
+            }
+        }
         // Get current value onto stack
         var->accept(*this);
 

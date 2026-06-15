@@ -1,0 +1,109 @@
+// runtime/test_tco.va — Tail Call Optimization tests
+// Run: vora tests/runtime/test_tco.va
+// TCO enables infinite tail recursion by reusing the call frame.
+
+print("=== Runtime: Tail Call Optimization Tests ===")
+
+// Test 1: Basic self-tail-recursion — deep recursion (10000 levels)
+func countdown(n, acc) {
+    if (n <= 0) { return acc }
+    return countdown(n - 1, acc + 1)
+}
+assert(countdown(10000, 0) == 10000, "deep tail recursion 10000")
+
+// Test 2: Tail-recursive factorial
+func tcoFact(n, acc) {
+    if (n <= 1) { return acc }
+    return tcoFact(n - 1, n * acc)
+}
+assert(tcoFact(5, 1) == 120, "tco factorial 5")
+assert(tcoFact(10, 1) == 3628800, "tco factorial 10")
+assert(tcoFact(0, 1) == 1, "tco factorial 0")
+
+// Test 3: Tail-recursive fibonacci (two accumulators)
+func tcoFib(n, a, b) {
+    if (n <= 0) { return a }
+    return tcoFib(n - 1, b, a + b)
+}
+assert(tcoFib(0, 0, 1) == 0, "tco fib 0")
+assert(tcoFib(1, 0, 1) == 1, "tco fib 1")
+assert(tcoFib(10, 0, 1) == 55, "tco fib 10")
+assert(tcoFib(30, 0, 1) == 832040, "tco fib 30")
+
+// Test 4: Tail-recursive sum
+func tcoSum(n, acc) {
+    if (n <= 0) { return acc }
+    return tcoSum(n - 1, acc + n)
+}
+assert(tcoSum(100, 0) == 5050, "tco sum 100")
+assert(tcoSum(1000, 0) == 500500, "tco sum 1000")
+
+// Test 5: Tail-recursive array iteration (manual for-each)
+func sumArray(arr, idx, acc) {
+    if (idx >= arr.length) { return acc }
+    return sumArray(arr, idx + 1, acc + arr[idx])
+}
+assert(sumArray([1, 2, 3, 4, 5], 0, 0) == 15, "tco array sum")
+
+// Test 6: Tail-recursive GCD
+func tcoGcd(a, b) {
+    if (b == 0) { return a }
+    return tcoGcd(b, a % b)
+}
+assert(tcoGcd(48, 18) == 6, "tco gcd")
+assert(tcoGcd(1071, 462) == 21, "tco gcd large")
+
+// Test 7: TCO not inhibited by intermediate operations in args
+func complexTail(n, acc) {
+    if (n <= 0) { return acc }
+    return complexTail(n - 1, acc + n * 2 - 1)
+}
+assert(complexTail(5, 0) == 25, "tco complex args")  // 9+7+5+3+1 = 25
+
+// Test 8: Method calls in return position use regular call (no TCO error)
+let test8 = "hello"
+func len8(s) { return s.length }  // .length is a property, not call
+assert(len8(test8) == 5, "method prop not TCO")
+
+// Test 9: Deep mutual tail recursion via accumulator
+func isEvenTco(n, a) {
+    if (n == 0) { return true }
+    return isOddTco(n - 1, a)
+}
+func isOddTco(n, a) {
+    if (n == 0) { return false }
+    return isEvenTco(n - 1, a)
+}
+assert(isEvenTco(100, 0) == true, "tco mutual even")
+assert(isOddTco(101, 0) == true, "tco mutual odd")
+
+// Test 10: TCO works with local function self-recursion
+func outer10() {
+    func helper(n, acc) {
+        if (n <= 0) { return acc }
+        return helper(n - 1, acc + n)
+    }
+    return helper(500, 0)
+}
+assert(outer10() == 125250, "tco local self-recursion")
+
+// Test 11: TCO with upvalue capture
+func makeCounterTco(init) {
+    let count = init
+    func up() {
+        if (count >= init + 100) { return count }
+        count = count + 1
+        return up()
+    }
+    return up
+}
+let c = makeCounterTco(0)
+assert(c() == 100, "tco with upvalue capture")
+
+// Test 12: Non-Vora tail calls fall back gracefully
+func testFallback() {
+    return print("hello from tail position")
+}
+testFallback()  // print() is native, but should work via fallback
+
+print("TCO tests: PASS")

@@ -42,11 +42,13 @@ public:
     LetStmt(
         std::string name,
         std::unique_ptr<Expr> initializer,
-        std::string typeAnnotation = ""
+        std::string typeAnnotation = "",
+        bool isConst = false
     )
         : name(std::move(name)),
           initializer(std::move(initializer)),
-          typeAnnotation(std::move(typeAnnotation)) {
+          typeAnnotation(std::move(typeAnnotation)),
+          isConst(isConst) {
     }
 
     void        accept(StmtVisitor<void>& visitor)        const override;
@@ -57,6 +59,8 @@ public:
     std::unique_ptr<Expr> initializer;
 
     std::string typeAnnotation;  // empty = no annotation
+
+    bool isConst = false;  // true if declared with 'const' keyword
 };
 
 class BlockStmt : public Stmt {

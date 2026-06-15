@@ -8,6 +8,7 @@
 namespace vora {
 
     const std::unordered_map<std::string, TokenType> Lexer::keywords = {
+        {"const", TokenType::CONST},
         {"let", TokenType::LET},
         {"func", TokenType::FUNC},
         {"return", TokenType::RETURN},

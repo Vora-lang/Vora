@@ -136,7 +136,7 @@ void Compiler::endScope() {
     scopeDepth--;
 }
 
-void Compiler::addLocal(const std::string& name) {
+void Compiler::addLocal(const std::string& name, bool isConst) {
     // Check for redefinition in current scope
     for (int i = static_cast<int>(locals.size()) - 1; i >= 0; i--) {
         if (locals[i].depth == -1 || locals[i].depth < scopeDepth) break;
@@ -149,7 +149,7 @@ void Compiler::addLocal(const std::string& name) {
         }
     }
 
-    locals.push_back({name, scopeDepth, false});
+    locals.push_back({name, scopeDepth, false, isConst});
     scopeLocalCounts.back()++;
 }
 
@@ -182,6 +182,7 @@ int Compiler::resolveGlobal(const std::string& name) {
     int slot = static_cast<int>(root->globalNames.size());
     root->globalNames.push_back(name);
     root->globalDefined.push_back(false);
+    root->globalIsConst.push_back(false);
     return slot;
 }
 
@@ -212,7 +213,48 @@ int Compiler::defineGlobal(const std::string& name) {
     int slot = static_cast<int>(root->globalNames.size());
     root->globalNames.push_back(name);
     root->globalDefined.push_back(true);
+    root->globalIsConst.push_back(false);
     return slot;
+}
+
+int Compiler::defineGlobalConst(const std::string& name) {
+    // Walk to root compiler.
+    Compiler* root = this;
+    while (root->enclosing) {
+        root = root->enclosing;
+    }
+
+    // Check for redefinition.
+    for (size_t i = 0; i < root->globalNames.size(); i++) {
+        if (root->globalNames[i] == name) {
+            if (root->globalDefined[i]) {
+                printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                                "Global variable '" + name + "' already defined",
+                                "CompilerError");
+                hadError = true;
+            } else {
+                // Forward reference — mark as defined const.
+                root->globalDefined[i] = true;
+                root->globalIsConst[i] = true;
+            }
+            return static_cast<int>(i);
+        }
+    }
+
+    // New const global.
+    int slot = static_cast<int>(root->globalNames.size());
+    root->globalNames.push_back(name);
+    root->globalDefined.push_back(true);
+    root->globalIsConst.push_back(true);
+    return slot;
+}
+
+bool Compiler::isLocalConst(const std::string& name) const {
+    int slot = resolveLocal(name);
+    if (slot >= 0 && static_cast<size_t>(slot) < locals.size()) {
+        return locals[static_cast<size_t>(slot)].isConst;
+    }
+    return false;
 }
 
 int Compiler::resolveUpvalue(Compiler* compiler, const std::string& name) {
@@ -221,18 +263,22 @@ int Compiler::resolveUpvalue(Compiler* compiler, const std::string& name) {
 
     uint8_t resolvedIndex;
     bool resolvedIsLocal;
+    bool resolvedIsConst = false;
 
     // Try to resolve as a local in the immediate enclosing function
     int localSlot = compiler->enclosing->resolveLocal(name);
     if (localSlot >= 0) {
         // Mark the local as captured in the enclosing function
-        compiler->enclosing->locals[static_cast<size_t>(localSlot)].captured = true;
+        auto& local = compiler->enclosing->locals[static_cast<size_t>(localSlot)];
+        local.captured = true;
+        resolvedIsConst = local.isConst;
         resolvedIndex = static_cast<uint8_t>(localSlot);
         resolvedIsLocal = true;
     } else {
         // Try to resolve as an upvalue in the immediate enclosing function
         int upvalueIdx = compiler->enclosing->resolveUpvalue(compiler->enclosing, name);
         if (upvalueIdx >= 0) {
+            resolvedIsConst = compiler->enclosing->upvalues[static_cast<size_t>(upvalueIdx)].isConst;
             resolvedIndex = static_cast<uint8_t>(upvalueIdx);
             resolvedIsLocal = false;
         } else {
@@ -250,8 +296,15 @@ int Compiler::resolveUpvalue(Compiler* compiler, const std::string& name) {
 
     // Add new upvalue descriptor
     int idx = static_cast<int>(upvalues.size());
-    upvalues.push_back({resolvedIndex, resolvedIsLocal});
+    upvalues.push_back({resolvedIndex, resolvedIsLocal, resolvedIsConst});
     return idx;
+}
+
+bool Compiler::isUpvalueConst(int upvalueIdx) const {
+    if (upvalueIdx >= 0 && static_cast<size_t>(upvalueIdx) < upvalues.size()) {
+        return upvalues[static_cast<size_t>(upvalueIdx)].isConst;
+    }
+    return false;
 }
 
 // =========================================================================

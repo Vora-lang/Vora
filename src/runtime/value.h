@@ -101,18 +101,40 @@ inline Value promoteToFloat(const Value& v) {
 }
 
 // =========================================================================
-// Upvalue — pointer-indirection for closure-captured variables.
-// When "open", location points to a live VM stack slot.
-// When "closed" (local went out of scope), location points to `closed`.
+// Upvalue — index-based indirection for closure-captured variables.
+//
+// When "open" (isClosed=false): stackPtr references the VM's stack vector,
+// slotIndex is the absolute index into that vector. Reads and writes go
+// directly to the live stack slot — closures sharing the same upvalue see
+// each other's mutations immediately.
+//
+// When "closed" (isClosed=true): the local has gone out of scope. The
+// value has been copied to `closed`, and all reads/writes use that copy.
+//
+// This design avoids storing raw Value* into a std::vector that could
+// reallocate on push_back — the vector object itself is stable (a member
+// of VM), and slotIndex stays valid regardless of internal buffer moves.
 // =========================================================================
 
 struct Upvalue {
-    Value* location = nullptr;  // Points to stack slot (open) or &closed (closed)
-    Value closed = nullptr;      // Own storage when local goes out of scope
+    std::vector<Value>* stackPtr = nullptr;  // Pointer to VM's stack vector (stable address)
+    size_t slotIndex = 0;                     // Absolute index into the stack
+    Value closed = nullptr;                   // Own storage when the upvalue is closed
+    bool isClosed = false;                    // Whether this upvalue has been closed
 
-    Value get() const { return *location; }
-    void set(const Value& v) { *location = v; }
-    void close() { closed = *location; location = &closed; }
+    Value get() const {
+        return isClosed ? closed : (*stackPtr)[slotIndex];
+    }
+    void set(const Value& v) {
+        if (isClosed) closed = v;
+        else (*stackPtr)[slotIndex] = v;
+    }
+    void close() {
+        if (!isClosed) {
+            closed = (*stackPtr)[slotIndex];
+            isClosed = true;
+        }
+    }
 };
 
 } // namespace vora

@@ -17,19 +17,32 @@ void Compiler::visitLetStmt(const LetStmt& stmt) {
     if (stmt.initializer) {
         stmt.initializer->accept(*this);
     } else {
+        // const must have an initializer
+        if (stmt.isConst) {
+            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
+                            "const variable '" + stmt.name + "' must be initialized",
+                            "CompilerError");
+            hadError = true;
+            return;
+        }
         emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
     }
 
     if (scopeDepth == 0) {
         // Global variable — use interned slot ID (errors on redefinition).
-        int slot = defineGlobal(stmt.name);
+        int slot;
+        if (stmt.isConst) {
+            slot = defineGlobalConst(stmt.name);
+        } else {
+            slot = defineGlobal(stmt.name);
+        }
         if (hadError) return;
         emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
                   static_cast<uint8_t>(slot));
     } else {
         // Local variable — the initializer value is already on the stack.
         // It stays there as the local's slot. Just record the slot.
-        addLocal(stmt.name);
+        addLocal(stmt.name, stmt.isConst);
         // The value is already on the stack at the local slot position.
         // No OP_SET_LOCAL needed — the initializer result IS the local.
     }
@@ -39,6 +52,24 @@ void Compiler::visitReturnStmt(const ReturnStmt& stmt) {
     // Pop catch handlers for any enclosing try blocks before returning
     for (int t = 0; t < tryNesting; t++) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+    }
+
+    // Tail call optimization (TCO): when returning a direct function call
+    // and we're not inside a try/finally block, emit OP_TAIL_CALL to
+    // reuse the current call frame instead of growing the stack.
+    // This enables infinite tail recursion without stack overflow.
+    if (stmt.value && tryNesting == 0 && finallyNesting == 0) {
+        if (auto* call = dynamic_cast<CallExpr*>(stmt.value.get())) {
+            // Compile callee first (goes below arguments on stack)
+            call->callee->accept(*this);
+            // Compile arguments (pushed on top of callee)
+            for (const auto& arg : call->arguments) {
+                arg->accept(*this);
+            }
+            emitBytes(static_cast<uint8_t>(OpCode::OP_TAIL_CALL),
+                      static_cast<uint8_t>(call->arguments.size()));
+            return;  // OP_TAIL_CALL handles frame reuse, no OP_RETURN needed
+        }
     }
 
     // Push return value (must be on stack before finally runs)

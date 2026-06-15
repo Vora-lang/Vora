@@ -1,0 +1,39 @@
+// const.va — immutable variable bindings
+print("=== Const Variables ===")
+
+const PI = 3.14159
+print("PI =", PI)
+
+// const with expression
+const AREA = PI * 10 * 10
+print("Circle area (r=10) =", AREA)
+
+// Local const
+func getMagic() {
+    const MAGIC = 42
+    return MAGIC
+}
+print("Magic number =", getMagic())
+
+// Const arrays — binding is immutable, contents can change
+const nums = [1, 2, 3]
+print("nums =", nums)
+nums[0] = 99
+print("nums[0] =", nums[0], "(element mutation allowed)")
+
+// Const prevents reassignment:
+// const X = 5; X = 10;     // Error: Cannot assign to const variable
+// const X = 5; X += 1;     // Error: Cannot assign to const variable
+// const X = 5; X++;        // Error: Cannot modify const variable
+
+// Const with type annotation
+const name:str = "Vora"
+print("const typed =", name)
+
+// Const in block scope
+{
+    const LOCAL = 100
+    print("block const =", LOCAL)
+}
+
+print("All const tests completed")

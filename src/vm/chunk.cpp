@@ -50,6 +50,7 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_JUMP_IF_FALSE:  return "OP_JUMP_IF_FALSE";
         case OpCode::OP_LOOP:           return "OP_LOOP";
         case OpCode::OP_CALL:           return "OP_CALL";
+        case OpCode::OP_TAIL_CALL:     return "OP_TAIL_CALL";
         case OpCode::OP_CLOSURE:        return "OP_CLOSURE";
         case OpCode::OP_RETURN:         return "OP_RETURN";
         case OpCode::OP_ARRAY:          return "OP_ARRAY";
@@ -322,6 +323,7 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             return offset + 2 + 1 + static_cast<size_t>(methodCount);
         }
         case OpCode::OP_CALL:
+        case OpCode::OP_TAIL_CALL:
         case OpCode::OP_ARRAY:
         case OpCode::OP_DICT: {
             uint8_t val = code[offset + 1];

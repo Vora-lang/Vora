@@ -69,6 +69,7 @@ void Parser::synchronize() {
         // Statement-start keywords are safe resync points.
         switch (peek().type) {
             case TokenType::LET:
+            case TokenType::CONST:
             case TokenType::FUNC:
             case TokenType::IF:
             case TokenType::WHILE:
@@ -100,6 +101,10 @@ std::unique_ptr<Stmt> Parser::statement() {
 
     if (match(TokenType::LET)) {
         return letStatement();
+    }
+
+    if (match(TokenType::CONST)) {
+        return constStatement();
     }
 
     if (match(TokenType::LEFT_BRACE)) {
@@ -194,6 +199,42 @@ std::unique_ptr<Stmt> Parser::letStatement() {
         name,
         std::move(initializer),
         typeAnnotation
+    );
+}
+
+std::unique_ptr<Stmt> Parser::constStatement() {
+
+    if (!match(TokenType::IDENTIFIER)) {
+        error("Expected variable name");
+        return nullptr;
+    }
+
+    std::string name = previous().lexeme;
+
+    // Optional type annotation: const x:int = ...
+    std::string typeAnnotation;
+    if (match(TokenType::COLON)) {
+        if (!match(TokenType::IDENTIFIER)) {
+            error("Expected type name after ':'");
+            return nullptr;
+        }
+        typeAnnotation = previous().lexeme;
+    }
+
+    if (!match(TokenType::EQUAL)) {
+        error("Expected '=' after const variable name");
+        return nullptr;
+    }
+
+    auto initializer = expression();
+
+    match(TokenType::SEMICOLON);
+
+    return std::make_unique<LetStmt>(
+        name,
+        std::move(initializer),
+        typeAnnotation,
+        true  // isConst
     );
 }
 
@@ -335,6 +376,11 @@ std::unique_ptr<Stmt> Parser::cForStatement(Token forToken) {
     if (match(TokenType::LET)) {
         // let x = expr  — letStatement() consumes the trailing semicolon
         initializer = letStatement();
+        if (!initializer) return nullptr;
+        initHadSemicolon = true;  // letStatement already consumed ';'
+    } else if (match(TokenType::CONST)) {
+        // const x = expr  — constStatement() consumes the trailing semicolon
+        initializer = constStatement();
         if (!initializer) return nullptr;
         initHadSemicolon = true;  // letStatement already consumed ';'
     } else if (!check(TokenType::SEMICOLON)) {

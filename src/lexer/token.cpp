@@ -45,6 +45,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::NULL_TOKEN: return "NULL";
 
         case TokenType::LET: return "LET";
+        case TokenType::CONST: return "CONST";
         case TokenType::FUNC: return "FUNC";
         case TokenType::RETURN: return "RETURN";
         case TokenType::IF: return "IF";

@@ -1,0 +1,132 @@
+// interpreter/test_closure_mutation_recursion.va
+// Tests combining closure variable mutation with local recursion
+// Reproduces: "闭包修改 + 局部递归 = VM 挂死" (Section 6.2, 🔴 high)
+// Run: vora tests/interpreter/test_closure_mutation_recursion.va
+
+print("=== Interpreter: Closure Mutation + Recursion Tests ===")
+
+// Test 1: Local function that mutates captured var AND recurses
+func outer1() {
+    let x = 0
+    func inner(n) {
+        if (n <= 0) { return x }
+        x = x + 1
+        return inner(n - 1)
+    }
+    return inner(5)
+}
+let r1 = outer1()
+print("outer1() =", r1)
+assert(r1 == 5, "mutate + recurse: accumulate 5")
+
+// Test 2: Counter closure that both mutates and recurses
+func makeCounter(start) {
+    let count = start
+    func inc() {
+        count = count + 1
+        if (count < start + 5) {
+            return inc()  // recurse until +5
+        }
+        return count
+    }
+    return inc
+}
+let counter = makeCounter(10)
+let r2 = counter()
+print("counter() =", r2)
+assert(r2 == 15, "counter recurse to 15")
+
+// Test 3: Recursive sum that mutates accumulator via closure
+func makeSummer() {
+    let total = 0
+    func add(n) {
+        total = total + n
+        if (n > 1) {
+            return add(n - 1)
+        }
+        return total
+    }
+    return add
+}
+let summer = makeSummer()
+let r3 = summer(5)
+print("summer(5) =", r3)
+assert(r3 == 15, "accumulator summer 5..1")  // 5+4+3+2+1
+
+// Test 4: Mutual state mutation in nested recursion
+func outer4() {
+    let a = 0
+    let b = 1
+    func fib(n) {
+        if (n <= 0) { return a }
+        if (n == 1) { return b }
+        return fib(n - 1) + fib(n - 2)
+    }
+    return fib(6)
+}
+let r4 = outer4()
+print("outer4 fib(6) =", r4)
+assert(r4 == 8, "fib with closure state")
+
+// Test 5: Deep recursion with closure state
+func makeDeepSum(n) {
+    let sum = 0
+    let i = 0
+    func addNext() {
+        i = i + 1
+        if (i > n) { return sum }
+        sum = sum + i
+        return addNext()
+    }
+    return addNext
+}
+let ds = makeDeepSum(50)
+let r5 = ds()
+print("deepSum(50) =", r5)
+assert(r5 == 1275, "deep sum 1..50")  // n*(n+1)/2 = 50*51/2
+
+// Test 6: Countdown recursion with mutation
+func makeCountdown() {
+    let count = 10
+    func down() {
+        if (count <= 0) { return 0 }
+        count = count - 1
+        return 1 + down()
+    }
+    return down
+}
+let cd = makeCountdown()
+let r6 = cd()
+print("countdown() =", r6)
+assert(r6 == 10, "countdown from 10")
+
+// Test 7: Local function that conditionally mutates before recursing
+func outer7() {
+    let val = 0
+    func process(n) {
+        if (n <= 0) { return val }
+        val = val + n
+        return process(n - 1)
+    }
+    return process(4)
+}
+let r7 = outer7()
+print("process(4) =", r7)
+assert(r7 == 10, "process accumulate 4+3+2+1")
+
+// Test 8: Multiple upvalues: one mutated, one read-only
+func makePowerCounter(base) {
+    let count = 0
+    func step(n) {
+        count = count + 1
+        if (n <= 1) { return count }
+        return step(n - 1)
+    }
+    return step
+}
+let pc = makePowerCounter(2)
+let r8 = pc(5)
+print("powerCounter(5) =", r8)
+assert(r8 == 5, "counts 5 steps")
+
+print("Closure mutation + recursion tests: PASS")
