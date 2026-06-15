@@ -345,11 +345,12 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             return offset + 3;
         }
         case OpCode::OP_PUSH_CATCH: {
-            uint16_t catchOffset = static_cast<uint16_t>(code[offset + 1])
-                                  | (static_cast<uint16_t>(code[offset + 2]) << 8);
-            std::printf("%-16s %4d -> %zu\n", opcodeName(instruction),
-                       catchOffset, offset + 3 + catchOffset);
-            return offset + 3;
+            uint8_t localCount = code[offset + 1];
+            uint16_t catchOffset = static_cast<uint16_t>(code[offset + 2])
+                                  | (static_cast<uint16_t>(code[offset + 3]) << 8);
+            std::printf("%-16s %u %4d -> %zu\n", opcodeName(instruction),
+                       localCount, catchOffset, offset + 4 + catchOffset);
+            return offset + 4;
         }
         case OpCode::OP_LOOP: {
             uint16_t loopOffset = static_cast<uint16_t>(code[offset + 1])

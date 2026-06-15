@@ -112,3 +112,24 @@ try {
 } catch (e) {
     print("Error on '" + e.field + "': " + e.message)
 }
+
+print("\n=== 8. Catch in function with parameters ===")
+func validateAge(age) {
+    if (age < 0) {
+        throw "age must be positive, got: " + age
+    }
+    return "OK"
+}
+
+// Catch inside a function that has parameters — the handler must not
+// corrupt the parameter slots when writing the exception value.
+func processAge(age) {
+    try {
+        let result = validateAge(age)
+        print("valid:", result)
+    } catch (e) {
+        print("rejected age " + age + ": " + e)
+    }
+}
+processAge(25)
+processAge(-5)

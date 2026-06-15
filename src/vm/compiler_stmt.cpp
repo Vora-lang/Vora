@@ -610,8 +610,15 @@ void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
 }
 
 void Compiler::visitTryStmt(const TryStmt& stmt) {
-    // Emit OP_PUSH_CATCH with placeholder (patched later to catch block)
-    size_t pushCatchPlaceholder = emitJump(OpCode::OP_PUSH_CATCH);
+    // Emit OP_PUSH_CATCH <localCount> <offset16>.
+    // localCount tells the VM where to place the exception value on the stack
+    // (frameBaseIndex + localCount). This ensures it lands after all existing
+    // locals, matching the slot where the catch variable will be allocated.
+    emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
+    emitByte(static_cast<uint8_t>(currentLocalCount()));
+    size_t pushCatchPlaceholder = chunk.code.size();
+    emitByte(0xFF);  // offset low placeholder
+    emitByte(0xFF);  // offset high placeholder
 
     // Track try nesting so break/continue/return inside emit OP_POP_CATCH
     tryNesting++;

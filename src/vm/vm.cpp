@@ -304,10 +304,11 @@ bool VM::throwException(const Value& value) {
     while (!catchHandlers.empty()) {
         auto handler = catchHandlers.back();  // peek only
 
-        // Unwind stack to handler's frame base
-        stackTopIndex = handler.targetFrameBase;
-
-        // Push the thrown value onto the stack.
+        // Unwind stack to exception slot and push the thrown value.
+        // The exception slot is after all locals that existed at handler
+        // registration time. This ensures function parameters and other
+        // locals below the slot are preserved across the catch.
+        stackTopIndex = handler.targetSlot;
         push(value);
 
         // Jump to catch handler
@@ -328,11 +329,9 @@ bool VM::throwException(const Value& value) {
             }
             frames.pop_back();
         }
-        if (!frames.empty()) {
-            frameBaseIndex = frames.back().frameBase;
-        } else {
-            frameBaseIndex = 0;  // top-level
-        }
+        // Restore the CAUGHT frame's own base (from the handler), NOT the value
+        // stored in CallFrame::frameBase (which holds the PARENT frame's base).
+        frameBaseIndex = handler.targetFrameBase;
 
         exceptionInFlight = true;
         lastErrorStackTrace.clear();  // caught — trace no longer needed
@@ -1443,8 +1442,17 @@ InterpretResult VM::run() {
 
             // --- Exception handling ---
             case OpCode::OP_PUSH_CATCH: {
+                // localCount encodes how many locals exist at handler registration.
+                // throwException() pushes the exception value at frameBaseIndex + localCount,
+                // which is the first free slot after all existing locals — this avoids
+                // overwriting function parameters or other locals at lower slots.
+                // We also store the frame's own base (frameBaseIndex) for correct
+                // restoration after throwException unwinds the call stack.
+                uint8_t localCount = readByte();
                 uint16_t catchOffset = readShort();
-                catchHandlers.push_back({ip + catchOffset, frameBaseIndex, currentChunk, frames.size()});
+                size_t caughtFrameBase = frameBaseIndex;
+                size_t exceptionSlot = caughtFrameBase + localCount;
+                catchHandlers.push_back({ip + catchOffset, caughtFrameBase, exceptionSlot, currentChunk, frames.size()});
                 break;
             }
             case OpCode::OP_POP_CATCH: {
