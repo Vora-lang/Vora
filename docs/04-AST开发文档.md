@@ -29,7 +29,7 @@ public:
 };
 ```
 
-共 **14 种**表达式子类。
+共 **15 种**表达式子类。
 
 ### Visitor 接口
 
@@ -145,6 +145,21 @@ public:
 
 **Vora 用法**：`x = 10`
 
+### CompoundAssignmentExpr — 复合赋值
+
+```cpp
+class CompoundAssignmentExpr : public Expr {
+public:
+    std::unique_ptr<Expr> target;  // VariableExpr, PropertyExpr, or IndexExpr
+    Token op;                        // +=, -=, *=, /=, %=
+    std::unique_ptr<Expr> value;    // right-hand side
+};
+```
+
+**Vora 用法**：`x += 1`、`obj.prop *= 2`、`arr[i] -= 3`
+
+**设计说明**：作为独立 AST 节点保留（而非解糖为 `x = x + y`），以便格式化器可以还原原始语法。编译器在内部进行解糖。
+
 ### CallExpr — 函数调用
 
 ```cpp
@@ -170,6 +185,18 @@ public:
 
 **Vora 用法**：`[1, 2, 3]`、`[]`
 
+### DictExpr — 字典字面量
+
+```cpp
+class DictExpr : public Expr {
+public:
+    std::vector<std::pair<std::unique_ptr<Expr>, std::unique_ptr<Expr>>> pairs;
+    Token leftBrace;
+};
+```
+
+**Vora 用法**：`{name: "Vora", year: 2026}`、`{}`
+
 ### IndexExpr — 索引访问
 
 ```cpp
@@ -182,6 +209,20 @@ public:
 ```
 
 **Vora 用法**：`arr[0]`、`matrix[i][j]`
+
+### IndexAssignmentExpr — 索引赋值
+
+```cpp
+class IndexAssignmentExpr : public Expr {
+public:
+    std::unique_ptr<Expr> object;
+    std::unique_ptr<Expr> index;
+    std::unique_ptr<Expr> value;
+    Token bracket;
+};
+```
+
+**Vora 用法**：`arr[0] = 42`、`matrix[i][j] = 0`
 
 ### PropertyExpr — 属性访问
 
@@ -220,6 +261,17 @@ public:
 ```
 
 **Vora 用法**：`this`（在对象方法中使用）
+
+### SuperExpr — super 引用
+
+```cpp
+class SuperExpr : public Expr {
+public:
+    Token keyword;
+};
+```
+
+**Vora 用法**：`super.method()`（在子类方法中调用父类方法）
 
 ### IncDecExpr — 自增/自减表达式
 
@@ -412,8 +464,8 @@ func add(a, b) {
 class ObjStmt : public Stmt {
 public:
     std::string name;                           // 类名
-    std::string parentName;                     // 父类名（空 = 无继承）
-    std::vector<std::string> params;            // 构造函数参数
+    std::vector<std::string> parentNames;       // 父类名列表（多继承，空 = 无继承）
+    std::vector<ParamDecl> params;              // 构造函数参数（支持默认值）
     std::vector<std::unique_ptr<Stmt>> methods;  // 方法列表（FuncStmt）
     std::shared_ptr<BlockStmt> body;             // 构造函数体（非方法语句）
 };
@@ -431,9 +483,14 @@ Obj Student(name, age) {
         print("Hi, I'm ${this.name}")
     }
 }
+
+// 多继承
+Obj Robot : Speaker, Walker () {
+    func work() { return "working" }
+}
 ```
 
-> Parser 在解析 Obj 块时，会将 `FuncStmt` 归入 `methods`，其他语句归入 `body`。`ObjStmt` 支持 `parentName` 实现单继承（`Obj Child : Parent`）。
+> Parser 在解析 Obj 块时，会将 `FuncStmt` 归入 `methods`，其他语句归入 `body`。`ObjStmt` 支持 `parentNames` 实现多继承（C3 线性化）。
 
 ### BreakStmt / ContinueStmt — 循环控制
 
@@ -546,7 +603,7 @@ Program
       ├── ForStmt ─── iterable: Expr
       │               body: Stmt
       ├── FuncStmt ──── body: BlockStmt
-      ├── ObjStmt ───── parentName: string
+      ├── ObjStmt ───── parentNames: vector<string>
       │                 methods: vector<Stmt>
       │                 body: BlockStmt
       ├── ReturnStmt ── value: Expr
@@ -562,12 +619,16 @@ Expr
  ├── GroupingExpr ── expression: Expr
  ├── VariableExpr
  ├── AssignmentExpr ─ value: Expr
+ ├── CompoundAssignmentExpr ── target: Expr, value: Expr
  ├── CallExpr ─────── callee: Expr, arguments: vector<Expr>
  ├── ArrayExpr ────── elements: vector<Expr>
+ ├── DictExpr ─────── pairs: vector<pair<Expr, Expr>>
  ├── IndexExpr ────── array: Expr, index: Expr
+ ├── IndexAssignmentExpr ── object: Expr, index: Expr, value: Expr
  ├── PropertyExpr ─── object: Expr
  ├── PropertyAssignmentExpr ── object: Expr, value: Expr
  ├── ThisExpr
+ ├── SuperExpr
  ├── IncDecExpr ───── target: Expr
  └── TernaryExpr ──── condition: Expr, thenBranch: Expr, elseBranch: Expr
 ```

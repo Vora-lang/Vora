@@ -7,7 +7,7 @@
 [![CI](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml/badge.svg)](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
-[![Version](https://img.shields.io/badge/version-0.17-orange.svg)](#changelog)
+[![Version](https://img.shields.io/badge/version-0.18-orange.svg)](#changelog)
 
 </div>
 
@@ -24,7 +24,7 @@ for name in names {
 }
 ```
 
-~10,500 lines of C++17. Zero external dependencies. Two execution backends: a **bytecode VM** (default) and an **AST tree-walking interpreter** (reference implementation). Cross-platform with native packaging.
+~9,000 lines of C++17. Zero external dependencies. **Bytecode compiler + stack-based VM** as the sole execution backend. Cross-platform with native packaging.
 
 ---
 
@@ -109,10 +109,12 @@ Vora occupies a practical middle ground: readable syntax for scripting, fast exe
 ### Run
 
 ```bash
-vora examples/main.va                 # Execute script (VM mode)
+vora examples/main.va                 # Execute script
 vora --repl                           # Interactive REPL
 vora examples/main.va --ast-printer   # Print AST as S-expressions
 vora examples/main.va --tokens        # Print tokens / bytecode disassembly
+vora fmt examples/main.va             # Format to stdout
+vora fmt -w examples/main.va          # Format file in-place
 ```
 
 ---
@@ -366,16 +368,20 @@ print("Hello ${name}!")   // "Hello World!"
 
 | Module | Lines | Description |
 |--------|-------|-------------|
-| `lexer/` | ~687 | Hand-written scanner, 21 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b |
-| `parser/` | ~1,185 | Pratt (precedence climbing), 7-level precedence table, panic-mode error recovery |
-| `ast/` | ~1,629 | 27 node types (14 expressions + 13 statements), templated Visitor pattern |
-| `vm/` | ~3,175 | Bytecode compiler + stack-based VM, 50 opcodes, constant folding, fast numeric ops |
-| `runtime/` | ~1,200 | `Value` (std::variant, 10 types incl. Dict), `Environment` (lexical scope chain), `Callable` abstraction, `builtins` module |
+| `lexer/` | ~598 | Hand-written scanner, 21 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b |
+| `parser/` | ~986 | Pratt (precedence climbing), 7-level precedence table, panic-mode error recovery |
+| `ast/` | ~1,430 | 28 node types (15 expressions + 13 statements), templated Visitor pattern |
+| `vm/` | ~3,744 | Bytecode compiler + stack-based VM, 50 opcodes, constant folding, fast numeric ops |
+| `runtime/` | ~1,140 | `Value` (std::variant, 11 types), `Environment` (lexical scope chain), `Callable` abstraction, `builtins` module |
+| `gc/` | ~300 | Mark-sweep garbage collector, `GcPtr<T>`, `GcHeap` singleton |
+| `formatter/` | ~630 | AST-based source code formatter (`vora fmt`) |
 
 **Design highlights:**
 
 - **Templated Visitor** — A single generic `ExprVisitor<R>` / `StmtVisitor<R>` interface serves multiple backends: Compiler (`R=void`), ASTPrinter (`R=string`).
 - **Zero external dependencies** — Pure C++17 standard library. No Boost, no LLVM, no third-party code.
+- **Mark-sweep GC** — `GcHeap` singleton with `GcPtr<T>` non-owning pointers. Heap objects (Array, Dict, ObjectInstance, Callable, ClassDefinition) are traced and collected automatically.
+- **Unified ClassDefinition** — Compile-time and runtime class representation merged into a single `ClassDefinition` struct, eliminating the former `ClassData`/`ObjectClass` split.
 - **Enterprise build system** — CMakePresets with 20 presets, 6 cross-compilation toolchains, 18-matrix CI, native packaging for Windows (.msi), Linux (.deb/.rpm), macOS (.tar.gz).
 
 ---
@@ -404,7 +410,7 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 ./tests/run_tests.sh                    # VM mode
 ```
 
-**Current status:** 20/20 VM tests pass + 24/24 examples pass. C++ unit tests: 6 modules (~100+ cases).
+**Current status:** 20/20 VM tests pass + 24/24 examples pass. C++ unit tests: 6 modules (~100+ cases). LeetCode integration tests: 66 solutions.
 
 ---
 
@@ -418,8 +424,8 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 | v0.15 | **Done** | Default parameters, multi-inheritance C3 linearization, `super` keyword |
 | v0.16 | **Done** | Dict type (`{key: val}`), for-in object property iteration, VM stack dynamic resize, constant pool 16-bit index |
 | v0.17 | **Done** | Error message enhancement: source line + caret indicator |
-| v0.18 | Planned | Module system (`import` / `export`), standard library |
-| v0.2 | Planned | Further optimization / JIT compilation |
+| v0.18 | **Done** | Architecture refactor: Callable hierarchy split, unified ClassDefinition, mark-sweep GC, `vora fmt` formatter, Dict methods, LeetCode integration tests |
+| v0.2 | Planned | Module system (`import` / `export`), standard library |
 
 ---
 
@@ -432,11 +438,12 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 | [`docs/03-词法分析器开发文档.md`](docs/03-词法分析器开发文档.md) | Lexer design |
 | [`docs/04-AST开发文档.md`](docs/04-AST开发文档.md) | AST node design + Visitor pattern |
 | [`docs/05-语法分析器开发文档.md`](docs/05-语法分析器开发文档.md) | Pratt Parser design |
-| [`docs/06-解释器开发文档.md`](docs/06-解释器开发文档.md) | Tree-walking Interpreter design |
-| [`docs/07-运行时系统开发文档.md`](docs/07-运行时系统开发文档.md) | Value / Environment / Callable |
+| [`docs/06-解释器开发文档.md`](docs/06-解释器开发文档.md) | Tree-walking Interpreter design (historical) |
+| [`docs/07-运行时系统开发文档.md`](docs/07-运行时系统开发文档.md) | Value / Environment / Callable / GC |
 | [`docs/08-已实现功能总结.md`](docs/08-已实现功能总结.md) | Feature summary + version history |
 | [`docs/09-构建系统指南.md`](docs/09-构建系统指南.md) | Multi-architecture builds, cross-compilation, packaging |
-| [`docs/10-深度分析与UX路线图.md`](docs/10-深度分析与UX路线图.md) | In-depth analysis + UX roadmap |
+| [`docs/10-后续优化建议.md`](docs/10-后续优化建议.md) | Future optimization suggestions |
+| [`docs/11-深度分析与UX路线图.md`](docs/11-深度分析与UX路线图.md) | In-depth analysis + UX roadmap |
 
 ---
 
