@@ -1,5 +1,6 @@
 #include "compiler.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
