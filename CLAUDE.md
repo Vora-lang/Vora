@@ -112,7 +112,7 @@ done
 | Suite | Status |
 |-------|--------|
 | **Tests** (22 files) | 22/22 ✅ |
-| **Examples** (24 files) | 24/24 ✅ |
+| **Examples** (29 files) | 29/29 ✅ |
 | **C++ Unit Tests** (228 cases) | 228/228 ✅ (735 assertions) |
 
 > `17-type-annotations.va` requires piped input (uses `input()`). Pipe `"42`n3.14`n100`ntest`n"` in PowerShell or `printf '42\n3.14\n100\ntest\n'` in bash.

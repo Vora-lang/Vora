@@ -1,0 +1,81 @@
+print("=== 1. Basic super call ===")
+Obj Animal(name) {
+    this.name = name
+    func speak() {
+        return "..."
+    }
+    func describe() {
+        return "I am " + this.name
+    }
+}
+Obj Dog : Animal(name, breed) {
+    this.breed = breed
+    func speak() {
+        return super.speak() + " woof!"
+    }
+    func describe() {
+        return super.describe() + " the " + this.breed
+    }
+}
+let d = Dog("Rex", "Husky")
+print(d.speak())
+print(d.describe())
+
+print("\n=== 2. Multi-level super chain ===")
+Obj A() {
+    func chain() { return "A" }
+}
+Obj B : A() {
+    func chain() { return super.chain() + " → B" }
+}
+Obj C : B() {
+    func chain() { return super.chain() + " → C" }
+}
+let c = C()
+print("chain:", c.chain())
+
+print("\n=== 3. Super in constructor ===")
+Obj Shape(color) {
+    this.color = color
+    this.type = "shape"
+}
+Obj Circle : Shape(color, radius) {
+    this.radius = radius
+    func info() {
+        return "A " + this.color + " circle, r=" + this.radius
+    }
+}
+let circle = Circle("red", 5)
+print(circle.info())
+print("type:", circle.type)
+
+print("\n=== 4. Super with multiple inheritance ===")
+Obj X() {
+    func msg() { return "X" }
+}
+Obj Y : X() {
+    func msg() { return super.msg() + " → Y" }
+}
+Obj Z : X() {
+    func msg() { return "Z" }
+}
+Obj W : Y, Z() {
+    func msg() { return super.msg() + " → W" }
+}
+let w = W()
+print("W.msg:", w.msg())
+
+print("\n=== 5. Only call super when you need parent behavior ===")
+Obj Logger() {
+    func log(msg) {
+        print("[LOG]", msg)
+    }
+}
+Obj TimestampLogger : Logger() {
+    func log(msg) {
+        super.log(msg)
+        print("[TIME]", clock())
+    }
+}
+let tl = TimestampLogger()
+tl.log("test message")

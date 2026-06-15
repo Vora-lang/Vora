@@ -1,0 +1,63 @@
+print("=== 1. Basic default parameter ===")
+func greet(name, greeting = "Hello") {
+    return greeting + ", " + name
+}
+print(greet("World"))
+print(greet("Vora", "Hi"))
+
+print("\n=== 2. Default referencing previous param ===")
+func addOne(a, b = a + 1) {
+    return b
+}
+print(addOne(5))
+print(addOne(5, 10))
+
+print("\n=== 3. All parameters with defaults ===")
+func allDefaults(a = 1, b = 2, c = 3) {
+    return a + b + c
+}
+print("no args:", allDefaults())
+print("one arg:", allDefaults(10))
+print("two args:", allDefaults(10, 20))
+print("three args:", allDefaults(10, 20, 30))
+
+print("\n=== 4. Mixed required and optional ===")
+func order(item, qty = 1, discount = 0) {
+    return item + " x" + qty + " (-" + discount + "%)"
+}
+print(order("Book"))
+print(order("Pen", 5))
+print(order("Laptop", 1, 10))
+
+print("\n=== 5. Default with expression ===")
+func compute(a, b = a * 2, c = a + b) {
+    return [a, b, c]
+}
+print("compute(3):", compute(3))
+print("compute(3, 10):", compute(3, 10))
+print("compute(3, 10, 100):", compute(3, 10, 100))
+
+print("\n=== 6. Default as result of expression ===")
+func join(a, b = "", sep = " ") {
+    if (b == "") {
+        return a
+    }
+    return a + sep + b
+}
+print(join("Hello"))
+print(join("Hello", "World"))
+print(join("Hello", "World", ", "))
+
+print("\n=== 7. Default values can be any type ===")
+func createArray(size = 3, fill = 0) {
+    let result = []
+    let i = 0
+    while (i < size) {
+        result.add(fill)
+        i += 1
+    }
+    return result
+}
+print(createArray())
+print(createArray(5))
+print(createArray(4, 99))

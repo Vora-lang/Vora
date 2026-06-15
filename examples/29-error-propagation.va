@@ -1,0 +1,114 @@
+print("=== 1. Throw string ===")
+try {
+    throw "something went wrong"
+} catch (e) {
+    print("Caught:", e)
+}
+
+print("\n=== 2. Throw custom object ===")
+Obj AppError(msg, code) {
+    this.message = msg
+    this.code = code
+}
+try {
+    throw AppError("Not found", 404)
+} catch (e) {
+    print("message:", e.message)
+    print("code:", e.code)
+}
+
+print("\n=== 3. Error propagation through call chain ===")
+func deepFunction() {
+    throw "error from deep"
+}
+func middleFunction() {
+    deepFunction()
+}
+func topFunction() {
+    middleFunction()
+}
+try {
+    topFunction()
+} catch (e) {
+    print("Propagated error:", e)
+}
+
+print("\n=== 4. Finally during propagation ===")
+func withCleanup() {
+    try {
+        throw "inside"
+    } finally {
+        print("cleanup done")
+    }
+}
+try {
+    withCleanup()
+} catch (e) {
+    print("Caught after finally:", e)
+}
+
+print("\n=== 5. Re-throwing — inner catch re-throws to outer catch ===")
+try {
+    try {
+        throw "inner error"
+    } catch (e) {
+        print("inner catch:", e)
+        throw "re-thrown"
+    }
+} catch (e) {
+    print("outer catch:", e)
+}
+
+print("\n=== 6. Nested try with finally (no inner catch) ===")
+func outer() {
+    try {
+        print("outer try start")
+        try {
+            print("  inner try start")
+            throw "inner error"
+        } finally {
+            print("  inner finally")
+        }
+        print("  should not reach")
+    } catch (e) {
+        print("outer catch:", e)
+    }
+}
+outer()
+
+print("\n=== 7. Error objects as control flow ===")
+Obj AppValidationError(msg, field) {
+    this.message = msg
+    this.field = field
+}
+
+func check(value) {
+    if (value == null) {
+        throw AppValidationError("required", "value")
+    }
+    if (value < 0) {
+        throw AppValidationError("must be positive", "value")
+    }
+    return value * 2
+}
+
+// valid case
+try {
+    print("result:", check(10))
+} catch (e) {
+    print("Should not reach:", e.message)
+}
+
+// null case — catch at call site
+try {
+    print("result:", check(null))
+} catch (e) {
+    print("Error on '" + e.field + "': " + e.message)
+}
+
+// negative case — catch at call site
+try {
+    print("result:", check(-1))
+} catch (e) {
+    print("Error on '" + e.field + "': " + e.message)
+}
