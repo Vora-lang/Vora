@@ -1,0 +1,45 @@
+// recursion.va — recursive functions
+print("=== 1. Simple recursion: factorial ===")
+func factorial(n) {
+    if (n <= 1) { return 1 }
+    return n * factorial(n - 1)
+}
+print("factorial(5) =", factorial(5))   // 120
+print("factorial(0) =", factorial(0))   // 1
+print("factorial(1) =", factorial(1))   // 1
+
+print("=== 2. Fibonacci ===")
+func fib(n) {
+    if (n <= 1) { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+print("fib(0)=", fib(0), "fib(6)=", fib(6), "fib(10)=", fib(10))
+
+print("=== 3. GCD (Euclidean algorithm) ===")
+func gcd(a, b) {
+    if (b == 0) { return a }
+    return gcd(b, a % b)
+}
+print("gcd(48,18) =", gcd(48, 18))   // 6
+print("gcd(17,13) =", gcd(17, 13))   // 1
+
+print("=== 4. String length (recursive) ===")
+func strLength(s, idx) {
+    if (idx >= s.length) { return 0 }
+    return 1 + strLength(s, idx + 1)
+}
+print("strLength('hello', 0) =", strLength("hello", 0))  // 5
+
+print("=== 5. Count down to zero ===")
+func countDown(n) {
+    if (n <= 0) { return 0 }
+    return 1 + countDown(n - 1)
+}
+print("countDown(7) =", countDown(7))  // 7
+
+print("=== 6. Power (recursive) ===")
+func power(base, exp) {
+    if (exp == 0) { return 1 }
+    return base * power(base, exp - 1)
+}
+print("power(2, 8) =", power(2, 8))  // 256

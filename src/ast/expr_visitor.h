@@ -39,6 +39,7 @@ public:
     virtual R visitSuperExpr(const SuperExpr& expr) = 0;
     virtual R visitIncDecExpr(const IncDecExpr& expr) = 0;
     virtual R visitTernaryExpr(const TernaryExpr& expr) = 0;
+    virtual R visitFuncExpr(const FuncExpr& expr) = 0;
 };
 
 }

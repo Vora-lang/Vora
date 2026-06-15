@@ -1,0 +1,40 @@
+// c-for.va — C-style for loops
+print("=== 1. Basic counting ===")
+for (let i = 0; i < 5; i = i + 1) {
+    print("i =", i)
+}
+
+print("=== 2. Sum 1 to 10 ===")
+let sum = 0
+for (let i = 1; i <= 10; i = i + 1) {
+    sum = sum + i
+}
+print("sum 1..10 =", sum)  // 55
+
+print("=== 3. Step by 2 ===")
+for (let i = 0; i < 10; i = i + 2) {
+    print(i)
+}
+
+print("=== 4. Countdown ===")
+for (let i = 5; i > 0; i = i - 1) {
+    print(i)
+}
+
+print("=== 5. Empty initializer ===")
+let j = 5
+for (; j < 8; j = j + 1) {
+    print("j =", j)
+}
+
+print("=== 6. Nested C-for ===")
+for (let row = 1; row <= 3; row = row + 1) {
+    for (let col = 1; col <= 2; col = col + 1) {
+        print("(", row, ",", col, ")")
+    }
+}
+
+print("=== 7. for-in still works ===")
+for item in ["a", "b", "c"] {
+    print(item)
+}

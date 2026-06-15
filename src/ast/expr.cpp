@@ -1,5 +1,6 @@
 #include "expr.h"
 #include "expr_visitor.h"
+#include "stmt.h"  // for FuncExpr — needs complete BlockStmt
 
 namespace vora {
 
@@ -395,6 +396,31 @@ std::unique_ptr<Expr> TernaryExpr::clone() const {
     return std::make_unique<TernaryExpr>(
         condition->clone(), thenBranch->clone(), elseBranch->clone()
     );
+}
+
+// =========================================================================
+// FuncExpr
+// =========================================================================
+
+Value FuncExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitFuncExpr(*this);
+}
+
+void FuncExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitFuncExpr(*this);
+}
+
+std::string FuncExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitFuncExpr(*this);
+}
+
+std::unique_ptr<Expr> FuncExpr::clone() const {
+    std::vector<ParamDecl> clonedParams;
+    for (const auto& p : params) {
+        clonedParams.emplace_back(p.name, p.defaultValue ? p.defaultValue->clone() : nullptr);
+    }
+    // BlockStmt has no clone; body is shared (shallow copy via shared_ptr)
+    return std::make_unique<FuncExpr>(std::move(clonedParams), body);
 }
 
 }

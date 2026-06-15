@@ -1,0 +1,48 @@
+// break-continue.va — break and continue in all loop types
+print("=== 1. break in while ===")
+let i = 0
+while (i < 10) {
+    if (i == 5) { break }
+    print(i)
+    i = i + 1
+}
+
+print("=== 2. continue in while ===")
+let j = 0
+while (j < 5) {
+    j = j + 1
+    if (j == 3) { continue }
+    print("j =", j)
+}
+
+print("=== 3. break in for-in ===")
+for item in [1, 2, 3, 4, 5, 6, 7] {
+    if (item == 4) { break }
+    print(item)
+}
+
+print("=== 4. continue in for-in ===")
+for item in [10, 20, 30, 40, 50] {
+    if (item == 30) { continue }
+    print(item)
+}
+
+print("=== 5. break in C-for ===")
+for (let k = 0; k < 10; k = k + 1) {
+    if (k == 4) { break }
+    print("k =", k)
+}
+
+print("=== 6. continue in C-for ===")
+for (let m = 0; m < 5; m = m + 1) {
+    if (m == 2) { continue }
+    print("m =", m)
+}
+
+print("=== 7. break in nested loops ===")
+for (let outer = 0; outer < 3; outer = outer + 1) {
+    for (let inner = 0; inner < 10; inner = inner + 1) {
+        if (inner == 2) { break }
+        print("(", outer, ",", inner, ")")
+    }
+}

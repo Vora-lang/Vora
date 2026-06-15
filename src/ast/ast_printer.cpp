@@ -215,6 +215,24 @@ std::string ASTPrinter::visitTernaryExpr(const TernaryExpr& expr) {
     );
 }
 
+std::string ASTPrinter::visitFuncExpr(const FuncExpr& expr) {
+    std::stringstream ss;
+    ss << "(func";
+    for (const auto& param : expr.params) {
+        if (param.defaultValue) {
+            ss << " (" << param.name << " " << print(param.defaultValue.get()) << ")";
+        } else {
+            ss << " " << param.name;
+        }
+    }
+    ss << " (block";
+    for (const auto& s : expr.body->statements) {
+        ss << " " << print(s.get());
+    }
+    ss << "))";
+    return ss.str();
+}
+
 // =========================================================================
 // StmtVisitor<std::string> — visit methods return strings directly
 // =========================================================================
@@ -313,6 +331,37 @@ std::string ASTPrinter::visitForStmt(const ForStmt& stmt) {
     ss << stmt.variable;
     ss << " in ";
     ss << print(stmt.iterable.get());
+    ss << " ";
+    ss << print(stmt.body.get());
+    ss << ")";
+
+    return ss.str();
+}
+
+std::string ASTPrinter::visitCForStmt(const CForStmt& stmt) {
+    std::stringstream ss;
+
+    ss << "(cfor ";
+
+    if (stmt.initializer) {
+        ss << print(stmt.initializer.get());
+    } else {
+        ss << "nil";
+    }
+    ss << " ";
+
+    if (stmt.condition) {
+        ss << print(stmt.condition.get());
+    } else {
+        ss << "true";
+    }
+    ss << " ";
+
+    if (stmt.increment) {
+        ss << print(stmt.increment.get());
+    } else {
+        ss << "nil";
+    }
     ss << " ";
     ss << print(stmt.body.get());
     ss << ")";

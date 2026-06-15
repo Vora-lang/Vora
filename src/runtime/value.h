@@ -100,4 +100,19 @@ inline Value promoteToFloat(const Value& v) {
     return v;
 }
 
+// =========================================================================
+// Upvalue — pointer-indirection for closure-captured variables.
+// When "open", location points to a live VM stack slot.
+// When "closed" (local went out of scope), location points to `closed`.
+// =========================================================================
+
+struct Upvalue {
+    Value* location = nullptr;  // Points to stack slot (open) or &closed (closed)
+    Value closed = nullptr;      // Own storage when local goes out of scope
+
+    Value get() const { return *location; }
+    void set(const Value& v) { *location = v; }
+    void close() { closed = *location; location = &closed; }
+};
+
 } // namespace vora

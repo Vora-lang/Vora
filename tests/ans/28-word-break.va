@@ -25,7 +25,7 @@ func wordBreak(s, wordDict) {
             let sub = s.substring(j, i);
             if (dp[j] and contains(wordDict, sub)) {
                 dp[i] = true;
-                break;
+                break
             }
         }
     }

@@ -5,12 +5,12 @@
 func moveZeroes(nums) {
     let insertPos = 0;
     for i in range(nums.length) {
-        if nums[i] != 0 {
+        if (nums[i] != 0) {
             nums[insertPos] = nums[i];
             insertPos = insertPos + 1;
         }
     }
-    while insertPos < nums.length {
+    while (insertPos < nums.length) {
         nums[insertPos] = 0;
         insertPos = insertPos + 1;
     }
@@ -19,11 +19,11 @@ func moveZeroes(nums) {
 
 // Helper to compare arrays
 func arraysEqual(a, b) {
-    if a.length != b.length {
+    if (a.length != b.length) {
         return false;
     }
     for i in range(a.length) {
-        if a[i] != b[i] {
+        if (a[i] != b[i]) {
             return false;
         }
     }

@@ -619,4 +619,89 @@ void Compiler::visitTernaryExpr(const TernaryExpr& expr) {
     patchJump(elseJump);
 }
 
+void Compiler::visitFuncExpr(const FuncExpr& expr) {
+    // Compile an anonymous function expression: func(x) { body }
+    // Creates a VoraFunction closure and pushes it on the stack.
+
+    Compiler fnCompiler;
+    fnCompiler.enclosing = this;
+    fnCompiler.chunk.source = chunk.source;
+
+    fnCompiler.beginScope();
+
+    // Count required params
+    int requiredArity = 0;
+    for (const auto& param : expr.params) {
+        if (!param.defaultValue) requiredArity++;
+        else break;
+    }
+    int totalArity = static_cast<int>(expr.params.size());
+
+    // Add parameters as locals
+    for (const auto& param : expr.params) {
+        fnCompiler.addLocal(param.name);
+    }
+
+    // Emit default-parameter preamble
+    for (int i = requiredArity; i < totalArity; i++) {
+        const auto& param = expr.params[static_cast<size_t>(i)];
+
+        fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_DEFAULT_PARAM));
+        fnCompiler.emitByte(static_cast<uint8_t>(i));
+        size_t skipOffsetPos = fnCompiler.chunk.code.size();
+        fnCompiler.emitByte(0xFF);
+        fnCompiler.emitByte(0xFF);
+
+        param.defaultValue->accept(fnCompiler);
+
+        fnCompiler.emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                             static_cast<uint8_t>(i));
+        fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+        if (!fnCompiler.hadError) {
+            size_t jumpEnd = fnCompiler.chunk.code.size();
+            size_t offset = static_cast<size_t>(jumpEnd - skipOffsetPos - 2);
+            if (offset > 0xFFFF) {
+                fnCompiler.hadError = true;
+            } else {
+                fnCompiler.chunk.code[skipOffsetPos] =
+                    static_cast<uint8_t>(offset & 0xFF);
+                fnCompiler.chunk.code[skipOffsetPos + 1] =
+                    static_cast<uint8_t>((offset >> 8) & 0xFF);
+            }
+        }
+    }
+
+    // Compile body statements
+    for (const auto& s : expr.body->statements) {
+        s->accept(fnCompiler);
+    }
+
+    // Implicit return null
+    fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+    fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
+
+    fnCompiler.endScope();
+
+    // Build function prototype
+    auto capturedUpvalues = fnCompiler.upvalues;
+    FunctionPrototype proto;
+    proto.name = "<lambda>";
+    proto.arity = totalArity;
+    proto.requiredArity = requiredArity;
+    proto.upvalues = std::move(fnCompiler.upvalues);
+    proto.chunk = std::move(fnCompiler.chunk);
+
+    uint8_t protoIndex = addFunctionPrototype(std::move(proto));
+
+    // Emit OP_CLOSURE to create the VoraFunction at runtime
+    emitBytes(static_cast<uint8_t>(OpCode::OP_CLOSURE), protoIndex);
+    emitByte(static_cast<uint8_t>(capturedUpvalues.size()));
+    for (const auto& uv : capturedUpvalues) {
+        emitByte(uv.isLocal ? 1 : 0);
+        emitByte(uv.index);
+    }
+    // The closure is now on the stack — caller can assign, call, etc.
+}
+
 } // namespace vora

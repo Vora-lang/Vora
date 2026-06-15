@@ -4,11 +4,11 @@
 
 func setZeroes(matrix) {
     let rows = matrix.length;
-    if rows == 0 {
+    if (rows == 0) {
         return matrix;
     }
     let cols = matrix[0].length;
-    if cols == 0 {
+    if (cols == 0) {
         return matrix;
     }
 
@@ -17,14 +17,14 @@ func setZeroes(matrix) {
 
     // Check if first row has any zero
     for j in range(cols) {
-        if matrix[0][j] == 0 {
+        if (matrix[0][j] == 0) {
             firstRowZero = true;
         }
     }
 
     // Check if first col has any zero
     for i in range(rows) {
-        if matrix[i][0] == 0 {
+        if (matrix[i][0] == 0) {
             firstColZero = true;
         }
     }
@@ -32,7 +32,7 @@ func setZeroes(matrix) {
     // Use first row and col to mark zero rows/cols
     for i in range(1, rows) {
         for j in range(1, cols) {
-            if matrix[i][j] == 0 {
+            if (matrix[i][j] == 0) {
                 matrix[i][0] = 0;
                 matrix[0][j] = 0;
             }
@@ -42,21 +42,21 @@ func setZeroes(matrix) {
     // Zero out based on markers (except first row/col)
     for i in range(1, rows) {
         for j in range(1, cols) {
-            if matrix[i][0] == 0 or matrix[0][j] == 0 {
+            if (matrix[i][0] == 0 or matrix[0][j] == 0) {
                 matrix[i][j] = 0;
             }
         }
     }
 
     // Zero out first row if needed
-    if firstRowZero {
+    if (firstRowZero) {
         for j in range(cols) {
             matrix[0][j] = 0;
         }
     }
 
     // Zero out first col if needed
-    if firstColZero {
+    if (firstColZero) {
         for i in range(rows) {
             matrix[i][0] = 0;
         }
@@ -67,15 +67,15 @@ func setZeroes(matrix) {
 
 // Helper to compare 2D arrays
 func matricesEqual(a, b) {
-    if a.length != b.length {
+    if (a.length != b.length) {
         return false;
     }
     for i in range(a.length) {
-        if a[i].length != b[i].length {
+        if (a[i].length != b[i].length) {
             return false;
         }
         for j in range(a[i].length) {
-            if a[i][j] != b[i][j] {
+            if (a[i][j] != b[i][j]) {
                 return false;
             }
         }

@@ -1,111 +1,78 @@
 // #76 Minimum Window Substring (Hard)
 // Smallest substring of s containing all chars of t. Sliding window with frequency arrays.
-// NOTE: v0.12 does not support arr[idx] = val. We rebuild the window array on each change.
 
 func minWindow(s, t) {
     if (s.length == 0 or t.length == 0 or s.length < t.length) {
-        return "";
+        return ""
     }
 
-    // Build frequency map for t using parallel arrays (no hash map)
-    let tChars = [];
-    let tCounts = [];
+    // Build frequency map for t using parallel arrays
+    let tChars = []
+    let tCounts = []
 
-    let ti = 0;
+    let ti = 0
     while (ti < t.length) {
-        let ch = t[ti];
-        let idx = tChars.indexOf(ch);
+        let ch = t[ti]
+        let idx = tChars.indexOf(ch)
         if (idx == -1) {
-            tChars.add(ch);
-            tCounts.add(1);
+            tChars.add(ch)
+            tCounts.add(1)
         } else {
-            // Rebuild the counts array with the new value
-            let newCounts = [];
-            let k = 0;
-            while (k < tCounts.length) {
-                if (k == idx) {
-                    newCounts.add(tCounts[k] + 1);
-                } else {
-                    newCounts.add(tCounts[k]);
-                }
-                k = k + 1;
-            }
-            tCounts = newCounts;
+            tCounts[idx] = tCounts[idx] + 1
         }
-        ti = ti + 1;
+        ti = ti + 1
     }
 
-    let required = tChars.length;
+    let required = tChars.length
 
     // Build initial window counts
-    let winCounts = [];
-    let ic = 0;
+    let winCounts = []
+    let ic = 0
     while (ic < tChars.length) {
-        winCounts.add(0);
-        ic = ic + 1;
+        winCounts.add(0)
+        ic = ic + 1
     }
 
-    func charIndex(ch) {
-        let idx = tChars.indexOf(ch);
-        return idx;
-    }
-
-    func setWinCount(idx, val) {
-        let newWc = [];
-        let k = 0;
-        while (k < winCounts.length) {
-            if (k == idx) {
-                newWc.add(val);
-            } else {
-                newWc.add(winCounts[k]);
-            }
-            k = k + 1;
-        }
-        winCounts = newWc;
-    }
-
-    let left = 0;
-    let right = 0;
-    let formed = 0;
-    let minLen = s.length + 1;
-    let minStart = 0;
+    let left = 0
+    let right = 0
+    let formed = 0
+    let minLen = s.length + 1
+    let minStart = 0
 
     while (right < s.length) {
-        let ch = s[right];
-        let ci = charIndex(ch);
+        let ch = s[right]
+        let ci = tChars.indexOf(ch)
         if (ci != -1) {
-            let newVal = winCounts[ci] + 1;
-            setWinCount(ci, newVal);
-            if (newVal == tCounts[ci]) {
-                formed = formed + 1;
+            winCounts[ci] = winCounts[ci] + 1
+            if (winCounts[ci] == tCounts[ci]) {
+                formed = formed + 1
             }
         }
 
         while (formed == required and left <= right) {
-            let curLen = right - left + 1;
+            let curLen = right - left + 1
             if (curLen < minLen) {
-                minLen = curLen;
-                minStart = left;
+                minLen = curLen
+                minStart = left
             }
 
-            let leftCh = s[left];
-            let lci = charIndex(leftCh);
+            let leftCh = s[left]
+            let lci = tChars.indexOf(leftCh)
             if (lci != -1) {
-                let curVal = winCounts[lci];
-                if (curVal == tCounts[lci]) {
-                    formed = formed - 1;
+                if (winCounts[lci] == tCounts[lci]) {
+                    formed = formed - 1
                 }
-                setWinCount(lci, curVal - 1);
+                winCounts[lci] = winCounts[lci] - 1
             }
-            left = left + 1;
+            left = left + 1
         }
-        right = right + 1;
+        right = right + 1
     }
 
     if (minLen > s.length) {
-        return "";
+        return ""
     }
-    return s.substring(minStart, minLen);
+    return s.substring(minStart, minStart + minLen)
 }
 
 // Tests

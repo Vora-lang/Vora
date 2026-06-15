@@ -1,0 +1,45 @@
+// lambdas.va — anonymous function expressions
+print("=== 1. Lambda assigned to variable ===")
+let square = func(x) { return x * x }
+print("square(7) =", square(7))
+
+print("=== 2. Lambda with no parameters ===")
+let pi = func() { return 3.14159 }
+print("pi() =", pi())
+
+print("=== 3. Lambda as callback ===")
+func apply(f, a, b) { return f(a, b) }
+let add = func(x, y) { return x + y }
+let multiply = func(x, y) { return x * y }
+print("apply(add, 3, 4) =", apply(add, 3, 4))
+print("apply(multiply, 3, 4) =", apply(multiply, 3, 4))
+
+print("=== 4. IIFE (immediately invoked) ===")
+let result = func(a, b) { return a * b }(6, 7)
+print("IIFE result =", result)  // 6 * 7 = 42
+
+print("=== 5. Lambda returning lambda ===")
+func makePower(n) {
+    return func(x) {
+        let r = 1
+        let i = 0
+        while (i < n) {
+            r = r * x
+            i = i + 1
+        }
+        return r
+    }
+}
+let cube = makePower(3)
+print("cube(3) =", cube(3))    // 27
+print("cube(4) =", cube(4))    // 64
+
+print("=== 6. Array of lambdas ===")
+let ops = [
+    func(x) { return x + 1 },
+    func(x) { return x * 2 },
+    func(x) { return x * x }
+]
+for i in range(3) {
+    print("ops[", i, "](5) =", ops[i](5))
+}

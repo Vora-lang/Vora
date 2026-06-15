@@ -88,6 +88,18 @@ std::string ForStmt::accept(StmtVisitor<std::string>& visitor) const {
 }
 
 // =========================================================================
+// CForStmt
+// =========================================================================
+
+void CForStmt::accept(StmtVisitor<void>& visitor) const {
+    visitor.visitCForStmt(*this);
+}
+
+std::string CForStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitCForStmt(*this);
+}
+
+// =========================================================================
 // FuncStmt
 // =========================================================================
 

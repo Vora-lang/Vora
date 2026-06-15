@@ -1,6 +1,6 @@
 func outer() {
     func inner() {
-        return;
+        return null
     }
     inner();
 }

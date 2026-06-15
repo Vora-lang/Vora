@@ -1,0 +1,63 @@
+// higher-order.va — functions operating on functions
+print("=== 1. Manual map ===")
+func mapArray(arr, fn) {
+    let result = []
+    for i in range(arr.length) {
+        result.add(fn(arr[i]))
+    }
+    return result
+}
+let numbers = [1, 2, 3, 4, 5]
+let doubled = mapArray(numbers, func(x) { return x * 2 })
+print("doubled:", doubled)
+
+print("=== 2. Manual filter ===")
+func filterArray(arr, pred) {
+    let result = []
+    for item in arr {
+        if (pred(item)) {
+            result.add(item)
+        }
+    }
+    return result
+}
+let evens = filterArray(numbers, func(x) { return x % 2 == 0 })
+print("evens:", evens)
+
+print("=== 3. Manual reduce ===")
+func reduceArray(arr, fn, initial) {
+    let acc = initial
+    for item in arr {
+        acc = fn(acc, item)
+    }
+    return acc
+}
+let total = reduceArray(numbers, func(a, b) { return a + b }, 0)
+let product = reduceArray(numbers, func(a, b) { return a * b }, 1)
+print("sum:", total, "product:", product)
+
+print("=== 4. Compose ===")
+func compose(f, g) {
+    return func(x) { return f(g(x)) }
+}
+let add1 = func(x) { return x + 1 }
+let times2 = func(x) { return x * 2 }
+let add1ThenDouble = compose(times2, add1)
+print("add1ThenDouble(5) =", add1ThenDouble(5))  // (5+1)*2 = 12
+
+print("=== 5. Once (call a function only once) ===")
+func once(fn) {
+    let called = false
+    let cached = null
+    func wrapper(x) {
+        if (!called) {
+            cached = fn(x)
+            called = true
+        }
+        return cached
+    }
+    return wrapper
+}
+let expensive = once(func(x) { print("computing..."); return x * x })
+print(expensive(5))
+print(expensive(5))  // uses cached result

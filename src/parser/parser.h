@@ -41,6 +41,8 @@ private:
 
     std::unique_ptr<Expr> call();
 
+    std::unique_ptr<Expr> funcExpression();
+
     std::unique_ptr<Expr> finishCall(
         std::unique_ptr<Expr> callee
     );
@@ -58,6 +60,7 @@ private:
     std::unique_ptr<Stmt> whileStatement();
 
     std::unique_ptr<Stmt> forStatement();
+    std::unique_ptr<Stmt> cForStatement(Token forToken);
 
     std::unique_ptr<Stmt> funcStatement();
 

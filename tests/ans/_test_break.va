@@ -2,7 +2,7 @@ func outer() {
     let i = 0;
     while (i < 3) {
         if (i == 1) {
-            break;
+            break
         }
         i = i + 1;
     }

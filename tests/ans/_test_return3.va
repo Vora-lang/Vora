@@ -1,5 +1,5 @@
 func foo() {
-    return;
+    return null
 }
 foo();
 print("ok");

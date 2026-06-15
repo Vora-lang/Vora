@@ -66,9 +66,9 @@ class VM {
     // decide whether to re-throw.
     bool exceptionInFlight = false;
 
-    // Open upvalues: stack slot index → heap-allocated value (for closures)
-    std::unordered_map<size_t, std::shared_ptr<Value>> openUpvalues;
-    std::shared_ptr<Value> captureUpvalue(size_t slotIndex);
+    // Open upvalues: stack slot index → Upvalue with stack pointer indirection
+    std::unordered_map<size_t, std::shared_ptr<Upvalue>> openUpvalues;
+    std::shared_ptr<Upvalue> captureUpvalue(size_t slotIndex);
 
 public:
     VM();

@@ -111,7 +111,9 @@ static std::vector<GcPtr<ClassDefinition>> computeC3MRO(
 // =========================================================================
 
 VM::VM() {
-    stack.reserve(1024);
+    // Reserve enough capacity that open-upvalue pointers (raw Value*
+    // into the stack vector) are never invalidated by reallocation.
+    stack.reserve(65536);
     resetStack();
     frameBaseIndex = 0;
 }
@@ -279,14 +281,17 @@ bool VM::runtimeErrorOrThrow(const std::string& message) {
     return false;  // not caught
 }
 
-std::shared_ptr<Value> VM::captureUpvalue(size_t slotIndex) {
+std::shared_ptr<Upvalue> VM::captureUpvalue(size_t slotIndex) {
     // Check if this slot already has an open upvalue
     auto it = openUpvalues.find(slotIndex);
     if (it != openUpvalues.end()) {
         return it->second;
     }
-    // Create a new heap-allocated value copying the current stack value
-    auto uv = std::make_shared<Value>(stack[slotIndex]);
+    // Create a new Upvalue whose location points directly to the
+    // live stack slot. This ensures all closures that capture the
+    // same local share the same indirection and see live updates.
+    auto uv = std::make_shared<Upvalue>();
+    uv->location = &stack[slotIndex];
     openUpvalues[slotIndex] = uv;
     return uv;
 }
@@ -317,11 +322,12 @@ bool VM::throwException(const Value& value) {
 
         // Unwind call frames to the level where the handler was registered.
         while (frames.size() > handler.frameCount) {
-            // Clear open upvalues for the frame being unwound
+            // Close + clear open upvalues for the frame being unwound
             size_t frameEnd = frames.back().frameBase + MAX_LOCALS_PER_FRAME;
             auto it = openUpvalues.begin();
             while (it != openUpvalues.end()) {
                 if (it->first >= frames.back().frameBase && it->first < frameEnd) {
+                    it->second->close();
                     it = openUpvalues.erase(it);
                 } else {
                     ++it;
@@ -624,9 +630,9 @@ void VM::collectGarbage() {
         pushGcRefs(v, roots);
     }
 
-    // 3. Open upvalues (shared_ptr<Value> heap-allocated Values)
+    // 3. Open upvalues — scan the current Value through Upvalue indirection
     for (auto& [slot, uv] : openUpvalues) {
-        pushGcRefs(*uv, roots);
+        pushGcRefs(uv->get(), roots);
     }
 
     // 4. Call frames — the executing functions
@@ -972,8 +978,11 @@ InterpretResult VM::run() {
                     uint8_t isLocal = READ_BYTE();
                     uint8_t index = READ_BYTE();
                     if (isLocal) {
+                        // Capture as open upvalue — location points to
+                        // the live stack slot so mutations and self-
+                        // references work correctly.
                         function->upvalues.push_back(
-                            std::make_shared<Value>(stack[frameBaseIndex + index]));
+                            captureUpvalue(frameBaseIndex + index));
                     } else {
                         // Capture upvalue from enclosing function
                         if (!frames.empty()) {
@@ -981,12 +990,16 @@ InterpretResult VM::run() {
                             if (encFn && index < encFn->upvalues.size()) {
                                 function->upvalues.push_back(encFn->upvalues[index]);
                             } else {
-                                function->upvalues.push_back(
-                                    std::make_shared<Value>(nullptr));
+                                auto fallback = std::make_shared<Upvalue>();
+                                fallback->closed = nullptr;
+                                fallback->location = &fallback->closed;
+                                function->upvalues.push_back(fallback);
                             }
                         } else {
-                            function->upvalues.push_back(
-                                std::make_shared<Value>(nullptr));
+                            auto fallback = std::make_shared<Upvalue>();
+                            fallback->closed = nullptr;
+                            fallback->location = &fallback->closed;
+                            function->upvalues.push_back(fallback);
                         }
                     }
                 }
@@ -1007,9 +1020,13 @@ InterpretResult VM::run() {
                 // Pop all locals by restoring stack to frame base
                 stackTopIndex = frameBaseIndex;
 
-                // Clear any open upvalues for this frame (locals going out of scope)
+                // Close open upvalues for this frame (locals going out of scope).
+                // Must close BEFORE erasing — existing closures hold shared_ptr<Upvalue>
+                // with location pointing to our stack. Closing migrates the value
+                // to heap storage so closures don't see garbage after stack reuse.
                 for (auto it = openUpvalues.begin(); it != openUpvalues.end(); ) {
                     if (it->first >= frameBaseIndex && it->first < frameBaseIndex + MAX_LOCALS_PER_FRAME) {
+                        it->second->close();
                         it = openUpvalues.erase(it);
                     } else {
                         ++it;
@@ -1055,7 +1072,7 @@ InterpretResult VM::run() {
                     fn = frames.back().function;
                 }
                 if (fn && idx < fn->upvalues.size()) {
-                    push(*(fn->upvalues[idx]));
+                    push(fn->upvalues[idx]->get());
                 } else {
                     RUNTIME_ERROR_OR_THROW("Invalid upvalue index");
                 }
@@ -1068,7 +1085,7 @@ InterpretResult VM::run() {
                     fn = frames.back().function;
                 }
                 if (fn && idx < fn->upvalues.size()) {
-                    *(fn->upvalues[idx]) = peek(0);
+                    fn->upvalues[idx]->set(peek(0));
                 } else {
                     RUNTIME_ERROR_OR_THROW("Invalid upvalue index");
                 }
@@ -1079,10 +1096,12 @@ InterpretResult VM::run() {
                 size_t slotIdx = frameBaseIndex + localSlot;
                 auto it = openUpvalues.find(slotIdx);
                 if (it != openUpvalues.end()) {
-                    // Sync current stack value to the heap-allocated upvalue,
-                    // then remove from open upvalues so subsequent captures on
-                    // this slot create a new heap allocation.
-                    *(it->second) = stack[slotIdx];
+                    // Close the upvalue: copy stack value to heap storage
+                    // and redirect location to the heap copy. Closures that
+                    // have already captured this upvalue will now read from
+                    // the heap copy, preserving the value after the stack
+                    // slot is reused.
+                    it->second->close();
                     openUpvalues.erase(it);
                 }
                 break;

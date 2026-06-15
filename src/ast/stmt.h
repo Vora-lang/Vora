@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "expr.h"
+#include "param_decl.h"
 
 namespace vora {
 
@@ -152,14 +153,31 @@ public:
     Token forToken;
 };
 
-// Parameter declaration for functions/constructors.
-// Supports optional default value expressions.
-struct ParamDecl {
-    std::string name;
-    std::unique_ptr<Expr> defaultValue;  // nullptr = required param
+// C-style for loop: for (initializer; condition; increment) body
+// - initializer: let stmt, expression stmt, or null (e.g. `for (;;)`)
+// - condition:   expression or null (null = always true)
+// - increment:   expression or null
+class CForStmt : public Stmt {
+public:
+    CForStmt(
+        std::unique_ptr<Stmt> initializer,
+        std::unique_ptr<Expr> condition,
+        std::unique_ptr<Expr> increment,
+        std::unique_ptr<Stmt> body
+    )
+        : initializer(std::move(initializer)),
+          condition(std::move(condition)),
+          increment(std::move(increment)),
+          body(std::move(body)) {
+    }
 
-    ParamDecl(std::string name, std::unique_ptr<Expr> defaultValue = nullptr)
-        : name(std::move(name)), defaultValue(std::move(defaultValue)) {}
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
+
+    std::unique_ptr<Stmt> initializer;  // let stmt, expression stmt, or nullptr
+    std::unique_ptr<Expr> condition;    // nullptr = always true
+    std::unique_ptr<Expr> increment;    // nullptr = no increment
+    std::unique_ptr<Stmt> body;
 };
 
 class FuncStmt : public Stmt {

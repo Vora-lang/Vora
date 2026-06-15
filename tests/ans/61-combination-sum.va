@@ -1,36 +1,32 @@
 // #39 Combination Sum (Medium)
-// All unique combos summing to target, reuse allowed. Backtracking.
+// Backtracking with top-level recursion for Vora compatibility.
+
+func backtrackCombine(result, candidates, target, start, current, sum) {
+    if (sum == target) {
+        let copy = []
+        let i = 0
+        while (i < current.length) {
+            copy.add(current[i])
+            i = i + 1
+        }
+        result.add(copy)
+        return null
+    }
+    if (sum > target) { return null }
+
+    let i = start
+    while (i < candidates.length) {
+        current.add(candidates[i])
+        backtrackCombine(result, candidates, target, i, current, sum + candidates[i])
+        current.pop()
+        i = i + 1
+    }
+}
 
 func combinationSum(candidates, target) {
-    let result = [];
-
-    func backtrack(start, current, sum) {
-        if (sum == target) {
-            // Make a copy of current
-            let copy = [];
-            let i = 0;
-            while (i < current.length) {
-                copy.add(current[i]);
-                i = i + 1;
-            }
-            result.add(copy);
-            return;
-        }
-        if (sum > target) {
-            return;
-        }
-
-        let i = start;
-        while (i < candidates.length) {
-            current.add(candidates[i]);
-            backtrack(i, current, sum + candidates[i]);
-            current.pop();
-            i = i + 1;
-        }
-    }
-
-    backtrack(0, [], 0);
-    return result;
+    let result = []
+    backtrackCombine(result, candidates, target, 0, [], 0)
+    return result
 }
 
 // Tests
@@ -51,10 +47,10 @@ func arrayOfArraysContains(arr, sub) {
             let match = true;
             let j = 0;
             while (j < a.length) {
-                if (a[j] != sub[j]) { match = false; break; }
+                if (a[j] != sub[j]) { match = false; break }
                 j = j + 1;
             }
-            if (!match) { break; }
+            if (!match) { break }
             if (match) { return true; }
         }
         i = i + 1;

@@ -123,6 +123,13 @@ std::unique_ptr<Stmt> Parser::statement() {
     }
 
     if (match(TokenType::FUNC)) {
+        // Anonymous function expression: func(x) { ... }
+        if (check(TokenType::LEFT_PAREN)) {
+            auto expr = funcExpression();
+            if (!expr) return nullptr;
+            match(TokenType::SEMICOLON);
+            return std::make_unique<ExprStmt>(std::move(expr));
+        }
         return funcStatement();
     }
 
@@ -222,7 +229,15 @@ std::unique_ptr<BlockStmt> Parser::blockStatement() {
 
 std::unique_ptr<Stmt> Parser::returnStatement() {
 
-    auto value = expression();
+    // Allow bare `return` / `return;` (void return) — these are
+    // common in early-return guards and void functions.
+    // If the next token cannot start an expression we emit OP_NULL.
+    std::unique_ptr<Expr> value;
+    if (!check(TokenType::SEMICOLON) &&
+        !check(TokenType::RIGHT_BRACE) &&
+        !check(TokenType::END_OF_FILE)) {
+        value = expression();
+    }
 
     match(TokenType::SEMICOLON);
 
@@ -268,6 +283,12 @@ std::unique_ptr<Stmt> Parser::forStatement() {
 
     Token forToken = previous();
 
+    // C-style for: for (initializer; condition; increment) { body }
+    if (match(TokenType::LEFT_PAREN)) {
+        return cForStatement(forToken);
+    }
+
+    // For-in: for variable in iterable { body }
     if (!match(TokenType::IDENTIFIER)) {
                     error("Expected loop variable name after 'for'\n");
         return nullptr;
@@ -298,6 +319,74 @@ std::unique_ptr<Stmt> Parser::forStatement() {
         std::move(iterable),
         std::move(body),
         forToken
+    );
+}
+
+std::unique_ptr<Stmt> Parser::cForStatement(Token forToken) {
+    // Parse: for (initializer? ; condition? ; increment?) body
+
+    std::unique_ptr<Stmt> initializer;
+
+    // Parse optional initializer (let-stmt, expression-stmt, or empty).
+    // letStatement() consumes its own trailing semicolon; expression/empty
+    // initializers need us to consume the clause-separating ';'.
+    bool initHadSemicolon = false;
+
+    if (match(TokenType::LET)) {
+        // let x = expr  — letStatement() consumes the trailing semicolon
+        initializer = letStatement();
+        if (!initializer) return nullptr;
+        initHadSemicolon = true;  // letStatement already consumed ';'
+    } else if (!check(TokenType::SEMICOLON)) {
+        // Expression initializer (e.g. x = 0)
+        auto expr = expression();
+        if (expr) {
+            initializer = std::make_unique<ExprStmt>(std::move(expr));
+        }
+    }
+
+    if (!initHadSemicolon) {
+        // Consume ';' after initializer (not needed for let-stmt init).
+        match(TokenType::SEMICOLON);
+    }
+
+    // Parse condition (optional — null means always true)
+    std::unique_ptr<Expr> condition;
+    if (!check(TokenType::SEMICOLON)) {
+        condition = expression();
+    }
+
+    if (!match(TokenType::SEMICOLON)) {
+        error("Expected ';' after for-loop condition");
+        return nullptr;
+    }
+
+    // Parse increment (optional)
+    std::unique_ptr<Expr> increment;
+    if (!check(TokenType::RIGHT_PAREN)) {
+        increment = expression();
+    }
+
+    if (!match(TokenType::RIGHT_PAREN)) {
+        error("Expected ')' after for-loop clauses");
+        return nullptr;
+    }
+
+    // Parse body (block or single statement)
+    std::unique_ptr<Stmt> body;
+    if (match(TokenType::LEFT_BRACE)) {
+        body = blockStatement();
+        if (!body) return nullptr;
+    } else {
+        body = statement();
+        if (!body) return nullptr;
+    }
+
+    return std::make_unique<CForStmt>(
+        std::move(initializer),
+        std::move(condition),
+        std::move(increment),
+        std::move(body)
     );
 }
 
@@ -376,6 +465,66 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
 
     return std::make_unique<FuncStmt>(
         name,
+        std::move(params),
+        std::shared_ptr<BlockStmt>(std::move(body))
+    );
+}
+
+std::unique_ptr<Expr> Parser::funcExpression() {
+    // Parse anonymous function: func(params) { body }
+    // 'func' keyword already consumed by caller.
+
+    if (!match(TokenType::LEFT_PAREN)) {
+        error("Expected '(' after 'func'\n");
+        return nullptr;
+    }
+
+    std::vector<ParamDecl> params;
+
+    if (!check(TokenType::RIGHT_PAREN)) {
+        do {
+            if (!match(TokenType::IDENTIFIER)) {
+                error("Expected parameter name\n");
+                return nullptr;
+            }
+
+            std::string paramName = previous().lexeme;
+
+            // Optional default value: param = expr
+            std::unique_ptr<Expr> defaultValue;
+            if (match(TokenType::EQUAL)) {
+                defaultValue = expression();
+                if (!defaultValue) {
+                    return nullptr;
+                }
+            } else {
+                if (!params.empty() && params.back().defaultValue) {
+                    error("Required parameter cannot follow a parameter with a default value\n");
+                    return nullptr;
+                }
+            }
+
+            params.emplace_back(std::move(paramName), std::move(defaultValue));
+        }
+        while (match(TokenType::COMMA));
+    }
+
+    if (!match(TokenType::RIGHT_PAREN)) {
+        error("Expected ')' after parameters\n");
+        return nullptr;
+    }
+
+    if (!match(TokenType::LEFT_BRACE)) {
+        error("Expected '{' before function body\n");
+        return nullptr;
+    }
+
+    auto body = blockStatement();
+    if (!body) {
+        return nullptr;
+    }
+
+    return std::make_unique<FuncExpr>(
         std::move(params),
         std::shared_ptr<BlockStmt>(std::move(body))
     );
@@ -629,7 +778,9 @@ std::unique_ptr<Expr> Parser::primary() {
 
     if (match(TokenType::MINUS)) {
         Token op = previous();
-        auto right = primary();
+        // Use call() (not primary()) so postfix ops like [i], .prop, ()
+        // bind tighter than unary minus: -a[i] → -(a[i]).
+        auto right = call();
 
         if (!right) return nullptr;
 
@@ -638,7 +789,8 @@ std::unique_ptr<Expr> Parser::primary() {
 
     if (match(TokenType::NOT)) {
         Token op = previous();
-        auto right = primary();
+        // Same as unary minus: postfix binds tighter than not.
+        auto right = call();
 
         if (!right) return nullptr;
 
@@ -660,6 +812,10 @@ std::unique_ptr<Expr> Parser::primary() {
         }
 
         return std::make_unique<IncDecExpr>(op, std::move(target), true);
+    }
+
+    if (match(TokenType::FUNC)) {
+        return funcExpression();
     }
 
     if (match(TokenType::THIS)) {
@@ -1100,11 +1256,15 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
 // =========================
 
 std::unique_ptr<Stmt> Parser::breakStatement() {
-    return std::make_unique<BreakStmt>(previous());
+    auto stmt = std::make_unique<BreakStmt>(previous());
+    match(TokenType::SEMICOLON);  // optional — `break` and `break;` are both valid
+    return stmt;
 }
 
 std::unique_ptr<Stmt> Parser::continueStatement() {
-    return std::make_unique<ContinueStmt>(previous());
+    auto stmt = std::make_unique<ContinueStmt>(previous());
+    match(TokenType::SEMICOLON);  // optional — `continue` and `continue;` are both valid
+    return stmt;
 }
 
 std::unique_ptr<Stmt> Parser::tryStatement() {

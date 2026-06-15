@@ -1,25 +1,24 @@
 // #22 Generate Parentheses (Medium)
-// Generate all valid n-pair parentheses. Backtracking with open/close counts.
+// Backtracking with top-level recursion for Vora compatibility.
 
-func generateParenthesis(n) {
-    let result = [];
-
-    func backtrack(current, open, close) {
-        if (current.length == n * 2) {
-            result.add(current);
-            return null;
-        }
-
-        if (open < n) {
-            backtrack(current + "(", open + 1, close);
-        }
-        if (close < open) {
-            backtrack(current + ")", open, close + 1);
-        }
+func backtrackParen(result, n, current, open, close) {
+    if (current.length == n * 2) {
+        result.add(current)
+        return null
     }
 
-    backtrack("", 0, 0);
-    return result;
+    if (open < n) {
+        backtrackParen(result, n, current + "(", open + 1, close)
+    }
+    if (close < open) {
+        backtrackParen(result, n, current + ")", open, close + 1)
+    }
+}
+
+func generateParenthesis(n) {
+    let result = []
+    backtrackParen(result, n, "", 0, 0)
+    return result
 }
 
 // Tests

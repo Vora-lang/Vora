@@ -1,0 +1,51 @@
+// closures.va — closures capturing outer variables
+print("=== 1. Basic closure ===")
+func makeCounter() {
+    let count = 0
+    func next() {
+        count += 1
+        return count
+    }
+    return next
+}
+let counter = makeCounter()
+print(counter())  // 1
+print(counter())  // 2
+print(counter())  // 3
+
+print("=== 2. Multiple closures sharing state ===")
+func makeCounters() {
+    let n = 0
+    func inc() { n += 1; return n }
+    func dec() { n -= 1; return n }
+    return [inc, dec]
+}
+let pair = makeCounters()
+let up = pair[0]
+let down = pair[1]
+print(up())    // 1
+print(up())    // 2
+print(down())  // 1 (shared n)
+print(down())  // 0
+
+print("=== 3. Factory with parameter ===")
+func makeMultiplier(factor) {
+    func multiply(x) { return x * factor }
+    return multiply
+}
+let double = makeMultiplier(2)
+let triple = makeMultiplier(3)
+print(double(5))  // 10
+print(triple(5))  // 15
+
+print("=== 4. Closure chain ===")
+func makeGreeter(greeting) {
+    func greet(name) {
+        return greeting + ", " + name + "!"
+    }
+    return greet
+}
+let hello = makeGreeter("Hello")
+let hi = makeGreeter("Hi")
+print(hello("Vora"))
+print(hi("World"))

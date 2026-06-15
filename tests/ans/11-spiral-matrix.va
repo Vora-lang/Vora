@@ -5,11 +5,11 @@
 func spiralOrder(matrix) {
     let result = [];
     let rows = matrix.length;
-    if rows == 0 {
+    if (rows == 0) {
         return result;
     }
     let cols = matrix[0].length;
-    if cols == 0 {
+    if (cols == 0) {
         return result;
     }
 
@@ -18,7 +18,7 @@ func spiralOrder(matrix) {
     let left = 0;
     let right = cols - 1;
 
-    while top <= bottom and left <= right {
+    while (top <= bottom and left <= right) {
         // Traverse right
         for j in range(left, right + 1) {
             result.add(matrix[top][j]);
@@ -32,9 +32,9 @@ func spiralOrder(matrix) {
         right = right - 1;
 
         // Traverse left (check bounds)
-        if top <= bottom {
+        if (top <= bottom) {
             let j = right;
-            while j >= left {
+            while (j >= left) {
                 result.add(matrix[bottom][j]);
                 j = j - 1;
             }
@@ -42,9 +42,9 @@ func spiralOrder(matrix) {
         }
 
         // Traverse up (check bounds)
-        if left <= right {
+        if (left <= right) {
             let i = bottom;
-            while i >= top {
+            while (i >= top) {
                 result.add(matrix[i][left]);
                 i = i - 1;
             }
@@ -57,11 +57,11 @@ func spiralOrder(matrix) {
 
 // Helper to compare arrays
 func arraysEqual(a, b) {
-    if a.length != b.length {
+    if (a.length != b.length) {
         return false;
     }
     for i in range(a.length) {
-        if a[i] != b[i] {
+        if (a[i] != b[i]) {
             return false;
         }
     }

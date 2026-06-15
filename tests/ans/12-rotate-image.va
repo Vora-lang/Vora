@@ -4,7 +4,7 @@
 
 func rotate(matrix) {
     let n = matrix.length;
-    if n <= 1 {
+    if (n <= 1) {
         return matrix;
     }
 
@@ -21,7 +21,7 @@ func rotate(matrix) {
     for i in range(n) {
         let left = 0;
         let right = n - 1;
-        while left < right {
+        while (left < right) {
             let temp = matrix[i][left];
             matrix[i][left] = matrix[i][right];
             matrix[i][right] = temp;
@@ -35,15 +35,15 @@ func rotate(matrix) {
 
 // Helper to compare 2D arrays
 func matricesEqual(a, b) {
-    if a.length != b.length {
+    if (a.length != b.length) {
         return false;
     }
     for i in range(a.length) {
-        if a[i].length != b[i].length {
+        if (a[i].length != b[i].length) {
             return false;
         }
         for j in range(a[i].length) {
-            if a[i][j] != b[i][j] {
+            if (a[i][j] != b[i][j]) {
                 return false;
             }
         }

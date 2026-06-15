@@ -460,6 +460,28 @@ std::string SourceFormatter::visitTernaryExpr(const TernaryExpr& expr) {
     return ss.str();
 }
 
+std::string SourceFormatter::visitFuncExpr(const FuncExpr& expr) {
+    std::stringstream ss;
+    ss << "func";
+    ss << formatParams(expr.params);
+    ss << " ";
+
+    // Format body as a block
+    incIndent();
+    ss << "{" << nl();
+    const auto& stmts = expr.body->statements;
+    for (size_t i = 0; i < stmts.size(); i++) {
+        ss << stmts[i]->accept(*this);
+        if (i + 1 < stmts.size()) {
+            ss << nl();
+        }
+    }
+    decIndent();
+    ss << nl() << "}";
+
+    return ss.str();
+}
+
 // =====================================================================
 // StmtVisitor<std::string> — statement formatting
 // =====================================================================
@@ -546,6 +568,47 @@ std::string SourceFormatter::visitForStmt(const ForStmt& stmt) {
     std::stringstream ss;
     ss << "for " << stmt.variable << " in ";
     ss << formatExpr(*stmt.iterable, 0);
+    ss << formatBlockBody(*stmt.body);
+    return ss.str();
+}
+
+std::string SourceFormatter::visitCForStmt(const CForStmt& stmt) {
+    // Vora syntax: for (init; cond; incr) { ... }
+    std::stringstream ss;
+    ss << "for (";
+
+    // initializer
+    if (stmt.initializer) {
+        // LetStmt: strip trailing newline/indent from the formatted output
+        // ExprStmt: similar
+        std::string initStr;
+        if (auto* letStmt = dynamic_cast<const LetStmt*>(stmt.initializer.get())) {
+            initStr = visitLetStmt(*letStmt);
+        } else if (auto* exprStmt = dynamic_cast<const ExprStmt*>(stmt.initializer.get())) {
+            initStr = formatExpr(*exprStmt->expression, 0);
+        } else {
+            initStr = stmt.initializer->accept(*this);
+        }
+        // Remove trailing semicolons/newlines from the init string
+        while (!initStr.empty() && (initStr.back() == ';' || initStr.back() == '\n' || initStr.back() == ' ')) {
+            initStr.pop_back();
+        }
+        ss << initStr;
+    }
+    ss << "; ";
+
+    // condition
+    if (stmt.condition) {
+        ss << formatExpr(*stmt.condition, 0);
+    }
+    ss << "; ";
+
+    // increment
+    if (stmt.increment) {
+        ss << formatExpr(*stmt.increment, 0);
+    }
+
+    ss << ")";
     ss << formatBlockBody(*stmt.body);
     return ss.str();
 }

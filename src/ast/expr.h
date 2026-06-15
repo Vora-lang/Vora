@@ -6,11 +6,14 @@
 
 #include "../lexer/token.h"
 #include "../runtime/value.h"
+#include "param_decl.h"
 
 namespace vora {
 
 template <typename R>
 class ExprVisitor;
+
+class BlockStmt;  // forward decl — FuncExpr uses shared_ptr (works with incomplete type)
 
 class Expr {
 public:
@@ -403,6 +406,29 @@ public:
     std::unique_ptr<Expr> condition;
     std::unique_ptr<Expr> thenBranch;
     std::unique_ptr<Expr> elseBranch;
+};
+
+// Anonymous function expression:  func(x, y) { body }
+// In expression contexts, `func` without a name creates a lambda.
+// Body uses shared_ptr<BlockStmt> — shared_ptr works with incomplete types,
+// avoiding the circular dependency between expr.h and stmt.h.
+class FuncExpr : public Expr {
+public:
+    FuncExpr(
+        std::vector<ParamDecl> params,
+        std::shared_ptr<BlockStmt> body
+    )
+        : params(std::move(params)),
+          body(std::move(body)) {
+    }
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::vector<ParamDecl> params;
+    std::shared_ptr<BlockStmt> body;
 };
 
 }

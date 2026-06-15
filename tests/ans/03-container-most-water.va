@@ -7,17 +7,17 @@ func maxArea(height) {
     let right = height.length - 1;
     let maxWater = 0;
 
-    while left < right {
+    while (left < right) {
         let h = height[left];
-        if height[right] < h {
+        if (height[right] < h) {
             h = height[right];
         }
         let area = h * (right - left);
-        if area > maxWater {
+        if (area > maxWater) {
             maxWater = area;
         }
 
-        if height[left] < height[right] {
+        if (height[left] < height[right]) {
             left = left + 1;
         } else {
             right = right - 1;

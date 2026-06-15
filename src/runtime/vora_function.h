@@ -30,9 +30,11 @@ public:
     const FunctionPrototype* getPrototype() const { return prototype_; }
     bool isCompiled() const { return prototype_ != nullptr; }
 
-    // Upvalues for VM closures (shared heap-allocated values).
-    // shared_ptr<Value> is kept because Value itself is not GC-managed.
-    std::vector<std::shared_ptr<Value>> upvalues;
+    // Upvalues for VM closures. Each Upvalue provides pointer-indirection:
+    // while the captured local is alive on the stack, location points to
+    // the live stack slot. When the local goes out of scope, close() copies
+    // the value to heap storage and redirects location there.
+    std::vector<std::shared_ptr<Upvalue>> upvalues;
 
     void trace(std::vector<GcObject*>& wl) override {
         // VoraFunction is referenced from ObjectClass::methods,

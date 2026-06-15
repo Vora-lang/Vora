@@ -253,6 +253,97 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
     }
 }
 
+void Compiler::visitCForStmt(const CForStmt& stmt) {
+    // Desugar C-style for into a while loop:
+    //
+    //   for (init; cond; incr) { body }
+    // becomes (pseudo-bytecode):
+    //   {
+    //     init;                        // let locals at scope N
+    //     loopStart:
+    //       if (!cond) goto exit;
+    //       body;                      // may add nested scopes
+    //     continueTarget:
+    //       incr;
+    //       goto loopStart;
+    //     exit:
+    //   }
+    //
+    // Scoping follows the for-in pattern:
+    //   - beginScope wraps the whole loop (initializer locals are scoped here)
+    //   - enclosingScopeDepth = scopeDepth (inside the scope) so continue only
+    //     pops body-locals, never the initializer locals
+    //   - extraLocalsToPop tracks initializer locals so break can clean them up
+    //   - Break jumps land after endScope(); continue jumps land at increment
+
+    beginScope();
+
+    // Record how many locals the initializer adds (for break cleanup)
+    size_t localsBeforeInit = locals.size();
+
+    // --- Initializer ---
+    if (stmt.initializer) {
+        stmt.initializer->accept(*this);
+    }
+
+    int extraLocals = static_cast<int>(locals.size() - localsBeforeInit);
+
+    size_t loopStart = chunk.code.size();
+    // continueTarget = SIZE_MAX signals "target will be set later"
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, extraLocals});
+
+    // --- Condition ---
+    if (stmt.condition) {
+        stmt.condition->accept(*this);
+    } else {
+        // Empty condition = always true
+        emitByte(static_cast<uint8_t>(OpCode::OP_TRUE));
+    }
+    size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+    // --- Body ---
+    stmt.body->accept(*this);
+
+    // --- Increment (continue target) ---
+    loopStack.back().continueTarget = chunk.code.size();
+    if (stmt.increment) {
+        stmt.increment->accept(*this);
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // discard increment result
+    }
+
+    // --- Loop back ---
+    emitLoop(loopStart);
+
+    // --- Exit ---
+    patchJump(exitJump);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+    // Patch continue jumps to the increment section
+    for (size_t jumpOffset : loopStack.back().continueJumps) {
+        size_t target = loopStack.back().continueTarget;
+        size_t jumpSize = target - jumpOffset - 2;
+        if (jumpSize > UINT16_MAX) jumpSize = UINT16_MAX;
+        chunk.writeAt(jumpOffset, static_cast<uint8_t>(jumpSize & 0xFF));
+        chunk.writeAt(jumpOffset + 1, static_cast<uint8_t>((jumpSize >> 8) & 0xFF));
+    }
+
+    // Save break jumps before popping the loop context.
+    // Break path: pops extraLocals (init locals) + body locals → OP_JUMP.
+    // Normal path: endScope() pops init locals.
+    std::vector<size_t> savedBreakJumps = std::move(loopStack.back().breakJumps);
+    loopStack.pop_back();
+
+    // End the C-for scope (normal exit path — pops initializer locals)
+    endScope();
+
+    // Patch break jumps after endScope() — break already cleaned up init locals
+    // via extraLocalsToPop, so it skips endScope().
+    for (size_t jumpOffset : savedBreakJumps) {
+        patchJump(jumpOffset);
+    }
+}
+
 void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     // Create a separate compiler for the function body
     Compiler fnCompiler;
@@ -311,6 +402,14 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
         }
     }
 
+    // Pre-allocate local for self-recursion: add the function name as a
+    // local in the ENCLOSING scope BEFORE compiling the body. This lets
+    // recursive references resolve via upvalue capture. The OP_CLOSURE
+    // result will be pushed onto the stack at this local's position.
+    if (scopeDepth > 0) {
+        addLocal(stmt.name);
+    }
+
     // Compile the function body
     for (const auto& s : stmt.body->statements) {
         s->accept(fnCompiler);
@@ -351,10 +450,13 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
         if (hadError) return;
         emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
                   static_cast<uint8_t>(slot));
-    } else {
-        // Local function — the OP_CLOSURE result stays on stack as local slot
-        addLocal(stmt.name);
     }
+    // For local functions (scopeDepth > 0): the name was pre-allocated via
+    // addLocal before body compilation. OP_CLOSURE already pushed the
+    // function onto the stack — since addLocal was called beforehand and
+    // the stack grows from the local region, the pushed value is already
+    // at the correct position for the pre-allocated local slot. No extra
+    // OP_SET_LOCAL or OP_POP needed.
 }
 
 void Compiler::visitObjStmt(const ObjStmt& stmt) {

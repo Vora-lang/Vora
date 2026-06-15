@@ -4,7 +4,7 @@
 
 func productExceptSelf(nums) {
     let n = nums.length;
-    if n == 0 {
+    if (n == 0) {
         return [];
     }
 
@@ -23,7 +23,7 @@ func productExceptSelf(nums) {
     // suffix products: result[i] *= product of all elements to the right
     let suffix = 1;
     let i = n - 1;
-    while i >= 0 {
+    while (i >= 0) {
         result[i] = result[i] * suffix;
         suffix = suffix * nums[i];
         i = i - 1;

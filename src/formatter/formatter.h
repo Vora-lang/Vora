@@ -92,6 +92,7 @@ private:
     std::string visitSuperExpr(const SuperExpr& expr) override;
     std::string visitIncDecExpr(const IncDecExpr& expr) override;
     std::string visitTernaryExpr(const TernaryExpr& expr) override;
+    std::string visitFuncExpr(const FuncExpr& expr) override;
 
     // =====================================================================
     // StmtVisitor<std::string> overrides
@@ -104,6 +105,7 @@ private:
     std::string visitIfStmt(const IfStmt& stmt) override;
     std::string visitWhileStmt(const WhileStmt& stmt) override;
     std::string visitForStmt(const ForStmt& stmt) override;
+    std::string visitCForStmt(const CForStmt& stmt) override;
     std::string visitFuncStmt(const FuncStmt& stmt) override;
     std::string visitObjStmt(const ObjStmt& stmt) override;
     std::string visitBreakStmt(const BreakStmt& stmt) override;

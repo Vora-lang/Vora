@@ -48,7 +48,8 @@ func outer(a) {
 let add10 = outer(10)
 assert(add10(5) == 15, "nested closure")
 
-// Multiple closures each capture independent snapshots
+// Closures capture the same variable via upvalue indirection —
+// mutations are visible to all closures sharing the capture.
 func makeCounters() {
     let count = 0
     func inc() {
@@ -64,11 +65,11 @@ func makeCounters() {
 let counters = makeCounters()
 let incFn = counters[0]
 let decFn = counters[1]
-// Each closure has its own snapshot of count, starting from 0
-assert(incFn() == 1, "snapshot inc1")
-assert(incFn() == 2, "snapshot inc2")
-// dec has its own independent copy of count
-assert(decFn() == -1, "snapshot dec1")
-assert(decFn() == -2, "snapshot dec2")
+// Both closures share the same `count` variable
+assert(incFn() == 1, "shared count after inc1")
+assert(incFn() == 2, "shared count after inc2")
+// dec operates on the SAME count (now 2), so 2-1 = 1
+assert(decFn() == 1, "shared count after dec1")
+assert(decFn() == 0, "shared count after dec2")
 
 print("Runtime function tests: PASS")

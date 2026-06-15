@@ -1,0 +1,92 @@
+// runtime/test_closures.va — Closure tests
+// Run: vora tests/runtime/test_closures.va
+
+print("=== Runtime: Closure Tests ===")
+
+// Basic closure capture
+func makeAdder(x) {
+    func add(y) { return x + y }
+    return add
+}
+let add10 = makeAdder(10)
+assert(add10(5) == 15, "basic closure")
+assert(add10(0) == 10, "closure zero")
+assert(add10(-3) == 7, "closure negative")
+
+// Multiple closures from same factory
+let add20 = makeAdder(20)
+assert(add10(5) == 15, "closure independent 1")
+assert(add20(5) == 25, "closure independent 2")
+
+// Closure mutating captured variable
+func makeCounter() {
+    let n = 0
+    func next() {
+        n = n + 1
+        return n
+    }
+    return next
+}
+let c1 = makeCounter()
+assert(c1() == 1, "counter 1")
+assert(c1() == 2, "counter 2")
+assert(c1() == 3, "counter 3")
+
+// Each closure factory creates independent state
+let c2 = makeCounter()
+assert(c2() == 1, "counter independent 1")
+assert(c1() == 4, "counter c1 still 4")
+assert(c2() == 2, "counter independent 2")
+
+// Closure capturing multiple variables
+func makeCalculator(base) {
+    let offset = 10
+    func calc(x) { return base * x + offset }
+    return calc
+}
+let calc = makeCalculator(2)
+assert(calc(5) == 20, "multi-capture")  // 2*5 + 10
+
+// Nested closures
+func outer(a) {
+    func middle(b) {
+        func inner(c) { return a + b + c }
+        return inner
+    }
+    return middle
+}
+let m = outer(1)
+let inn = m(2)
+assert(inn(3) == 6, "nested closure")  // 1+2+3
+
+// Closure returned and called multiple times
+func makeMultiplier(factor) {
+    func multiply(x) { return x * factor }
+    return multiply
+}
+let triple = makeMultiplier(3)
+assert(triple(4) == 12, "multiplier 1")
+assert(triple(5) == 15, "multiplier 2")
+assert(triple(0) == 0, "multiplier zero")
+
+// Closure capturing loop variable workaround (capture by value)
+func makeFunctions() {
+    let funcs = []
+    let i = 0
+    while (i < 3) {
+        let captured = i
+        func makeFn(val) {
+            func fn() { return val }
+            return fn
+        }
+        funcs.add(makeFn(captured))
+        i = i + 1
+    }
+    return funcs
+}
+let fns = makeFunctions()
+assert(fns[0]() == 0, "loop capture 0")
+assert(fns[1]() == 1, "loop capture 1")
+assert(fns[2]() == 2, "loop capture 2")
+
+print("Runtime closure tests: PASS")

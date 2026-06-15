@@ -100,6 +100,7 @@ public:
     void visitSuperExpr(const SuperExpr& expr) override;
     void visitIncDecExpr(const IncDecExpr& expr) override;
     void visitTernaryExpr(const TernaryExpr& expr) override;
+    void visitFuncExpr(const FuncExpr& expr) override;
 
     // --- StmtVisitor ---
     void visitExprStmt(const ExprStmt& stmt) override;
@@ -109,6 +110,7 @@ public:
     void visitIfStmt(const IfStmt& stmt) override;
     void visitWhileStmt(const WhileStmt& stmt) override;
     void visitForStmt(const ForStmt& stmt) override;
+    void visitCForStmt(const CForStmt& stmt) override;
     void visitFuncStmt(const FuncStmt& stmt) override;
     void visitObjStmt(const ObjStmt& stmt) override;
     void visitBreakStmt(const BreakStmt& stmt) override;

@@ -49,9 +49,9 @@ func canPartition(nums) {
 assert(canPartition([1, 5, 11, 5]) == true);      // [1,5,5] and [11], both sum to 11
 assert(canPartition([1, 2, 3, 5]) == false);       // sum=11 (odd? 1+2+3+5=11, odd -> false)
 assert(canPartition([1, 2, 5]) == false);          // sum=8, target=4, no combination
-assert(canPartition([2, 2, 3, 5]) == true);        // sum=12, target=6, [2,2,3]=7? [2,2] and [5]? No... [2,2] sum to 6 ✓
+assert(canPartition([2, 2, 3, 5]) == false);       // sum=12, target=6, no subset sums to 6 (2+2=4, 2+3=5, 2+5=7, 3+5=8...)
 assert(canPartition([1]) == false);
-assert(canPartition([3, 3, 3, 4, 5]) == false);    // sum=18, target=9, can't make 9
+assert(canPartition([3, 3, 3, 4, 5]) == true);     // sum=18, target=9, 4+5=9
 assert(canPartition([1, 1, 1, 1]) == true);        // sum=4, target=2, [1,1]
 assert(canPartition([100]) == false);
 assert(canPartition([14, 9, 8, 4, 3, 2]) == true); // sum=40, target=20, 14+4+2=20

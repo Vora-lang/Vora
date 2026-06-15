@@ -2,7 +2,7 @@
 // Kadane's algorithm - find subarray with max sum.
 
 func maxSubArray(nums) {
-    if nums.length == 0 {
+    if (nums.length == 0) {
         return 0;
     }
     let currentSum = nums[0];
@@ -10,12 +10,12 @@ func maxSubArray(nums) {
 
     for i in range(1, nums.length) {
         let x = nums[i];
-        if currentSum + x > x {
+        if (currentSum + x > x) {
             currentSum = currentSum + x;
         } else {
             currentSum = x;
         }
-        if currentSum > maxSum {
+        if (currentSum > maxSum) {
             maxSum = currentSum;
         }
     }

@@ -218,6 +218,11 @@ void registerBuiltins(VM& vm) {
             while (u > 0) { digits = hexChars[u & 0xF] + digits; u >>= 4; }
             return GcHeap::instance().alloc<GcString>((neg ? std::string("-0x") : std::string("0x")) + digits);
         });
+
+    vm.defineNative("toString", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            return GcHeap::instance().alloc<GcString>(valueToString(arguments[0]));
+        });
 }
 
 // ============================================================================

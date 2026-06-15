@@ -1,5 +1,5 @@
 try {
-    throw "test error";
+    throw "test error"
 } catch (e) {
-    assert(e == "test error");
+    assert(e == "test error")
 }
