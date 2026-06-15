@@ -37,20 +37,20 @@ void registerBuiltins(VM& vm) {
 
     vm.defineNative("type", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            return std::visit([](auto&& arg) -> std::string {
+            return std::visit([](auto&& arg) -> GcPtr<GcString> {
                 using T = std::decay_t<decltype(arg)>;
-                if constexpr (std::is_same_v<T, std::nullptr_t>) return "null";
-                else if constexpr (std::is_same_v<T, double>) return "float";
-                else if constexpr (std::is_same_v<T, int64_t>) return "int";
-                else if constexpr (std::is_same_v<T, bool>) return "boolean";
-                else if constexpr (std::is_same_v<T, std::string>) return "string";
-                else if constexpr (std::is_same_v<T, GcPtr<Array>>) return "array";
-                else if constexpr (std::is_same_v<T, GcPtr<Dict>>) return "dict";
-                else if constexpr (std::is_same_v<T, GcPtr<Callable>>) return "function";
-                else if constexpr (std::is_same_v<T, GcPtr<ObjectInstance>>) return "object";
-                else if constexpr (std::is_same_v<T, GcPtr<FunctionPrototype>>) return "function";
-                else if constexpr (std::is_same_v<T, GcPtr<ClassDefinition>>) return "class";
-                else return "unknown";
+                if constexpr (std::is_same_v<T, std::nullptr_t>) return GcHeap::instance().alloc<GcString>("null");
+                else if constexpr (std::is_same_v<T, double>) return GcHeap::instance().alloc<GcString>("float");
+                else if constexpr (std::is_same_v<T, int64_t>) return GcHeap::instance().alloc<GcString>("int");
+                else if constexpr (std::is_same_v<T, bool>) return GcHeap::instance().alloc<GcString>("boolean");
+                else if constexpr (std::is_same_v<T, GcPtr<GcString>>) return GcHeap::instance().alloc<GcString>("string");
+                else if constexpr (std::is_same_v<T, GcPtr<Array>>) return GcHeap::instance().alloc<GcString>("array");
+                else if constexpr (std::is_same_v<T, GcPtr<Dict>>) return GcHeap::instance().alloc<GcString>("dict");
+                else if constexpr (std::is_same_v<T, GcPtr<Callable>>) return GcHeap::instance().alloc<GcString>("function");
+                else if constexpr (std::is_same_v<T, GcPtr<ObjectInstance>>) return GcHeap::instance().alloc<GcString>("object");
+                else if constexpr (std::is_same_v<T, GcPtr<FunctionPrototype>>) return GcHeap::instance().alloc<GcString>("function");
+                else if constexpr (std::is_same_v<T, GcPtr<ClassDefinition>>) return GcHeap::instance().alloc<GcString>("class");
+                else return GcHeap::instance().alloc<GcString>("unknown");
             }, arguments[0]);
         });
 
@@ -59,8 +59,8 @@ void registerBuiltins(VM& vm) {
             const auto& v = arguments[0];
             if (std::holds_alternative<GcPtr<Array>>(v))
                 return static_cast<int64_t>(std::get<GcPtr<Array>>(v)->elements.size());
-            if (std::holds_alternative<std::string>(v))
-                return static_cast<int64_t>(std::get<std::string>(v).size());
+            if (std::holds_alternative<GcPtr<GcString>>(v))
+                return static_cast<int64_t>(std::get<GcPtr<GcString>>(v)->value.size());
             if (std::holds_alternative<GcPtr<Dict>>(v))
                 return static_cast<int64_t>(std::get<GcPtr<Dict>>(v)->pairs.size());
             return nullptr;  // will be caught by runtime
@@ -78,13 +78,13 @@ void registerBuiltins(VM& vm) {
             if (arguments.empty()) return nullptr;
             if (!isTruthy(arguments[0])) {
                 std::string msg = "Assertion failed";
-                if (arguments.size() >= 2 && std::holds_alternative<std::string>(arguments[1])) {
-                    msg = std::get<std::string>(arguments[1]);
+                if (arguments.size() >= 2 && std::holds_alternative<GcPtr<GcString>>(arguments[1])) {
+                    msg = std::get<GcPtr<GcString>>(arguments[1])->value;
                 }
                 // Route through VM exception mechanism so assert failures
                 // are catchable by try/catch (consistent with interpreter).
                 vm.nativeError = true;
-                vm.nativeErrorValue = std::string(msg);
+                vm.nativeErrorValue = GcHeap::instance().alloc<GcString>(msg);
                 return nullptr;
             }
             return nullptr;
@@ -97,9 +97,9 @@ void registerBuiltins(VM& vm) {
                 return arg;
             if (std::holds_alternative<double>(arg))
                 return static_cast<int64_t>(std::trunc(std::get<double>(arg)));
-            if (std::holds_alternative<std::string>(arg)) {
+            if (std::holds_alternative<GcPtr<GcString>>(arg)) {
                 try {
-                    return static_cast<int64_t>(std::trunc(std::stod(std::get<std::string>(arg))));
+                    return static_cast<int64_t>(std::trunc(std::stod(std::get<GcPtr<GcString>>(arg)->value)));
                 } catch (const std::exception&) {
                     return nullptr;
                 }
@@ -114,9 +114,9 @@ void registerBuiltins(VM& vm) {
             const auto& arg = arguments[0];
             if (std::holds_alternative<int64_t>(arg)) return static_cast<double>(std::get<int64_t>(arg));
             if (std::holds_alternative<double>(arg)) return arg;
-            if (std::holds_alternative<std::string>(arg)) {
+            if (std::holds_alternative<GcPtr<GcString>>(arg)) {
                 try {
-                    return std::stod(std::get<std::string>(arg));
+                    return std::stod(std::get<GcPtr<GcString>>(arg)->value);
                 } catch (const std::exception&) {
                     return nullptr;
                 }
@@ -162,7 +162,7 @@ void registerBuiltins(VM& vm) {
             if (!arguments.empty()) std::cout << valueToString(arguments[0]);
             std::string line;
             std::getline(std::cin, line);
-            return line;
+            return GcHeap::instance().alloc<GcString>(line);
         });
 
     vm.defineNative("bin", 1,
@@ -174,14 +174,14 @@ void registerBuiltins(VM& vm) {
                 n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
             else
                 return nullptr;  // non-numeric argument
-            if (n == 0) return std::string("0b0");
+            if (n == 0) return GcHeap::instance().alloc<GcString>("0b0");
             bool neg = n < 0;
             // static_cast<uint64_t>(n) is well-defined even for negative n
             // (two's complement). Avoids signed overflow UB when n == INT64_MIN.
             uint64_t u = static_cast<uint64_t>(n);
             std::string bits;
             while (u > 0) { bits = (u & 1 ? '1' : '0') + bits; u >>= 1; }
-            return (neg ? std::string("-0b") : std::string("0b")) + bits;
+            return GcHeap::instance().alloc<GcString>((neg ? std::string("-0b") : std::string("0b")) + bits);
         });
 
     vm.defineNative("oct", 1,
@@ -193,12 +193,12 @@ void registerBuiltins(VM& vm) {
                 n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
             else
                 return nullptr;  // non-numeric argument
-            if (n == 0) return std::string("0o0");
+            if (n == 0) return GcHeap::instance().alloc<GcString>("0o0");
             bool neg = n < 0;
             uint64_t u = static_cast<uint64_t>(n);
             std::string digits;
             while (u > 0) { digits = static_cast<char>('0' + (u & 7)) + digits; u >>= 3; }
-            return (neg ? std::string("-0o") : std::string("0o")) + digits;
+            return GcHeap::instance().alloc<GcString>((neg ? std::string("-0o") : std::string("0o")) + digits);
         });
 
     vm.defineNative("hex", 1,
@@ -210,13 +210,13 @@ void registerBuiltins(VM& vm) {
                 n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
             else
                 return nullptr;  // non-numeric argument
-            if (n == 0) return std::string("0x0");
+            if (n == 0) return GcHeap::instance().alloc<GcString>("0x0");
             bool neg = n < 0;
             uint64_t u = static_cast<uint64_t>(n);
             const char* hexChars = "0123456789abcdef";
             std::string digits;
             while (u > 0) { digits = hexChars[u & 0xF] + digits; u >>= 4; }
-            return (neg ? std::string("-0x") : std::string("0x")) + digits;
+            return GcHeap::instance().alloc<GcString>((neg ? std::string("-0x") : std::string("0x")) + digits);
         });
 }
 
@@ -283,8 +283,8 @@ GcPtr<NativeFunction> getArrayMethod(
                             std::get<int64_t>(arr->elements[i]) == std::get<int64_t>(args[0])) return static_cast<int64_t>(i);
                         if (std::holds_alternative<double>(arr->elements[i]) &&
                             std::get<double>(arr->elements[i]) == std::get<double>(args[0])) return static_cast<int64_t>(i);
-                        if (std::holds_alternative<std::string>(arr->elements[i]) &&
-                            std::get<std::string>(arr->elements[i]) == std::get<std::string>(args[0])) return static_cast<int64_t>(i);
+                        if (std::holds_alternative<GcPtr<GcString>>(arr->elements[i]) &&
+                            std::get<GcPtr<GcString>>(arr->elements[i])->value == std::get<GcPtr<GcString>>(args[0])->value) return static_cast<int64_t>(i);
                     }
                     if (isNumeric(arr->elements[i]) && isNumeric(args[0]) &&
                         toDouble(arr->elements[i]) == toDouble(args[0])) return static_cast<int64_t>(i);
@@ -315,7 +315,7 @@ GcPtr<NativeFunction> getDictMethod(
             [dict](const std::vector<Value>&) -> Value {
                 auto arr = GcHeap::instance().alloc<Array>();
                 for (const auto& [k, v] : dict->pairs) {
-                    arr->elements.push_back(std::string(k));
+                    arr->elements.push_back(GcHeap::instance().alloc<GcString>(k));
                 }
                 return arr;
             });
@@ -363,7 +363,7 @@ GcPtr<NativeFunction> getStringMethod(
         return GcHeap::instance().alloc<NativeFunction>("substring", -1,
             [str](const std::vector<Value>& args) -> Value {
                 int64_t len = static_cast<int64_t>(str.size());
-                if (len == 0) return std::string("");
+                if (len == 0) return GcHeap::instance().alloc<GcString>("");
                 int64_t start = (args.size() >= 1 && isNumeric(args[0]))
                     ? static_cast<int64_t>(toDouble(args[0])) : 0;
                 int64_t end   = (args.size() >= 2 && isNumeric(args[1]))
@@ -372,30 +372,30 @@ GcPtr<NativeFunction> getStringMethod(
                 if (end < 0) end += len;
                 if (start < 0) start = 0;
                 if (end > len) end = len;
-                if (start >= end) return std::string("");
-                return str.substr(static_cast<size_t>(start), static_cast<size_t>(end - start));
+                if (start >= end) return GcHeap::instance().alloc<GcString>("");
+                return GcHeap::instance().alloc<GcString>(str.substr(static_cast<size_t>(start), static_cast<size_t>(end - start)));
             });
     }
     if (name == "include") {
         return GcHeap::instance().alloc<NativeFunction>("include", 1,
             [str](const std::vector<Value>& args) -> Value {
-                if (!std::holds_alternative<std::string>(args[0])) return false;
-                return str.find(std::get<std::string>(args[0])) != std::string::npos;
+                if (!std::holds_alternative<GcPtr<GcString>>(args[0])) return false;
+                return str.find(std::get<GcPtr<GcString>>(args[0])->value) != std::string::npos;
             });
     }
     if (name == "startsWith") {
         return GcHeap::instance().alloc<NativeFunction>("startsWith", 1,
             [str](const std::vector<Value>& args) -> Value {
-                if (!std::holds_alternative<std::string>(args[0])) return false;
-                const auto& prefix = std::get<std::string>(args[0]);
+                if (!std::holds_alternative<GcPtr<GcString>>(args[0])) return false;
+                const auto& prefix = std::get<GcPtr<GcString>>(args[0])->value;
                 return str.size() >= prefix.size() && str.compare(0, prefix.size(), prefix) == 0;
             });
     }
     if (name == "endsWith") {
         return GcHeap::instance().alloc<NativeFunction>("endsWith", 1,
             [str](const std::vector<Value>& args) -> Value {
-                if (!std::holds_alternative<std::string>(args[0])) return false;
-                const auto& suffix = std::get<std::string>(args[0]);
+                if (!std::holds_alternative<GcPtr<GcString>>(args[0])) return false;
+                const auto& suffix = std::get<GcPtr<GcString>>(args[0])->value;
                 return str.size() >= suffix.size() && str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
             });
     }
@@ -404,7 +404,7 @@ GcPtr<NativeFunction> getStringMethod(
             [str](const std::vector<Value>&) -> Value {
                 std::string result = str;
                 for (auto& c : result) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                return result;
+                return GcHeap::instance().alloc<GcString>(result);
             });
     }
     if (name == "lower") {
@@ -412,7 +412,7 @@ GcPtr<NativeFunction> getStringMethod(
             [str](const std::vector<Value>&) -> Value {
                 std::string result = str;
                 for (auto& c : result) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                return result;
+                return GcHeap::instance().alloc<GcString>(result);
             });
     }
     if (name == "trim") {
@@ -420,64 +420,64 @@ GcPtr<NativeFunction> getStringMethod(
             [str](const std::vector<Value>&) -> Value {
                 size_t start = 0;
                 while (start < str.size() && std::isspace(static_cast<unsigned char>(str[start]))) ++start;
-                if (start == str.size()) return std::string("");
+                if (start == str.size()) return GcHeap::instance().alloc<GcString>("");
                 size_t end = str.size() - 1;
                 while (end > start && std::isspace(static_cast<unsigned char>(str[end]))) --end;
-                return str.substr(start, end - start + 1);
+                return GcHeap::instance().alloc<GcString>(str.substr(start, end - start + 1));
             });
     }
     if (name == "replace") {
         return GcHeap::instance().alloc<NativeFunction>("replace", 2,
             [str](const std::vector<Value>& args) -> Value {
-                if (!std::holds_alternative<std::string>(args[0]) || !std::holds_alternative<std::string>(args[1]))
-                    return str;
-                const auto& oldStr = std::get<std::string>(args[0]);
-                const auto& newStr = std::get<std::string>(args[1]);
-                if (oldStr.empty()) return str;
+                if (!std::holds_alternative<GcPtr<GcString>>(args[0]) || !std::holds_alternative<GcPtr<GcString>>(args[1]))
+                    return GcHeap::instance().alloc<GcString>(str);
+                const auto& oldStr = std::get<GcPtr<GcString>>(args[0])->value;
+                const auto& newStr = std::get<GcPtr<GcString>>(args[1])->value;
+                if (oldStr.empty()) return GcHeap::instance().alloc<GcString>(str);
                 size_t pos = str.find(oldStr);
-                if (pos == std::string::npos) return str;
+                if (pos == std::string::npos) return GcHeap::instance().alloc<GcString>(str);
                 std::string result = str;
                 result.replace(pos, oldStr.size(), newStr);
-                return result;
+                return GcHeap::instance().alloc<GcString>(result);
             });
     }
     if (name == "replaceAll") {
         return GcHeap::instance().alloc<NativeFunction>("replaceAll", 2,
             [str](const std::vector<Value>& args) -> Value {
-                if (!std::holds_alternative<std::string>(args[0]) || !std::holds_alternative<std::string>(args[1]))
-                    return str;
-                const auto& oldStr = std::get<std::string>(args[0]);
-                const auto& newStr = std::get<std::string>(args[1]);
-                if (oldStr.empty()) return str;
+                if (!std::holds_alternative<GcPtr<GcString>>(args[0]) || !std::holds_alternative<GcPtr<GcString>>(args[1]))
+                    return GcHeap::instance().alloc<GcString>(str);
+                const auto& oldStr = std::get<GcPtr<GcString>>(args[0])->value;
+                const auto& newStr = std::get<GcPtr<GcString>>(args[1])->value;
+                if (oldStr.empty()) return GcHeap::instance().alloc<GcString>(str);
                 std::string result = str;
                 size_t pos = 0;
                 while ((pos = result.find(oldStr, pos)) != std::string::npos) {
                     result.replace(pos, oldStr.size(), newStr);
                     pos += newStr.size();
                 }
-                return result;
+                return GcHeap::instance().alloc<GcString>(result);
             });
     }
     if (name == "split") {
         return GcHeap::instance().alloc<NativeFunction>("split", 1,
             [str](const std::vector<Value>& args) -> Value {
                 auto result = GcHeap::instance().alloc<Array>();
-                if (!std::holds_alternative<std::string>(args[0])) {
-                    result->elements.push_back(str);
+                if (!std::holds_alternative<GcPtr<GcString>>(args[0])) {
+                    result->elements.push_back(GcHeap::instance().alloc<GcString>(str));
                     return result;
                 }
-                const auto& delim = std::get<std::string>(args[0]);
+                const auto& delim = std::get<GcPtr<GcString>>(args[0])->value;
                 if (delim.empty()) {
-                    for (char c : str) result->elements.push_back(std::string(1, c));
+                    for (char c : str) result->elements.push_back(GcHeap::instance().alloc<GcString>(std::string(1, c)));
                     return result;
                 }
                 size_t pos = 0;
                 size_t found;
                 while ((found = str.find(delim, pos)) != std::string::npos) {
-                    result->elements.push_back(str.substr(pos, found - pos));
+                    result->elements.push_back(GcHeap::instance().alloc<GcString>(str.substr(pos, found - pos)));
                     pos = found + delim.size();
                 }
-                result->elements.push_back(str.substr(pos));
+                result->elements.push_back(GcHeap::instance().alloc<GcString>(str.substr(pos)));
                 return result;
             });
     }

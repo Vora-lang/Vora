@@ -30,7 +30,7 @@ using Value = std::variant<
     double,
     int64_t,
     bool,
-    std::string,
+    GcPtr<struct GcString>,
     GcPtr<struct Array>,
     GcPtr<struct Dict>,
     GcPtr<Callable>,
@@ -59,6 +59,14 @@ struct Dict : GcObject {
     std::unordered_map<std::string, Value> pairs;
     void trace(std::vector<GcObject*>& wl) override;
     size_t gcSize() const override { return sizeof(Dict) + pairs.bucket_count() * (sizeof(void*) * 2 + sizeof(Value)); }
+};
+
+struct GcString : GcObject {
+    std::string value;
+    GcString() = default;
+    explicit GcString(std::string s) : value(std::move(s)) {}
+    void trace(std::vector<GcObject*>& wl) override {}  // no GcObject references
+    size_t gcSize() const override { return sizeof(GcString) + value.capacity(); }
 };
 
 struct ObjectInstance : GcObject {

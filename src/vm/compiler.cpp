@@ -89,7 +89,7 @@ uint8_t Compiler::makeConstant(Value value) {
 }
 
 uint8_t Compiler::identifierConstant(const std::string& name) {
-    return makeConstant(name);
+    return makeConstant(GcHeap::instance().alloc<GcString>(name));
 }
 
 uint8_t Compiler::addFunctionPrototype(FunctionPrototype proto) {

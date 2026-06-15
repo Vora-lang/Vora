@@ -40,8 +40,8 @@ TEST_CASE("value_bool_holds") {
 }
 
 TEST_CASE("value_string_holds") {
-    Value v(std::string("hello"));
-    CHECK(std::holds_alternative<std::string>(v));
+    Value v(GcHeap::instance().alloc<GcString>("hello"));
+    CHECK(std::holds_alternative<GcPtr<GcString>>(v));
     CHECK_FALSE(isNumeric(v));
 }
 
@@ -90,7 +90,7 @@ TEST_CASE("value_isNumeric_coverage") {
     CHECK(isNumeric(Value(3.14)));
     CHECK_FALSE(isNumeric(Value(nullptr)));
     CHECK_FALSE(isNumeric(Value(true)));
-    CHECK_FALSE(isNumeric(Value(std::string("hi"))));
+    CHECK_FALSE(isNumeric(Value(GcHeap::instance().alloc<GcString>("hi"))));
     CHECK_FALSE(isNumeric(Value(GcHeap::instance().alloc<Array>())));
 }
 
@@ -119,8 +119,8 @@ TEST_CASE("valueToString_double") {
 }
 
 TEST_CASE("valueToString_string") {
-    CHECK(valueToString(Value(std::string("hello"))) == "hello");
-    CHECK(valueToString(Value(std::string(""))) == "");
+    CHECK(valueToString(Value(GcHeap::instance().alloc<GcString>("hello"))) == "hello");
+    CHECK(valueToString(Value(GcHeap::instance().alloc<GcString>(""))) == "");
 }
 
 TEST_CASE("valueToString_array") {

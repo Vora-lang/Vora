@@ -127,10 +127,10 @@ TEST_CASE("chunk_addConstant_dedup_double") {
 
 TEST_CASE("chunk_addConstant_dedup_string") {
     Chunk c;
-    size_t i0 = c.addConstant(std::string("hello"));
-    size_t i1 = c.addConstant(std::string("hello"));
+    size_t i0 = c.addConstant(GcHeap::instance().alloc<GcString>("hello"));
+    size_t i1 = c.addConstant(GcHeap::instance().alloc<GcString>("hello"));
     CHECK(i0 == i1);
-    size_t i2 = c.addConstant(std::string("world"));
+    size_t i2 = c.addConstant(GcHeap::instance().alloc<GcString>("world"));
     CHECK(i2 != i0);
     CHECK(c.constants.size() == 2);
 }

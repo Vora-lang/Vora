@@ -15,7 +15,9 @@ namespace vora {
 // =========================================================================
 
 void pushGcRefs(const Value& v, std::vector<GcObject*>& worklist) {
-    if (auto* p = std::get_if<GcPtr<Array>>(&v)) {
+    if (auto* p = std::get_if<GcPtr<GcString>>(&v)) {
+        if (*p) worklist.push_back(p->get());
+    } else if (auto* p = std::get_if<GcPtr<Array>>(&v)) {
         if (*p) worklist.push_back(p->get());
     } else if (auto* p = std::get_if<GcPtr<Dict>>(&v)) {
         if (*p) worklist.push_back(p->get());
@@ -86,6 +88,12 @@ void printValue(const Value& value) {
 
             std::cout
                 << (arg ? "true" : "false");
+
+        } else if constexpr (
+            std::is_same_v<T, GcPtr<GcString>>
+        ) {
+
+            std::cout << arg->value;
 
         } else if constexpr (
             std::is_same_v<T, GcPtr<Array>>
@@ -192,6 +200,8 @@ std::string valueToString(const Value& value) {
             oss << "null";
         } else if constexpr (std::is_same_v<T, bool>) {
             oss << (arg ? "true" : "false");
+        } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
+            oss << arg->value;
         } else if constexpr (std::is_same_v<T, GcPtr<Array>>) {
             oss << "[";
             for (size_t i = 0; i < arg->elements.size(); ++i) {

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <variant>
 
+#include "../gc/gc_heap.h"
 #include "../runtime/vora_function.h"
 
 namespace vora {
@@ -21,8 +22,8 @@ void Compiler::visitLiteralExpr(const LiteralExpr& expr) {
             : static_cast<uint8_t>(OpCode::OP_FALSE));
     } else if (std::holds_alternative<double>(v) || std::holds_alternative<int64_t>(v)) {
         emitConstant(v);
-    } else if (std::holds_alternative<std::string>(v)) {
-        const auto& str = std::get<std::string>(v);
+    } else if (std::holds_alternative<GcPtr<GcString>>(v)) {
+        const auto& str = std::get<GcPtr<GcString>>(v)->value;
         // Check for ${...} interpolation patterns
         if (str.find("${") != std::string::npos) {
             compileInterpolatedString(str);
@@ -69,28 +70,28 @@ void Compiler::compileInterpolatedString(const std::string& str) {
     }
 
     if (parts.empty()) {
-        emitConstant(std::string(""));
+        emitConstant(GcHeap::instance().alloc<GcString>(""));
         return;
     }
 
     // Emit first part
     if (isLiteral[0]) {
-        emitConstant(parts[0]);
+        emitConstant(GcHeap::instance().alloc<GcString>(parts[0]));
     } else {
         compileVariableOrPropertyRef(parts[0]);
         // Stringify: push "", then OP_ADD
-        emitConstant(std::string(""));
+        emitConstant(GcHeap::instance().alloc<GcString>(""));
         emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
     }
 
     // Emit remaining parts and concatenate
     for (size_t j = 1; j < parts.size(); j++) {
         if (isLiteral[j]) {
-            emitConstant(parts[j]);
+            emitConstant(GcHeap::instance().alloc<GcString>(parts[j]));
         } else {
             compileVariableOrPropertyRef(parts[j]);
             // Stringify non-literal values
-            emitConstant(std::string(""));
+            emitConstant(GcHeap::instance().alloc<GcString>(""));
             emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
         }
         emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
@@ -203,10 +204,10 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
                 }
             }
         }
-        if (std::holds_alternative<std::string>(lv) && std::holds_alternative<std::string>(rv)) {
+        if (std::holds_alternative<GcPtr<GcString>>(lv) && std::holds_alternative<GcPtr<GcString>>(rv)) {
             // String concatenation at compile time
             if (expr.op.type == TokenType::PLUS) {
-                emitConstant(std::get<std::string>(lv) + std::get<std::string>(rv));
+                emitConstant(GcHeap::instance().alloc<GcString>(std::get<GcPtr<GcString>>(lv)->value + std::get<GcPtr<GcString>>(rv)->value));
                 return;
             }
         }

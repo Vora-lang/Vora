@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "../ast/stmt.h"
+#include "../gc/gc_heap.h"
 #include "../vm/chunk.h"  // for printSourceLine()
 #include <iostream>
 
@@ -720,7 +721,7 @@ std::unique_ptr<Expr> Parser::primary() {
 
     if (match(TokenType::STRING)) {
         return std::make_unique<LiteralExpr>(
-            previous().lexeme
+            GcHeap::instance().alloc<GcString>(previous().lexeme)
         );
     }
 
@@ -792,7 +793,7 @@ std::unique_ptr<Expr> Parser::primary() {
                 // Bare identifiers in dict keys are treated as string literals
                 // (e.g. {name: "Vora"} — "name" is the string key, not a variable).
                 if (auto varKey = dynamic_cast<VariableExpr*>(key.get())) {
-                    key = std::make_unique<LiteralExpr>(varKey->name);
+                    key = std::make_unique<LiteralExpr>(GcHeap::instance().alloc<GcString>(varKey->name));
                 }
 
                 if (!match(TokenType::COLON)) {

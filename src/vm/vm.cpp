@@ -274,7 +274,7 @@ std::string VM::captureStackTrace() const {
 }
 
 bool VM::runtimeErrorOrThrow(const std::string& message) {
-    if (throwException(message)) return true;  // caught by catch handler
+    if (throwException(GcHeap::instance().alloc<GcString>(message))) return true;  // caught by catch handler
     runtimeError(message);
     return false;  // not caught
 }
@@ -380,8 +380,8 @@ void VM::initGlobals(const std::vector<std::string>& names) {
                 return static_cast<double>(
                     std::get<GcPtr<Array>>(arg)->elements.size());
             }
-            if (std::holds_alternative<std::string>(arg)) {
-                return static_cast<double>(std::get<std::string>(arg).size());
+            if (std::holds_alternative<GcPtr<GcString>>(arg)) {
+                return static_cast<double>(std::get<GcPtr<GcString>>(arg)->value.size());
             }
             if (std::holds_alternative<GcPtr<ObjectInstance>>(arg)) {
                 return static_cast<double>(
@@ -652,7 +652,7 @@ InterpretResult VM::run() {
 #define RUNTIME_ERROR_OR_THROW(msg) \
     do { \
         std::string _errMsg = (msg); \
-        if (throwException(_errMsg)) { goto dispatch; } \
+        if (throwException(GcHeap::instance().alloc<GcString>(_errMsg))) { goto dispatch; } \
         runtimeError(_errMsg); \
         return InterpretResult::RUNTIME_ERROR; \
     } while (false)
@@ -1129,7 +1129,7 @@ InterpretResult VM::run() {
                         }
                         auto it = dpairs.begin();
                         std::advance(it, idx);
-                        push(std::string(it->first));
+                        push(GcHeap::instance().alloc<GcString>(it->first));
                     } else {
                         // String key: lookup by name
                         std::string key = valueToString(indexVal);
@@ -1153,12 +1153,12 @@ InterpretResult VM::run() {
 
                 size_t index = static_cast<size_t>(rawIndex);
 
-                if (std::holds_alternative<std::string>(target)) {
-                    const auto& str = std::get<std::string>(target);
+                if (std::holds_alternative<GcPtr<GcString>>(target)) {
+                    const auto& str = std::get<GcPtr<GcString>>(target)->value;
                     if (index >= str.size()) {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
-                    push(std::string(1, str[index]));
+                    push(GcHeap::instance().alloc<GcString>(std::string(1, str[index])));
                 } else if (std::holds_alternative<GcPtr<Array>>(target)) {
                     const auto& elements =
                         std::get<GcPtr<Array>>(target)->elements;
@@ -1174,7 +1174,7 @@ InterpretResult VM::run() {
                     }
                     auto it = props.begin();
                     std::advance(it, index);
-                    push(std::string(it->first));
+                    push(GcHeap::instance().alloc<GcString>(it->first));
                 } else {
                     RUNTIME_ERROR_OR_THROW("Indexing requires an array, string, or object");
                 }
@@ -1212,7 +1212,7 @@ InterpretResult VM::run() {
                     }
                     elements[index] = value;
                     push(value);
-                } else if (std::holds_alternative<std::string>(target)) {
+                } else if (std::holds_alternative<GcPtr<GcString>>(target)) {
                     RUNTIME_ERROR_OR_THROW("Cannot assign to string index (strings are immutable)");
                 } else {
                     RUNTIME_ERROR_OR_THROW("Index assignment requires an array");
@@ -1223,7 +1223,7 @@ InterpretResult VM::run() {
             // --- Objects ---
             case OpCode::OP_GET_PROPERTY: {
                 uint8_t nameIndex = READ_BYTE();
-                std::string propName = std::get<std::string>(currentChunk->constants[nameIndex]);
+                std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
                 Value obj = pop();
 
                 // Array built-in methods & properties
@@ -1239,8 +1239,8 @@ InterpretResult VM::run() {
                 }
 
                 // String built-in methods & properties
-                if (std::holds_alternative<std::string>(obj)) {
-                    const auto& str = std::get<std::string>(obj);
+                if (std::holds_alternative<GcPtr<GcString>>(obj)) {
+                    const auto& str = std::get<GcPtr<GcString>>(obj)->value;
                     if (propName == "length") {
                         push(static_cast<int64_t>(str.size()));
                         break;
@@ -1300,7 +1300,7 @@ InterpretResult VM::run() {
             }
             case OpCode::OP_SET_PROPERTY: {
                 uint8_t nameIndex = READ_BYTE();
-                std::string propName = std::get<std::string>(currentChunk->constants[nameIndex]);
+                std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
                 Value value = pop();
                 Value obj = pop();
 
@@ -1315,7 +1315,7 @@ InterpretResult VM::run() {
             }
             case OpCode::OP_GET_SUPER: {
                 uint8_t nameIndex = READ_BYTE();
-                std::string propName = std::get<std::string>(currentChunk->constants[nameIndex]);
+                std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
 
                 // Get 'this' from local slot 0 (must be in a method)
                 Value thisVal = stack[frameBaseIndex];

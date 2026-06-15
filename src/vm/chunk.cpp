@@ -85,8 +85,8 @@ static std::string constantToString(const Value& value) {
         if (std::floor(d) == d) return std::to_string(static_cast<int64_t>(d));
         return std::to_string(d);
     }
-    if (std::holds_alternative<std::string>(value)) {
-        return "'" + std::get<std::string>(value) + "'";
+    if (std::holds_alternative<GcPtr<GcString>>(value)) {
+        return "'" + std::get<GcPtr<GcString>>(value)->value + "'";
     }
     if (std::holds_alternative<GcPtr<FunctionPrototype>>(value)) {
         return "<proto " + std::get<GcPtr<FunctionPrototype>>(value)->name + ">";
@@ -165,7 +165,7 @@ size_t Chunk::addConstant(Value value) {
         if (std::holds_alternative<bool>(value) && std::get<bool>(existing) == std::get<bool>(value)) return i;
         if (std::holds_alternative<int64_t>(value) && std::holds_alternative<int64_t>(existing) && std::get<int64_t>(existing) == std::get<int64_t>(value)) return i;
         if (std::holds_alternative<double>(value) && std::holds_alternative<double>(existing) && std::get<double>(existing) == std::get<double>(value)) return i;
-        if (std::holds_alternative<std::string>(value) && std::get<std::string>(existing) == std::get<std::string>(value)) return i;
+        if (std::holds_alternative<GcPtr<GcString>>(value) && std::get<GcPtr<GcString>>(existing)->value == std::get<GcPtr<GcString>>(value)->value) return i;
     }
 
     constants.push_back(value);

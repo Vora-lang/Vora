@@ -223,12 +223,12 @@ std::string SourceFormatter::visitLiteralExpr(const LiteralExpr& expr) {
             return "null";
         } else if constexpr (std::is_same_v<T, bool>) {
             return arg ? "true" : "false";
-        } else if constexpr (std::is_same_v<T, std::string>) {
+        } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
             // Output as a quoted string literal. The value stored is the
             // decoded string content (no surrounding quotes), so we add them.
             // Simple escaping: backslash + double-quote.
             std::string out = "\"";
-            for (char c : arg) {
+            for (char c : arg->value) {
                 if (c == '"') {
                     out += "\\\"";
                 } else if (c == '\\') {
@@ -364,8 +364,8 @@ std::string SourceFormatter::visitDictExpr(const DictExpr& expr) {
         // both represent plain string keys, so output without quotes.
         const Expr* key = expr.pairs[i].first.get();
         if (auto* lit = dynamic_cast<const LiteralExpr*>(key)) {
-            if (std::holds_alternative<std::string>(lit->value)) {
-                ss << std::get<std::string>(lit->value);
+            if (std::holds_alternative<GcPtr<GcString>>(lit->value)) {
+                ss << std::get<GcPtr<GcString>>(lit->value)->value;
             } else {
                 ss << formatExpr(*key, 0);
             }

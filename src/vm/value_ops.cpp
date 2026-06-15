@@ -18,7 +18,7 @@ bool isTruthy(const Value& value) {
     if (std::holds_alternative<bool>(value)) return std::get<bool>(value);
     if (std::holds_alternative<int64_t>(value)) return std::get<int64_t>(value) != 0;
     if (std::holds_alternative<double>(value)) return std::get<double>(value) != 0.0;
-    if (std::holds_alternative<std::string>(value)) return !std::get<std::string>(value).empty();
+    if (std::holds_alternative<GcPtr<GcString>>(value)) return !std::get<GcPtr<GcString>>(value)->value.empty();
     return true;
 }
 
@@ -35,7 +35,7 @@ bool valuesEqual(const Value& a, const Value& b) {
 
     if (std::holds_alternative<std::nullptr_t>(a)) return true;
     if (std::holds_alternative<bool>(a)) return std::get<bool>(a) == std::get<bool>(b);
-    if (std::holds_alternative<std::string>(a)) return std::get<std::string>(a) == std::get<std::string>(b);
+    if (std::holds_alternative<GcPtr<GcString>>(a)) return std::get<GcPtr<GcString>>(a)->value == std::get<GcPtr<GcString>>(b)->value;
 
     if (std::holds_alternative<GcPtr<Array>>(a))
         return std::get<GcPtr<Array>>(a) == std::get<GcPtr<Array>>(b);
@@ -91,15 +91,15 @@ Value addValues(const Value& a, const Value& b, bool& error) {
         return toDouble(a) + toDouble(b);
     }
 
-    if (std::holds_alternative<std::string>(a) && std::holds_alternative<std::string>(b)) {
-        return std::get<std::string>(a) + std::get<std::string>(b);
+    if (std::holds_alternative<GcPtr<GcString>>(a) && std::holds_alternative<GcPtr<GcString>>(b)) {
+        return GcHeap::instance().alloc<GcString>(std::get<GcPtr<GcString>>(a)->value + std::get<GcPtr<GcString>>(b)->value);
     }
 
-    if (std::holds_alternative<std::string>(a)) {
-        return std::get<std::string>(a) + valueToString(b);
+    if (std::holds_alternative<GcPtr<GcString>>(a)) {
+        return GcHeap::instance().alloc<GcString>(std::get<GcPtr<GcString>>(a)->value + valueToString(b));
     }
-    if (std::holds_alternative<std::string>(b)) {
-        return valueToString(a) + std::get<std::string>(b);
+    if (std::holds_alternative<GcPtr<GcString>>(b)) {
+        return GcHeap::instance().alloc<GcString>(valueToString(a) + std::get<GcPtr<GcString>>(b)->value);
     }
 
     if (std::holds_alternative<GcPtr<Array>>(a) && std::holds_alternative<GcPtr<Array>>(b)) {

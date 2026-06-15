@@ -62,9 +62,9 @@ TEST_CASE("vm_isTruthy_double") {
 }
 
 TEST_CASE("vm_isTruthy_string") {
-    CHECK_FALSE(isTruthy(Value(std::string(""))));
-    CHECK(isTruthy(Value(std::string("hello"))));
-    CHECK(isTruthy(Value(std::string("0"))));
+    CHECK_FALSE(isTruthy(Value(GcHeap::instance().alloc<GcString>(""))));
+    CHECK(isTruthy(Value(GcHeap::instance().alloc<GcString>("hello"))));
+    CHECK(isTruthy(Value(GcHeap::instance().alloc<GcString>("0"))));
 }
 
 TEST_CASE("vm_isTruthy_array") {
@@ -96,8 +96,8 @@ TEST_CASE("vm_valuesEqual_double") {
 }
 
 TEST_CASE("vm_valuesEqual_string") {
-    CHECK(valuesEqual(Value(std::string("abc")), Value(std::string("abc"))));
-    CHECK_FALSE(valuesEqual(Value(std::string("abc")), Value(std::string("def"))));
+    CHECK(valuesEqual(Value(GcHeap::instance().alloc<GcString>("abc")), Value(GcHeap::instance().alloc<GcString>("abc"))));
+    CHECK_FALSE(valuesEqual(Value(GcHeap::instance().alloc<GcString>("abc")), Value(GcHeap::instance().alloc<GcString>("def"))));
 }
 
 TEST_CASE("vm_valuesEqual_cross_type_numeric") {
@@ -124,7 +124,7 @@ TEST_CASE("vm_valuesCompare_numeric") {
 }
 
 TEST_CASE("vm_valuesCompare_non_numeric_returns_zero") {
-    CHECK(valuesCompare(Value(std::string("a")), Value(std::string("b"))) == 0);
+    CHECK(valuesCompare(Value(GcHeap::instance().alloc<GcString>("a")), Value(GcHeap::instance().alloc<GcString>("b"))) == 0);
 }
 
 // ============================================================================
@@ -150,20 +150,20 @@ TEST_CASE("vm_addValues_int_plus_double") {
 
 TEST_CASE("vm_addValues_string_concat") {
     bool err = false;
-    Value result = addValues(Value(std::string("hello ")),
-                             Value(std::string("world")), err);
+    Value result = addValues(Value(GcHeap::instance().alloc<GcString>("hello ")),
+                             Value(GcHeap::instance().alloc<GcString>("world")), err);
     CHECK_FALSE(err);
-    CHECK(std::holds_alternative<std::string>(result));
-    CHECK(std::get<std::string>(result) == "hello world");
+    CHECK(std::holds_alternative<GcPtr<GcString>>(result));
+    CHECK(std::get<GcPtr<GcString>>(result)->value == "hello world");
 }
 
 TEST_CASE("vm_addValues_string_plus_int") {
     bool err = false;
-    Value result = addValues(Value(std::string("x=")),
+    Value result = addValues(Value(GcHeap::instance().alloc<GcString>("x=")),
                              Value(static_cast<int64_t>(42)), err);
     CHECK_FALSE(err);
-    CHECK(std::holds_alternative<std::string>(result));
-    CHECK(std::get<std::string>(result) == "x=42");
+    CHECK(std::holds_alternative<GcPtr<GcString>>(result));
+    CHECK(std::get<GcPtr<GcString>>(result)->value == "x=42");
 }
 
 TEST_CASE("vm_addValues_array_concat") {

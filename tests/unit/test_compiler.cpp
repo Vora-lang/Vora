@@ -88,8 +88,8 @@ TEST_CASE("compiler_literal_string") {
     // Verify the constant is in the pool
     bool found = false;
     for (const auto& c : chunk.constants) {
-        if (std::holds_alternative<std::string>(c) &&
-            std::get<std::string>(c) == "hello") {
+        if (std::holds_alternative<GcPtr<GcString>>(c) &&
+            std::get<GcPtr<GcString>>(c)->value == "hello") {
             found = true;
             break;
         }
@@ -129,8 +129,8 @@ TEST_CASE("compiler_constant_fold_string_concat") {
     // Constant-folded to "hello world" in one constant
     bool found = false;
     for (const auto& c : chunk.constants) {
-        if (std::holds_alternative<std::string>(c) &&
-            std::get<std::string>(c) == "hello world") {
+        if (std::holds_alternative<GcPtr<GcString>>(c) &&
+            std::get<GcPtr<GcString>>(c)->value == "hello world") {
             found = true;
             break;
         }

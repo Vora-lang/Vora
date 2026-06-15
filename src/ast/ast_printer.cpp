@@ -38,8 +38,8 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
             return "null";
         } else if constexpr (std::is_same_v<T, bool>) {
             return arg ? "true" : "false";
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            return arg;
+        } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
+            return arg->value;
         } else if constexpr (std::is_same_v<T, GcPtr<Array>>) {
             std::string out = "[";
             for (size_t i = 0; i < arg->elements.size(); ++i) {
@@ -50,7 +50,7 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
                     using U = std::decay_t<decltype(inner)>;
                     if constexpr (std::is_same_v<U, std::nullptr_t>) return "null";
                     else if constexpr (std::is_same_v<U, bool>) return inner ? "true" : "false";
-                    else if constexpr (std::is_same_v<U, std::string>) return inner;
+                    else if constexpr (std::is_same_v<U, GcPtr<GcString>>) return inner->value;
                     else if constexpr (std::is_same_v<U, GcPtr<Callable>>) return "<fn>";
                     else if constexpr (std::is_same_v<U, GcPtr<Array>>) return "[array]";
                     else if constexpr (std::is_same_v<U, GcPtr<ObjectInstance>>) return "<object>";
