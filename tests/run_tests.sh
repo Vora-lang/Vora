@@ -64,7 +64,14 @@ for file in "$PROJECT_DIR"/tests/lexer/*.va \
     name="${file#$PROJECT_DIR/tests/}"
     printf "  %-45s " "$name"
 
-    if output=$("$VORA" "$file" 2>&1); then
+    # Pipe stdin from /dev/null so input() hits EOF (returns null) in
+    # non-interactive tests. test_input.va gets real data for non-EOF path.
+    if [[ "$name" == *"test_input.va" ]]; then
+        output=$(printf 'hello\n\n42' | "$VORA" "$file" 2>&1)
+    else
+        output=$("$VORA" "$file" < /dev/null 2>&1)
+    fi
+    if [ $? -eq 0 ]; then
         echo "PASS"
         ((PASS++)) || true
     else

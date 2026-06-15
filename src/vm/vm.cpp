@@ -18,6 +18,8 @@
 
 namespace vora {
 
+volatile sig_atomic_t VM::interruptFlag = 0;
+
 // =========================================================================
 // C3 Linearization (Python-style MRO)
 // =========================================================================
@@ -372,12 +374,18 @@ void VM::defineNative(const std::string& name, int arity,
 }
 
 void VM::initGlobals(const std::vector<std::string>& names) {
-    globalNames = names;
-    globalValues.resize(names.size(), nullptr);
-    globalDefined.resize(names.size(), false);
-    globalIndex.clear();
-    for (size_t i = 0; i < names.size(); i++) {
-        globalIndex[names[i]] = static_cast<int>(i);
+    // Merge: only add globals that don't already exist, preserving
+    // existing values. This is critical for REPL where multiple lines
+    // share the same VM — otherwise every new line wipes all globals
+    // defined by previous lines.
+    for (const auto& name : names) {
+        if (globalIndex.find(name) == globalIndex.end()) {
+            size_t slot = globalNames.size();
+            globalNames.push_back(name);
+            globalValues.push_back(nullptr);
+            globalDefined.push_back(false);
+            globalIndex[name] = static_cast<int>(slot);
+        }
     }
 
     // Register internal builtin used by for-in loop desugaring.
@@ -666,6 +674,15 @@ InterpretResult VM::run() {
     } while (false)
 
     for (;;) {
+        // Check for interrupt request (e.g. Ctrl+C in REPL).
+        // The flag is set by a signal handler and is safe to read
+        // from any thread / signal context.
+        if (interruptFlag) {
+            interruptFlag = 0;
+            std::cerr << "\nInterrupted" << std::endl;
+            return InterpretResult::RUNTIME_ERROR;
+        }
+
         OpCode instruction = static_cast<OpCode>(READ_BYTE());
 
         switch (instruction) {

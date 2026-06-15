@@ -13,6 +13,7 @@
 4. [质量工程](#四质量工程)
 5. [时间线建议](#五时间线建议)
 6. [语言缺陷与限制](#六语言缺陷与限制)
+   - 6.8 [I/O 与输入缺陷](#68-io-与输入缺陷)
 
 ---
 
@@ -405,6 +406,45 @@ cmake --preset windows-x64-release
 | **无 FFI** | 无法直接调用 C 动态库 (.dll/.so) 中的函数 |
 | **无跨进程序列化** | 无法将 `Value` 导出为二进制/字节码供其他进程消费 |
 
+### 6.8 I/O 与输入缺陷
+
+> 本节涵盖 `input()` 内置函数实现缺陷、REPL 交互限制，以及 stdin 测试基础设施缺口。
+
+#### 6.8.1 `input()` 内置函数缺陷
+
+| 缺陷 | 严重度 | 说明 |
+|------|--------|------|
+| **EOF 无信号** | ~~🔴 高~~ ✅ 已修复 | ~~`std::getline` 到达 EOF 后静默返回空字符串，与纯回车无法区分。~~ 现已修复：EOF 或流错误时 `input()` 返回 `null`，正常空行返回 `""`，可明确区分 |
+| **prompt 未 flush** | ~~🟡 中~~ ✅ 已修复 | ~~`std::cout << valueToString(arguments[0])` 输出 prompt 后未 flush。~~ 已添加 `std::flush`，确保 prompt 在阻塞等待输入前立即可见 |
+| **无输入类型转换辅助** | 🟢 低 | `input()` 永远返回字符串，用户需手动 `int(input(...))`。缺少 `readInt()`、`readFloat()` 等便捷内置函数：特性 |
+| **无输入超时 / 非阻塞读** | 🟡 中 | `std::getline` 无限阻塞。无法实现"等待 N 秒后超时"或"有数据则读，无数据则返回 null"的非阻塞模式：特性 |
+| **错误时无区分** | 🟢 低 | `std::cin` 流错误（如二进制数据混入）与 EOF 均返回 `null`。已通过 `std::cin.clear()` 确保流错误后后续 `input()` 调用仍可用（REPL 中 Ctrl+Z 不会永久破坏 stdin）。流错误本身极为罕见（需底层设备故障），与 EOF 显式区分的实用价值极低 |
+| **仅读一行** | 🟢 低 | 无 `input()` 变体读取多行直到 EOF（`readAll()`）或读取固定字节数（`read(n)`）：特性 |
+
+#### 6.8.2 REPL 交互缺陷：除了“支持多行输入”，其他无用
+
+| 缺陷 | 严重度 | 说明 |
+|------|--------|------|
+| **不支持多行输入** | ~~🔴 高~~ ✅ 已修复 | ~~REPL 逐行独立编译执行，函数/Obj/if/while/for 块必须写在同一行。~~ 现已支持多行输入：REPL 跟踪 `{` `}` 嵌套深度（忽略字符串和注释内的括号），深度 > 0 时切换为 `... ` 提示符并累积输入，平衡后整段编译执行。嵌套块同理 | `func f() {`↵`... return 1`↵`... }` ✅ |
+| **无行编辑 / 历史** | 🟡 中 | 原生 `std::getline` 无 readline/editline 支持。无命令历史（↑/↓ 回翻）、无 Tab 补全、无行编辑（Ctrl+A/E 跳转行首尾）、无语法高亮。可集成 GNU readline 或 Windows 等效库 |
+| **局部变量跨行丢失** | ~~🟡 中~~ ✅ 已修复 | ~~每行新建 `Compiler` + `Chunk`，局部变量作用域在行结束时销毁。~~ 现已修复：① `initGlobals` 从替换改为合并，已存在全局变量的值被保留；② REPL 编译前通过 `seedGlobals()` 将 VM 现有全局表预注入编译器，确保 slot 编号一致。top-level `let`/`const`/`func` 自动跨行持久化 | `let x = 5`↵`print(x)` → `5` ✅ |
+| **无法中断运行中的代码** | ~~🟢 低~~ ✅ 已修复 | ~~Ctrl+C 直接终止整个 REPL 进程。~~ 现已安装 `SIGINT` 处理器：VM 主循环在每个 opcode 前检查 `interruptFlag`（由信号处理器设置），检测到中断后打印 `Interrupted` 并返回 `RUNTIME_ERROR`；REPL 捕获后继续显示 `> ` 提示符 | Ctrl+C → `Interrupted`↵`> ` ✅ |
+| **无会话持久化** | 🟢 低 | 退出 REPL 后变量状态全部丢失，无 `.vora_history` 文件保存历史，无 session save/restore |
+
+#### 6.8.3 输入测试基础设施
+
+| 缺陷 | 严重度 | 说明 |
+|------|--------|------|
+| **`input()` 无自动化测试** | ~~🟡 中~~ ✅ 已修复 | ~~`run_tests.ps1` / `run_tests.sh` 无 stdin 管道机制，input 测试被注释掉。~~ 已添加 `tests/interpreter/test_input.va`（5 项测试：正常读取、空行、无换行符输入、EOF→null、prompt 输出）。测试框架已支持 stdin 管道：所有测试默认 `</dev/null` → EOF→null，`test_input.va` 通过 `printf` / `"data\n"` 管道获得真实测试数据 |
+| **REPL 无可测试性** | 🟢 低 | REPL 行为完全无自动化测试。可引入 expect-style 测试（如 `printf "1+2\n" | Vora.exe --repl`），验证输出含预期结果 |
+
+#### 6.8.4 缺失的 I/O 功能
+
+| 缺失 | 严重度 | 说明 |
+|------|--------|------|
+| **语言内无文件读取 API** | 🟡 中 | 用户无法在 Vora 程序中读取文件——`input()` 仅读 stdin，无 `readFile(path)` 或 `open(path).read()` |
+| **无 `print` 重定向** | 🟢 低 | `print()` 始终写入 stdout；无法重定向到 stderr 或文件 |
+
 ---
 
 ## 附录：技术债务清单
@@ -414,5 +454,5 @@ cmake --preset windows-x64-release
 | `GcPtr` 无 null-check 语义 | 低 | 所有 `GcPtr` 解引用前应 assert non-null |
 | `valueToString` 递归深度无限制 | 中 | 深层嵌套 Array/Dict 可能栈溢出 |
 | `addValues` 字符串拼接每次分配 | 中 | 可引入 string builder 减少 GC 压力 |
-| 无 `const` 语义 | 低 | 变量可变性无编译期检查 |
+| `const` 语义（仅编译期） | 低 | ~~已实现编译期 `const` 不可变绑定~~ 运行期无 const 强制；`const` 变量通过 upvalue 被闭包捕获后，若闭包不尝试写入则安全。当前已覆盖所有编译期 mutation 路径 |
 | Chunk 常量池线形去重 | 低 | O(n²) 查找，大程序编译变慢 |

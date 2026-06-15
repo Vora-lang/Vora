@@ -159,9 +159,17 @@ void registerBuiltins(VM& vm) {
 
     vm.defineNative("input", -1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!arguments.empty()) std::cout << valueToString(arguments[0]);
+            if (!arguments.empty()) {
+                std::cout << valueToString(arguments[0]);
+                std::cout << std::flush;  // ensure prompt visible before blocking on stdin
+            }
             std::string line;
-            std::getline(std::cin, line);
+            if (!std::getline(std::cin, line)) {
+                // EOF → null; stream error → also null (with clear so stream
+                // is usable again — critical for REPL after Ctrl+Z).
+                std::cin.clear();
+                return nullptr;
+            }
             return GcHeap::instance().alloc<GcString>(line);
         });
 

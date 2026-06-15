@@ -1,5 +1,6 @@
 #pragma once
 
+#include <csignal>
 #include <functional>
 #include <string>
 #include <unordered_map>
@@ -70,6 +71,10 @@ class VM {
     std::unordered_map<size_t, std::shared_ptr<Upvalue>> openUpvalues;
     std::shared_ptr<Upvalue> captureUpvalue(size_t slotIndex);
 
+    // Interrupt flag — set by signal handler (SIGINT / Ctrl+C).
+    // Checked at the top of each opcode dispatch in run().
+    static volatile sig_atomic_t interruptFlag;
+
 public:
     VM();
     ~VM() = default;
@@ -82,12 +87,19 @@ public:
     // Initialize global slots from compiler's interning table.
     void initGlobals(const std::vector<std::string>& names);
 
+    // Read the current global name table (for seeding compiler in REPL).
+    const std::vector<std::string>& getGlobalNames() const { return globalNames; }
+
     // Copy global state into this VM. Used to give a temporary VM
     // (e.g. constructor execution) access to the same globals.
     void adoptGlobals(const std::vector<std::string>& names,
                       const std::vector<Value>& values,
                       const std::vector<bool>& defined,
                       const std::unordered_map<std::string, int>& index);
+
+    // Signal the VM to interrupt execution at the next safe point.
+    // Thread-safe: may be called from a signal handler.
+    static void requestInterrupt() { interruptFlag = 1; }
 
     // Run a constructor chunk with a given instance and arguments.
     // Used by ClassConstructor to execute parent and own constructors

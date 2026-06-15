@@ -44,7 +44,14 @@ Get-ChildItem -Path "$ProjectDir\tests\lexer", "$ProjectDir\tests\parser", "$Pro
     $name = $_.FullName -replace [regex]::Escape("$ProjectDir\tests\"), ""
     Write-Host ("  {0,-45} " -f $name) -NoNewline
 
-    $output = & $Vora $file 2>&1
+    # Pipe stdin from null so input() hits EOF (returns null) in non-interactive tests.
+    # test_input.va gets real data to test the non-EOF path.
+    if ($name -match "test_input\.va$") {
+        # Pipe 3 lines + EOF: "hello", "", "42", then EOF for null test
+        $output = "hello`n`n42" | & $Vora $file 2>&1
+    } else {
+        $output = & cmd /c "$Vora $file < nul" 2>&1
+    }
     if ($LASTEXITCODE -eq 0)
     {
         Write-Host "PASS" -ForegroundColor Green

@@ -1,3 +1,4 @@
+#include <csignal>
 #include <cstdint>
 #include <fstream>
 #include <iostream>
@@ -130,29 +131,104 @@ static int runScript(
     return 0;
 }
 
+// Count net open braces ({ minus }) in a line, ignoring those inside
+// strings, line comments, and block comments.
+static int netBraces(const std::string& s) {
+    int depth = 0;
+    bool inString = false;
+    char stringChar = 0;
+    bool inLineComment = false;
+    bool inBlockComment = false;
+
+    for (size_t i = 0; i < s.size(); i++) {
+        char c = s[i];
+        char next = (i + 1 < s.size()) ? s[i + 1] : 0;
+
+        if (inLineComment) {
+            if (c == '\n') inLineComment = false;
+            continue;
+        }
+        if (inBlockComment) {
+            if (c == '*' && next == '/') { inBlockComment = false; i++; }
+            continue;
+        }
+        if (inString) {
+            if (c == '\\') { i++; continue; }   // skip escaped char
+            if (c == stringChar) inString = false;
+            continue;
+        }
+
+        if (c == '/' && next == '/') { inLineComment = true; i++; continue; }
+        if (c == '/' && next == '*') { inBlockComment = true; i++; continue; }
+        if (c == '"' || c == '\'')  { inString = true; stringChar = c; continue; }
+
+        if (c == '{') depth++;
+        if (c == '}') depth--;
+    }
+    return depth;
+}
+
+// Signal handler for Ctrl+C (SIGINT).  Delegates to VM::requestInterrupt()
+// so the running bytecode loop can stop cleanly at the next opcode boundary
+// instead of killing the whole process.
+static void replSigintHandler(int /*signum*/) {
+    VM::requestInterrupt();
+    // Re-register — some platforms reset to SIG_DFL after delivery.
+    std::signal(SIGINT, replSigintHandler);
+}
+
 static void runREPL() {
     VM vm;
+
+    // Install Ctrl+C handler so SIGINT interrupts only the running code,
+    // not the entire REPL process.
+    std::signal(SIGINT, replSigintHandler);
 
     // Register builtins once — they persist across REPL lines.
     registerBuiltins(vm);
 
     std::string line;
+    std::string accumulated;
+    int braceDepth = 0;
+    const char* prompt = "> ";
 
     while (true) {
-        std::cout << "> ";
+        std::cout << prompt;
 
         if (!std::getline(std::cin, line)) {
             break;
         }
 
-        if (line.empty()) {
+        if (accumulated.empty() && line.empty()) {
             continue;
         }
 
-        Lexer lexer(line);
+        // Append this line to the accumulated source.
+        if (accumulated.empty()) {
+            accumulated = line;
+        } else {
+            accumulated += "\n" + line;
+        }
+
+        braceDepth += netBraces(line);
+
+        // Still inside unclosed braces — keep reading.
+        if (braceDepth > 0) {
+            prompt = "... ";
+            continue;
+        }
+
+        // Balanced — reset state for next round.
+        prompt = "> ";
+        braceDepth = 0;
+
+        std::string source = std::move(accumulated);
+        accumulated.clear();
+
+        Lexer lexer(source);
         auto tokens = lexer.scanTokens();
         Parser parser(tokens);
-        parser.setSource(line);
+        parser.setSource(source);
         auto program = parser.parse();
 
         if (!program) {
@@ -160,22 +236,33 @@ static void runREPL() {
         }
 
         Compiler compiler;
-        compiler.setSource(line);
+        compiler.setSource(source);
+
+        // Seed the compiler with the VM's current global table so that
+        // slot assignments match. Without this, a `let x = 5` line and
+        // a later `print(x)` line would disagree on slot numbers.
+        compiler.seedGlobals(vm.getGlobalNames());
+
         Chunk chunk = compiler.compile(program.get());
 
         if (compiler.hadError) {
             continue;  // error already printed, skip interpretation
         }
 
-        // Ensure globals referenced in this chunk have slots
-        // (idempotent — existing globals are not duplicated).
+        // Merge any new globals into the VM (idempotent — existing
+        // globals and their values are preserved).
         vm.initGlobals(compiler.getGlobalNames());
 
         InterpretResult result = vm.interpret(chunk);
         if (result == InterpretResult::RUNTIME_ERROR) {
             // Error already printed by runtimeError(); continue REPL.
+            // (Interrupted runs also return RUNTIME_ERROR — "Interrupted"
+            //  is printed by the VM before returning.)
         }
     }
+
+    // Restore default signal handling before exiting REPL.
+    std::signal(SIGINT, SIG_DFL);
 }
 
 int main(

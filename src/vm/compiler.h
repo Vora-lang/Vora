@@ -128,6 +128,17 @@ public:
     // Global variable interning: maps name → slot for direct VM indexing
     const std::vector<std::string>& getGlobalNames() const { return globalNames; }
 
+    // Pre-populate the global interning table so that slot assignments
+    // match an existing VM (e.g. REPL). All seeded names are marked
+    // "defined" so they are treated as already-existing globals.
+    void seedGlobals(const std::vector<std::string>& names) {
+        for (const auto& name : names) {
+            globalNames.push_back(name);
+            globalDefined.push_back(true);
+            globalIsConst.push_back(false);
+        }
+    }
+
 private:
     Chunk chunk;
     int currentLine = 1;
