@@ -188,6 +188,16 @@ if(VORA_FUZZER)
         message(FATAL_ERROR "VORA_FUZZER requires Clang (libFuzzer is clang-only)")
     endif()
 
+    # Instrument all vora_lib objects with fuzzer coverage (no-link variant —
+    # libFuzzer's main() is provided only at the final Vora_fuzzer link step).
+    # This avoids "multiple definition of main" during CMake's compiler detection
+    # that would occur if -fsanitize=fuzzer were passed globally via CMAKE_FLAGS.
+    target_compile_options(vora_lib PRIVATE
+        -fsanitize=fuzzer-no-link,address,undefined
+        -fno-omit-frame-pointer
+        -g
+    )
+
     add_executable(Vora_fuzzer
         $<TARGET_OBJECTS:vora_lib>
         tests/fuzz/fuzz_vm.cpp
@@ -198,7 +208,7 @@ if(VORA_FUZZER)
     target_compile_features(Vora_fuzzer PRIVATE cxx_std_17)
 
     target_compile_options(Vora_fuzzer PRIVATE
-        -fsanitize=fuzzer,address,undefined
+        -fsanitize=fuzzer-no-link,address,undefined
         -fno-omit-frame-pointer
         -g
     )

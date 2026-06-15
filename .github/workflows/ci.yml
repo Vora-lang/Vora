@@ -227,19 +227,17 @@ jobs:
         run: ctest --test-dir build/linux-x64-sanitizers -R "^unit-" --output-on-failure
 
       # ── Fuzzer build + short run ────────────────────────────────────────
-      # libFuzzer needs coverage instrumentation on ALL translation units.
-      # We build in a separate directory with -fsanitize=fuzzer-no-link
-      # on compilation, and -fsanitize=fuzzer at link time.
+      # libFuzzer flags are set in CMakeLists.txt (VORA_FUZZER=ON) —
+      # passing them via CMAKE_CXX_FLAGS would inject -fsanitize=fuzzer
+      # into CMake's compiler detection test program, causing a "multiple
+      # definition of main" linker error (libFuzzer ships its own main).
       - name: Configure (libFuzzer)
         run: |
           cmake -S . -B build/fuzzer -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DVORA_FUZZER=ON \
             -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_FLAGS="-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer -g" \
-            -DCMAKE_C_FLAGS="-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer -g" \
-            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=fuzzer,address,undefined"
+            -DCMAKE_C_COMPILER=clang
 
       - name: Build fuzzer
         run: cmake --build build/fuzzer --target Vora_fuzzer
