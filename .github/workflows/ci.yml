@@ -89,7 +89,7 @@ jobs:
 
   build-windows:
     name: "Windows ${{ matrix.arch }} (${{ matrix.config }})"
-    runs-on: windows-latest
+    runs-on: windows-2022  # pin to 2022: windows-latest (2025) breaks VS 2022 detection
     strategy:
       fail-fast: false
       matrix:
