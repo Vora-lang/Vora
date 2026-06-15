@@ -1,0 +1,103 @@
+// Problem #44: Top K Frequent Elements (Medium)
+// K most frequent elements in an array.
+// Count frequencies using parallel arrays, sort by frequency, return top K.
+// Vora does not support arr[idx] = val, so we use remove+insert pattern.
+
+func topKFrequent(nums, k) {
+    let n = nums.length;
+
+    // Parallel arrays for unique values and their frequencies
+    let unique = [];
+    let freq = [];
+
+    // Count frequencies
+    for i in range(n) {
+        let val = nums[i];
+        let found = false;
+        let idx = -1;
+        for j in range(unique.length) {
+            if (unique[j] == val) {
+                found = true;
+                idx = j;
+                break
+            }
+        }
+        if (found) {
+            // Simulate freq[idx] = freq[idx] + 1
+            let newVal = freq[idx] + 1;
+            freq.remove(idx);
+            freq.insert(idx, newVal);
+        } else {
+            unique.add(val);
+            freq.add(1);
+        }
+    }
+
+    // Selection sort by frequency in descending order
+    let m = unique.length;
+    for i in range(m - 1) {
+        let maxIdx = i;
+        let maxFreq = freq[i];
+        for j in range(i + 1, m) {
+            if (freq[j] > maxFreq) {
+                maxFreq = freq[j];
+                maxIdx = j;
+            }
+        }
+        if (maxIdx != i) {
+            // Swap freq[i] and freq[maxIdx]
+            freq.remove(maxIdx);
+            freq.insert(maxIdx, freq[i]);
+            freq.remove(i);
+            freq.insert(i, maxFreq);
+
+            // Swap unique[i] and unique[maxIdx]
+            let tempVal = unique[maxIdx];
+            unique.remove(maxIdx);
+            unique.insert(maxIdx, unique[i]);
+            unique.remove(i);
+            unique.insert(i, tempVal);
+        }
+    }
+
+    // Return top K
+    let result = [];
+    for i in range(k) {
+        result.add(unique[i]);
+    }
+    return result;
+}
+
+// Test helper: check if value is in array
+func contains(arr, val) {
+    for i in range(arr.length) {
+        if (arr[i] == val) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Test helper: compare two result arrays (order-independent for top K)
+func resultMatch(result, expected) {
+    if (result.length != expected.length) {
+        return false;
+    }
+    for i in range(expected.length) {
+        if (!(contains(result, expected[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Test cases
+assert(resultMatch(topKFrequent([1, 1, 1, 2, 2, 3], 2), [1, 2]));
+assert(topKFrequent([1], 1)[0] == 1);
+assert(resultMatch(topKFrequent([1, 2], 2), [1, 2]));
+assert(resultMatch(topKFrequent([4, 1, -1, 2, -1, 2, 3], 2), [-1, 2]));
+assert(resultMatch(topKFrequent([3, 0, 1, 0], 1), [0]));
+assert(resultMatch(topKFrequent([1, 1, 2, 2, 3, 3, 3], 2), [3, 1]) or resultMatch(topKFrequent([1, 1, 2, 2, 3, 3, 3], 2), [3, 2]));
+assert(resultMatch(topKFrequent([5, 3, 1, 1, 1, 3, 5, 73, 1], 3), [1, 3, 5]) or resultMatch(topKFrequent([5, 3, 1, 1, 1, 3, 5, 73, 1], 3), [1, 5, 3]));
+
+print("PASS: 44-top-k-frequent-elements");

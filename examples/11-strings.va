@@ -1,28 +1,18 @@
-// 字符串：拼接、索引、插值、转义
-// 拼接
 let hello = "Hello"
-let world = 'World'
+let world = "World"
 print(hello + " " + world)
-
-// 索引
 let s = "Vora"
 print(s[0])
 print(s[3])
-
-// 遍历
 print("---")
 for ch in s {
     print(ch)
 }
-
-// 字符串插值
 let name = "Alice"
 let age = 25
 print("Name: ${name}, Age: ${age}")
-
-// 转义序列
 print("line1\nline2")
 print("tab\there")
 print("quote: \"hello\"")
-print('single: \'world\'')
+print("single: 'world'")
 print("backslash: \\")

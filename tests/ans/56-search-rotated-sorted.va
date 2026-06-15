@@ -1,0 +1,59 @@
+// #33 Search in Rotated Sorted Array (Medium)
+// Binary search in rotated sorted array. Find pivot, then binary search the relevant half.
+
+func search(nums, target) {
+    if (nums.length == 0) {
+        return -1;
+    }
+
+    // Find the pivot (index of minimum element)
+    let pivot = 0;
+    {
+        let left = 0;
+        let right = nums.length - 1;
+
+        while (left < right) {
+            let mid = left + int((right - left) / 2);
+            if (nums[mid] > nums[right]) {
+                left = mid + 1;
+            } else {
+                right = mid;
+            }
+        }
+        pivot = left;
+    }
+
+    // Binary search in the appropriate half
+    {
+        let left = 0;
+        let right = nums.length - 1;
+
+        while (left <= right) {
+            let mid = left + int((right - left) / 2);
+            let realMid = int((mid + pivot) % nums.length);
+            let val = nums[realMid];
+
+            if (val == target) {
+                return realMid;
+            }
+            if (val < target) {
+                left = mid + 1;
+            } else {
+                right = mid - 1;
+            }
+        }
+    }
+
+    return -1;
+}
+
+// Tests
+assert(search([4,5,6,7,0,1,2], 0) == 4, "Test 1 failed");
+assert(search([4,5,6,7,0,1,2], 3) == -1, "Test 2 failed");
+assert(search([1], 0) == -1, "Test 3 failed");
+assert(search([1], 1) == 0, "Test 4 failed");
+assert(search([3,1], 1) == 1, "Test 5 failed");
+assert(search([5,1,3], 5) == 0, "Test 6 failed");
+assert(search([5,1,3], 3) == 2, "Test 7 failed");
+
+print("56-search-rotated-sorted: PASS");

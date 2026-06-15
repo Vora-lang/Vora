@@ -1,0 +1,38 @@
+// Problem #33: Unique Paths (Medium)
+// Robot from top-left to bottom-right of m x n grid, only moves right/down.
+// DP: dp[i][j] = dp[i-1][j] + dp[i][j-1].
+
+func uniquePaths(m, n) {
+    if (m <= 0 or n <= 0) {
+        return 0;
+    }
+
+    // Create a 2D dp array (m rows, n cols) initialized to 1
+    // Actually we only need a 1D dp array for space optimization
+    // dp[j] = number of unique paths to (current_row, j)
+    let dp = [];
+    for j in range(n) {
+        dp.add(1);  // first row is all 1s
+    }
+
+    for i in range(1, m) {
+        for j in range(1, n) {
+            dp[j] = dp[j] + dp[j - 1];
+        }
+    }
+
+    return dp[n - 1];
+}
+
+// Test cases
+assert(uniquePaths(3, 7) == 28);
+assert(uniquePaths(3, 2) == 3);
+assert(uniquePaths(1, 1) == 1);
+assert(uniquePaths(2, 2) == 2);
+assert(uniquePaths(4, 4) == 20);
+assert(uniquePaths(1, 5) == 1);
+assert(uniquePaths(5, 1) == 1);
+assert(uniquePaths(7, 3) == 28);
+assert(uniquePaths(10, 10) == 48620);
+
+print("PASS: 33-unique-paths");

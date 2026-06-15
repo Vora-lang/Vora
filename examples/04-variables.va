@@ -1,11 +1,7 @@
-// 变量声明与块级作用域
 let x = 10
 print(x)
-
 x = 20
 print(x)
-
-// 块级作用域
 {
     let y = 99
     print(y)
@@ -13,8 +9,6 @@ print(x)
     print(x)
 }
 print(x)
-
-// 变量遮蔽
 let z = 1
 {
     let z = 2

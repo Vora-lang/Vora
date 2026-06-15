@@ -8,16 +8,22 @@
 #include <vector>
 #include <map>
 
+#include "../gc/gc_object.h"
+#include "../gc/gc_ptr.h"
+
 namespace vora {
 
+// Forward declarations for types defined elsewhere
 class Callable;
 class VoraFunction;
-class BlockStmt;
-struct Array;
-struct Dict;
-struct ObjectInstance;
-struct FunctionPrototype;
-struct ClassData;
+class NativeFunction;
+struct BlockStmt;
+struct FunctionPrototype;   // defined in compiler.h (needs Chunk)
+struct ClassDefinition;     // defined in compiler.h
+
+// =========================================================================
+// Value — the universal runtime value type
+// =========================================================================
 
 using Value = std::variant<
     std::nullptr_t,
@@ -25,53 +31,60 @@ using Value = std::variant<
     int64_t,
     bool,
     std::string,
-    std::shared_ptr<Array>,
-    std::shared_ptr<Dict>,
-    std::shared_ptr<Callable>,
-    std::shared_ptr<ObjectInstance>,
-    std::shared_ptr<FunctionPrototype>,
-    std::shared_ptr<ClassData>
+    GcPtr<struct Array>,
+    GcPtr<struct Dict>,
+    GcPtr<Callable>,
+    GcPtr<struct ObjectInstance>,
+    GcPtr<FunctionPrototype>,
+    GcPtr<ClassDefinition>
 >;
 
-struct Array {
+// =========================================================================
+// pushGcRefs — extract all GcObject* from a Value onto a worklist.
+// DECLARED here, DEFINED in value.cpp (needs complete types).
+// =========================================================================
+void pushGcRefs(const Value& v, std::vector<GcObject*>& worklist);
+
+// =========================================================================
+// Heap object definitions (trace() defined in value.cpp / compiler.cpp)
+// =========================================================================
+
+struct Array : GcObject {
     std::vector<Value> elements;
+    void trace(std::vector<GcObject*>& wl) override;
+    size_t gcSize() const override { return sizeof(Array) + elements.capacity() * sizeof(Value); }
 };
 
-struct Dict {
+struct Dict : GcObject {
     std::unordered_map<std::string, Value> pairs;
+    void trace(std::vector<GcObject*>& wl) override;
+    size_t gcSize() const override { return sizeof(Dict) + pairs.bucket_count() * (sizeof(void*) * 2 + sizeof(Value)); }
 };
 
-struct ObjectClass {
-    std::string className;
-    std::vector<std::string> params;
-    std::shared_ptr<BlockStmt> body;
-    std::map<std::string, std::shared_ptr<VoraFunction>> methods;
-    std::vector<std::string> parentClassNames;                      // names of parent classes
-    std::vector<std::weak_ptr<ObjectClass>> parentClasses;          // resolved parent classes
-    std::vector<std::weak_ptr<ObjectClass>> mro;                    // C3 linearization cache (self + parents in MRO order)
-    std::shared_ptr<FunctionPrototype> ctorProto;                   // compiled constructor
-};
-
-struct ObjectInstance {
+struct ObjectInstance : GcObject {
     std::string className;
     std::map<std::string, Value> properties;
-    std::shared_ptr<ObjectClass> classDefinition;
+    GcPtr<ClassDefinition> classDefinition;
+
+    void trace(std::vector<GcObject*>& wl) override;
+    size_t gcSize() const override { return sizeof(ObjectInstance); }
 };
 
-void printValue(const Value& value);
+// =========================================================================
+// Value API
+// =========================================================================
 
+void printValue(const Value& value);
 std::string valueToString(const Value& value);
 
-// Numeric helpers for dual int64/double type system
 inline bool isNumeric(const Value& v) {
     return std::holds_alternative<double>(v) || std::holds_alternative<int64_t>(v);
 }
 
 inline double toDouble(const Value& v) {
-    // Safe: returns 0.0 for non-numeric types instead of throwing.
     if (std::holds_alternative<int64_t>(v)) return static_cast<double>(std::get<int64_t>(v));
     if (std::holds_alternative<double>(v)) return std::get<double>(v);
-    return 0.0;  // non-numeric: bool, string, array, etc.
+    return 0.0;
 }
 
 inline Value promoteToFloat(const Value& v) {
@@ -79,4 +92,4 @@ inline Value promoteToFloat(const Value& v) {
     return v;
 }
 
-}
+} // namespace vora

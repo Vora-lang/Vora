@@ -1,0 +1,60 @@
+// #22 Generate Parentheses (Medium)
+// Generate all valid n-pair parentheses. Backtracking with open/close counts.
+
+func generateParenthesis(n) {
+    let result = [];
+
+    func backtrack(current, open, close) {
+        if (current.length == n * 2) {
+            result.add(current);
+            return null;
+        }
+
+        if (open < n) {
+            backtrack(current + "(", open + 1, close);
+        }
+        if (close < open) {
+            backtrack(current + ")", open, close + 1);
+        }
+    }
+
+    backtrack("", 0, 0);
+    return result;
+}
+
+// Tests
+func arraysEqual(a, b) {
+    if (a.length != b.length) { return false; }
+    let i = 0;
+    while (i < a.length) {
+        if (a[i] != b[i]) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+func arrayContains(arr, item) {
+    let i = 0;
+    while (i < arr.length) {
+        if (arr[i] == item) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+let r1 = generateParenthesis(3);
+assert(r1.length == 5, "Test 1 failed: count=" + r1.length);
+assert(arrayContains(r1, "((()))"), "Test 1a failed");
+assert(arrayContains(r1, "(()())"), "Test 1b failed");
+assert(arrayContains(r1, "(())()"), "Test 1c failed");
+assert(arrayContains(r1, "()(())"), "Test 1d failed");
+assert(arrayContains(r1, "()()()"), "Test 1e failed");
+
+let r2 = generateParenthesis(1);
+assert(r2.length == 1, "Test 2 failed");
+assert(r2[0] == "()", "Test 2a failed");
+
+let r3 = generateParenthesis(2);
+assert(r3.length == 2, "Test 3 failed");
+
+print("60-generate-parentheses: PASS");

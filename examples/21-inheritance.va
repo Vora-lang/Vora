@@ -1,92 +1,72 @@
-// =========================================================================
-// 21-inheritance.va — Obj inheritance tests
-// Syntax: Obj Child : Parent (params) { body; methods }
-// =========================================================================
-
 print("=== 1. Basic inheritance ===")
-
 Obj Animal(name) {
     this.name = name
-
     func speak() {
         print("Generic animal sound")
     }
-
     func getName() {
         return this.name
     }
 }
-
-Obj Dog : Animal (name, breed) {
+Obj Dog : Animal(name, breed) {
     this.breed = breed
-
     func speak() {
         print("Woof! I'm " + this.name + " the " + this.breed)
     }
-
     func getBreed() {
         return this.breed
     }
 }
-
 let d = Dog("Rex", "Husky")
-print("Name: " + d.name)           // Should be "Rex" (from Animal constructor)
-print("Breed: " + d.breed)         // Should be "Husky" (from Dog constructor)
-
+print("Name: " + d.name)
+print("Breed: " + d.breed)
 print("\n=== 2. Method override ===")
-d.speak()                           // Should use Dog's speak(), not Animal's
-
+d.speak()
 print("\n=== 3. Inherited method ===")
-let name = d.getName()              // Animal's method, accessible via inheritance
+let name = d.getName()
 print("getName: " + name)
-
 print("\n=== 4. Own method ===")
-print("getBreed: " + d.getBreed())  // Dog's own method
-
+print("getBreed: " + d.getBreed())
 print("\n=== 5. Multi-level inheritance ===")
-
-Obj Puppy : Dog (name, breed, toy) {
+Obj Puppy : Dog(name, breed, toy) {
     this.toy = toy
-
     func speak() {
         print("Yip yip! I'm " + this.name + " and I love my " + this.toy)
     }
 }
-
 let p = Puppy("Max", "Golden", "ball")
-print("Name: " + p.name)            // From Animal constructor
-print("Breed: " + p.breed)          // From Dog constructor
-print("Toy: " + p.toy)              // From Puppy constructor
-p.speak()                            // Puppy's override
-
+print("Name: " + p.name)
+print("Breed: " + p.breed)
+print("Toy: " + p.toy)
+p.speak()
 print("\n=== 6. Inherited two levels up ===")
-print("getName: " + p.getName())    // From Animal, through Dog
-
+print("getName: " + p.getName())
 print("\n=== 7. Method from intermediate class ===")
-print("getBreed: " + p.getBreed())  // From Dog, through inheritance
-
+print("getBreed: " + p.getBreed())
 print("\n=== 8. Multiple inheritance ===")
-// D inherits from B and C — B listed first wins on conflicts
-
 Obj Speaker() {
-    func speak() { return "hello from Speaker" }
-    func greet() { return "hi from Speaker" }
+    func speak() {
+        return "hello from Speaker"
+    }
+    func greet() {
+        return "hi from Speaker"
+    }
 }
-
 Obj Walker() {
-    func walk() { return "walking from Walker" }
-    func greet() { return "hi from Walker" }
+    func walk() {
+        return "walking from Walker"
+    }
+    func greet() {
+        return "hi from Walker"
+    }
 }
-
-Obj Robot : Speaker, Walker () {
-    // Robot inherits from Speaker (first) and Walker (second)
-    // MRO: Robot, Speaker, Walker
-    // Speaker.greet wins over Walker.greet
-    func work() { return "working" }
+Obj Robot : Speaker, Walker() {
+    func work() {
+        return "working"
+    }
 }
-
 let r = Robot()
-print("speak: " + r.speak())   // From Speaker
-print("walk: " + r.walk())     // From Walker
-print("greet: " + r.greet())   // From Speaker (first parent wins)
-print("work: " + r.work())     // Own method
+print("speak: " + r.speak())
+print("walk: " + r.walk())
+print("greet: " + r.greet())
+print("work: " + r.work())

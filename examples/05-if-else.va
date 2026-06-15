@@ -1,16 +1,12 @@
-// if / else 控制流
 let score = 85
-
 if (score >= 90) {
     print("A")
 }
-
 if (score >= 80) {
     print("B")
 } else {
     print("not B")
 }
-
 if (score >= 90) {
     print("A")
 } else if (score >= 80) {
@@ -20,6 +16,6 @@ if (score >= 90) {
 } else {
     print("F")
 }
-
-// 单行
-if (true) { print("yes") }
+if (true) {
+    print("yes")
+}

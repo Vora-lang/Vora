@@ -1,0 +1,8 @@
+func outer() {
+    func inner() {
+        return;
+    }
+    inner();
+}
+outer();
+print("ok");

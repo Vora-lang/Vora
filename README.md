@@ -7,7 +7,7 @@
 [![CI](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml/badge.svg)](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
-[![Version](https://img.shields.io/badge/version-0.15-orange.svg)](#changelog)
+[![Version](https://img.shields.io/badge/version-0.17-orange.svg)](#changelog)
 
 </div>
 
@@ -127,6 +127,7 @@ let f = 3.14
 let b = true            // Boolean
 let s = "hello"         // String
 let a = [1, 2, 3]       // Array
+let d = {name: "Vora"}  // Dict (associative map)
 let nothing = null
 ```
 
@@ -174,10 +175,12 @@ while (n > 0) {
     n = n - 1
 }
 
-// for-in (arrays, strings, ranges)
+// for-in (arrays, strings, ranges, dicts, objects)
 for item in [1, 2, 3] { print(item) }
 for ch in "Vora"       { print(ch) }
 for i in range(5)      { print(i) }   // 0..4
+for k in {a: 1, b: 2} { print(k) }   // keys "a", "b"
+for key in obj         { print(key) } // object property keys
 ```
 
 `break` and `continue` work as expected.
@@ -246,6 +249,29 @@ let p = Puppy("Max", "Lab", "ball")
 p.speak()  // → "... woof! yip!"
 ```
 
+### Dict
+
+```vora
+let d = {name: "Vora", version: 1}
+
+// Subscript access
+print(d["name"])      // → "Vora"
+d["year"] = 2026
+
+// Dict + Dict merge (right side wins on conflicts)
+let a = {x: 1, y: 2}
+let b = {y: 99, z: 3}
+let c = a + b         // → {x: 1, y: 99, z: 3}
+
+// Built-in methods
+let keys = d.keys()   // → ["name", "version"]
+d.has("name")         // → true
+d.remove("year")      // → 2026
+
+// for-in iteration
+for k in {a: 1, b: 2} { print(k) }  // "a", "b"
+```
+
 ### Exception Handling
 
 ```vora
@@ -277,7 +303,7 @@ print("Hello ${name}!")   // "Hello World!"
 | `int(value)` | Convert to int64 (truncate) |
 | `float(value)` | Convert to float64 |
 | `len(value)` | Array length or string character count |
-| `type(value)` | Type name: `"int"` `"float"` `"string"` `"array"` `"boolean"` `"null"` `"function"` `"object"` |
+| `type(value)` | Type name: `"int"` `"float"` `"string"` `"array"` `"dict"` `"boolean"` `"null"` `"function"` `"object"` |
 | `range(stop)` / `range(start, stop, step?)` | Generate number array |
 | `assert(cond, msg?)` | Assertion with optional message |
 | `bin(num)` | String like `"0b101"` |
@@ -318,6 +344,17 @@ print("Hello ${name}!")   // "Hello World!"
 
 ---
 
+## Dict Methods
+
+| Method | Description |
+|--------|-------------|
+| `.keys()` | Return array of keys |
+| `.values()` | Return array of values |
+| `.has(key)` | Check if key exists |
+| `.remove(key)` | Remove and return value by key |
+
+---
+
 ## Project Architecture
 
 ```
@@ -333,7 +370,7 @@ print("Hello ${name}!")   // "Hello World!"
 | `parser/` | ~1,185 | Pratt (precedence climbing), 7-level precedence table, panic-mode error recovery |
 | `ast/` | ~1,629 | 27 node types (14 expressions + 13 statements), templated Visitor pattern |
 | `vm/` | ~3,175 | Bytecode compiler + stack-based VM, 50 opcodes, constant folding, fast numeric ops |
-| `runtime/` | ~1,200 | `Value` (std::variant), `Environment` (lexical scope chain), `Callable` abstraction, `builtins` module |
+| `runtime/` | ~1,200 | `Value` (std::variant, 10 types incl. Dict), `Environment` (lexical scope chain), `Callable` abstraction, `builtins` module |
 
 **Design highlights:**
 
@@ -367,7 +404,7 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 ./tests/run_tests.sh                    # VM mode
 ```
 
-**Current status:** 16/16 VM tests pass + 16/16 Interpreter tests pass + 24/24 examples pass. C++ unit tests: 6 modules (~100+ cases).
+**Current status:** 20/20 VM tests pass + 24/24 examples pass. C++ unit tests: 6 modules (~100+ cases).
 
 ---
 
@@ -379,7 +416,9 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 | v0.13 | **Done** | C++ unit test system (doctest), builtins module centralization, P0/P1 correctness fixes |
 | v0.14 | **Done** | `weak_ptr` cycle breaking, runtime error call stack traces |
 | v0.15 | **Done** | Default parameters, multi-inheritance C3 linearization, `super` keyword |
-| v0.16 | Planned | Module system (`import` / `export`), standard library |
+| v0.16 | **Done** | Dict type (`{key: val}`), for-in object property iteration, VM stack dynamic resize, constant pool 16-bit index |
+| v0.17 | **Done** | Error message enhancement: source line + caret indicator |
+| v0.18 | Planned | Module system (`import` / `export`), standard library |
 | v0.2 | Planned | Further optimization / JIT compilation |
 
 ---

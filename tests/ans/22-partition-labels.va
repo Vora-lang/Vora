@@ -1,0 +1,55 @@
+// Problem #22: Partition Labels (Medium)
+// Partition string so each letter appears in at most one part.
+// Vora: no hash map, no arr[i]=val. Use right-scan for last occurrence.
+
+// Find the last occurrence of character ch in string s
+func lastIndexOf(s, ch) {
+    let idx = -1;
+    for i in range(s.length) {
+        if (s[i] == ch) {
+            idx = i;
+        }
+    }
+    return idx;
+}
+
+func partitionLabels(s) {
+    let result = [];
+    let start = 0;
+    let end = 0;
+    for i in range(s.length) {
+        // Find last occurrence of current character
+        let curLast = lastIndexOf(s, s[i]);
+        if (curLast > end) {
+            end = curLast;
+        }
+        if (i == end) {
+            result.add(end - start + 1);
+            start = i + 1;
+        }
+    }
+    return result;
+}
+
+// Helper to check array equality
+func arraysEqual(a, b) {
+    if (a.length != b.length) {
+        return false;
+    }
+    for i in range(a.length) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Test cases
+assert(arraysEqual(partitionLabels("ababcbacadefegdehijhklij"), [9, 7, 8]));
+assert(arraysEqual(partitionLabels("eccbbbbdec"), [10]));
+assert(arraysEqual(partitionLabels("a"), [1]));
+assert(arraysEqual(partitionLabels("ab"), [1, 1]));
+assert(arraysEqual(partitionLabels("abcabc"), [6]));
+assert(arraysEqual(partitionLabels("caedbdedda"), [1, 9]));
+
+print("PASS: 22-partition-labels");

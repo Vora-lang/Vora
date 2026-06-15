@@ -1,0 +1,49 @@
+// Problem #26: Perfect Squares (Medium)
+// Least number of perfect square numbers that sum to n.
+// DP: for i in 1..n, for j*j <= i, dp[i] = min(dp[i], dp[i - j*j] + 1).
+
+func min(a, b) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+func numSquares(n) {
+    if (n <= 0) {
+        return 0;
+    }
+
+    // Initialize dp array with n+1 entries, dp[0] = 0, others = n+1 (infinity proxy)
+    let dp = [];
+    dp.add(0);  // dp[0] = 0
+    for i in range(1, n + 1) {
+        dp.add(n + 1);  // large value as "infinity"
+    }
+
+    for i in range(1, n + 1) {
+        let j = 1;
+        while (j * j <= i) {
+            dp[i] = min(dp[i], dp[i - j * j] + 1);
+            j = j + 1;
+        }
+    }
+
+    return dp[n];
+}
+
+// Test cases
+assert(numSquares(12) == 3);   // 4+4+4 (2^2+2^2+2^2)
+assert(numSquares(13) == 2);   // 4+9 (2^2+3^2)
+assert(numSquares(1) == 1);    // 1^2
+assert(numSquares(2) == 2);    // 1+1
+assert(numSquares(3) == 3);    // 1+1+1
+assert(numSquares(4) == 1);    // 2^2
+assert(numSquares(5) == 2);    // 1+4 (1^2+2^2)
+assert(numSquares(9) == 1);    // 3^2
+assert(numSquares(16) == 1);   // 4^2
+assert(numSquares(0) == 0);
+assert(numSquares(43) == 3);   // 25+9+9 (5^2+3^2+3^2)
+assert(numSquares(25) == 1);   // 5^2
+
+print("PASS: 26-perfect-squares");

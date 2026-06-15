@@ -1,35 +1,23 @@
-// ++ / -- 运算符
-// 前缀
 let a = 10
 let b = ++a
-print(a)   // 11
-print(b)   // 11
-
-// 后缀
+print(a)
+print(b)
 let c = 10
 let d = c++
-print(c)   // 11
-print(d)   // 10
-
-// 前缀 --
+print(c)
+print(d)
 let e = 10
 let f = --e
-print(e)   // 9
-print(f)   // 9
-
-// 后缀 --
+print(e)
+print(f)
 let g = 10
 let h = g--
-print(g)   // 9
-print(h)   // 10
-
-// 表达式中
+print(g)
+print(h)
 let i = 5
 let j = i++ + 10
-print(i)   // 6
-print(j)   // 15
-
-// 对象属性
+print(i)
+print(j)
 Obj Count() {
     this.n = 0
 }

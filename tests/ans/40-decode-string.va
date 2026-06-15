@@ -1,0 +1,64 @@
+// Problem #40: Decode String (Medium)
+// "3[a2[c]]" -> "accaccacc". Stack-based parsing.
+// Use two stacks: one for repeat counts, one for strings built so far.
+
+func isDigit(ch) {
+    return ch == "0" or ch == "1" or ch == "2" or ch == "3" or ch == "4" or ch == "5" or ch == "6" or ch == "7" or ch == "8" or ch == "9";
+}
+
+func decodeString(s) {
+    let countStack = [];
+    let strStack = [];
+    let currentStr = "";
+    let i = 0;
+    let n = s.length;
+
+    while (i < n) {
+        let ch = s[i];
+
+        if (isDigit(ch)) {
+            // Parse the full number (could be multi-digit)
+            let num = 0;
+            while (i < n and isDigit(s[i])) {
+                num = num * 10 + int(s[i]);
+                i = i + 1;
+            }
+            countStack.add(num);
+        } else if (ch == "[") {
+            // Push current string and reset
+            strStack.add(currentStr);
+            currentStr = "";
+            i = i + 1;
+        } else if (ch == "]") {
+            // Pop count and previous string
+            let repeat = countStack.pop();
+            let prevStr = strStack.pop();
+            let decoded = prevStr;
+            for j in range(repeat) {
+                decoded = decoded + currentStr;
+            }
+            currentStr = decoded;
+            i = i + 1;
+        } else {
+            // Regular character
+            currentStr = currentStr + ch;
+            i = i + 1;
+        }
+    }
+
+    return currentStr;
+}
+
+// Test cases
+assert(decodeString("3[a]2[bc]") == "aaabcbc");
+assert(decodeString("3[a2[c]]") == "accaccacc");
+assert(decodeString("2[abc]3[cd]ef") == "abcabccdcdcdef");
+assert(decodeString("abc3[cd]xyz") == "abccdcdcdxyz");
+assert(decodeString("") == "");
+assert(decodeString("abcd") == "abcd");
+assert(decodeString("10[a]") == "aaaaaaaaaa");
+assert(decodeString("2[2[b]]") == "bbbb");
+assert(decodeString("3[a]2[b4[F]c]") == "aaabFFFFcbFFFFc");
+assert(decodeString("2[ab3[c]]") == "abcccabccc");
+
+print("PASS: 40-decode-string");

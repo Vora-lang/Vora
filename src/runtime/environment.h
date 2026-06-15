@@ -12,15 +12,15 @@ namespace vora {
 // Lexical scope chain: each frame has a parent (enclosing) environment.
 // define() always binds in the current frame only.
 // get() / assign() resolve locally first, then walk upward.
+//
+// Environments are owned exclusively by shared_ptr — the enclosing chain
+// forms a DAG where each node holds a shared_ptr to its parent, and
+// snapshot() creates an independent deep copy for closures.
 class Environment {
 public:
 
     explicit Environment(
-        Environment* enclosing = nullptr
-    );
-
-    explicit Environment(
-        std::shared_ptr<Environment> enclosing
+        std::shared_ptr<Environment> enclosing = nullptr
     );
 
     void define(
@@ -43,24 +43,19 @@ public:
         const std::string& name
     ) const;
 
-    Environment* enclosingEnvironment() const;
+    std::shared_ptr<Environment> enclosingEnvironment() const;
 
     static std::shared_ptr<Environment> snapshot(
         const Environment& env
     );
 
 private:
-
-    Environment* enclosing;
-
-    std::shared_ptr<Environment> enclosingOwned;
+    std::shared_ptr<Environment> enclosing_;
 
     std::unordered_map<
         std::string,
         Value
-    > values;
-
-    const Environment* parent() const;
+    > values_;
 };
 
 }

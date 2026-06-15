@@ -1,11 +1,9 @@
-// 嵌套循环 + break/continue
 print("=== nested for-in ===")
 for i in range(3) {
     for ch in "ab" {
         print(i + ":" + ch)
     }
 }
-
 print("=== break outer ===")
 for i in range(5) {
     for j in range(5) {
@@ -15,9 +13,10 @@ for i in range(5) {
         print(i + "+" + j + "=" + (i + j))
     }
 }
-
 print("=== continue ===")
 for i in range(5) {
-    if (i == 2) { continue }
+    if (i == 2) {
+        continue
+    }
     print(i)
 }

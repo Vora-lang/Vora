@@ -1,0 +1,60 @@
+// Problem #30: Maximum Product Subarray (Medium)
+// Find contiguous subarray with the largest product.
+// Track both max and min products ending at each position (negatives flip sign).
+
+func max(a, b) {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+func min(a, b) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+func maxProduct(nums) {
+    let n = nums.length;
+    if (n == 0) {
+        return 0;
+    }
+
+    let curMax = nums[0];
+    let curMin = nums[0];
+    let result = nums[0];
+
+    for i in range(1, n) {
+        let x = nums[i];
+        // If x is negative, swapping max and min handles the sign flip
+        if (x < 0) {
+            let temp = curMax;
+            curMax = curMin;
+            curMin = temp;
+        }
+
+        curMax = max(x, curMax * x);
+        curMin = min(x, curMin * x);
+
+        result = max(result, curMax);
+    }
+
+    return result;
+}
+
+// Test cases
+assert(maxProduct([2, 3, -2, 4]) == 6);        // [2,3] = 6
+assert(maxProduct([-2, 0, -1]) == 0);          // [0]
+assert(maxProduct([0, 2]) == 2);
+assert(maxProduct([-2]) == -2);
+assert(maxProduct([-2, 3, -4]) == 24);         // whole array: -2*3*-4 = 24
+assert(maxProduct([1, -2, 3, -4, 5]) == 120);  // 1*-2*3*-4*5 = 120
+assert(maxProduct([2, -5, -2, -4, 3]) == 24);  // -2*-4*3 = 24
+assert(maxProduct([0]) == 0);
+assert(maxProduct([]) == 0);
+assert(maxProduct([3, -1, 4]) == 4);           // [4] = 4
+assert(maxProduct([-1, -2, -9, -6]) == 108);   // -9*-6*-1*-2? No: -9*-6=54, 54*-1*-2=108
+
+print("PASS: 30-maximum-product-subarray");

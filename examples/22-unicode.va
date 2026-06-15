@@ -1,18 +1,12 @@
-// Unicode identifier test
 let 名字 = "Vora"
-let 版本 = 1.0
+let 版本 = 1
 let 你好世界 = "Hello World"
-
 print(名字 + " v" + 版本)
 print(你好世界)
-
-// Unicode function names
 func 加法(a, b) {
     return a + b
 }
 print(加法(3, 4))
-
-// Unicode in Obj
 Obj 动物(种类) {
     this.种类 = 种类
     func 叫声() {
@@ -21,15 +15,10 @@ Obj 动物(种类) {
 }
 let 猫 = 动物("cat")
 猫.叫声()
-
-// Mixed ascii and unicode
 let 用户_count = 42
 print(用户_count)
-
-// Unicode in string interpolation
 let 问候 = "你好"
 print("${问候}, ${名字}!")
-
 assert(加法(10, 20) == 30, "Unicode function should work")
 assert(猫.种类 == "cat", "Unicode obj property should work")
 print("All unicode tests passed!")

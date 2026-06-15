@@ -35,7 +35,9 @@ add_library(vora_lib OBJECT
 
     src/parser/parser.cpp
 
+    src/runtime/bound_method.cpp
     src/runtime/builtins.cpp
+    src/runtime/class_constructor.cpp
     src/runtime/value.cpp
     src/runtime/native_function.cpp
     src/runtime/vora_function.cpp

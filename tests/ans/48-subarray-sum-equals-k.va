@@ -1,0 +1,34 @@
+// Problem #48: Subarray Sum Equals K (Medium)
+// Count subarrays that sum to k.
+// Prefix sum with nested loop O(n^2).
+
+func subarraySum(nums, k) {
+    let n = nums.length;
+    let count = 0;
+
+    for i in range(n) {
+        let sum = 0;
+        for j in range(i, n) {
+            sum = sum + nums[j];
+            if (sum == k) {
+                count = count + 1;
+            }
+        }
+    }
+
+    return count;
+}
+
+// Test cases
+assert(subarraySum([1, 1, 1], 2) == 2);          // [1,1] at indices 0-1 and 1-2
+assert(subarraySum([1, 2, 3], 3) == 2);          // [3] at index 2, [1,2] at indices 0-1
+assert(subarraySum([1], 0) == 0);
+assert(subarraySum([-1, -1, 1], 0) == 1);        // [-1,1]
+assert(subarraySum([1, 2, 1, 2, 1], 3) == 4);    // [1,2], [2,1], [1,2], [2,1]
+assert(subarraySum([0, 0, 0], 0) == 6);           // 6 subarrays
+assert(subarraySum([3, 4, 7, 2, -3, 1, 4, 2], 7) == 4);
+assert(subarraySum([1, -1, 0], 0) == 3);          // [1,-1], [1,-1,0], [0]
+assert(subarraySum([0], 0) == 1);
+assert(subarraySum([100, 1, 2, 3, 4], 6) == 1);  // [2,4] or [1,2,3]
+
+print("PASS: 48-subarray-sum-equals-k");

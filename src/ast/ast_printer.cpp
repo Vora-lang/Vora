@@ -56,7 +56,7 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
                     else if constexpr (std::is_same_v<U, GcPtr<ObjectInstance>>) return "<object>";
                     else if constexpr (std::is_same_v<U, GcPtr<FunctionPrototype>>) return "<proto>";
                     else if constexpr (std::is_same_v<U, GcPtr<Dict>>) return "{dict}";
-                    else if constexpr (std::is_same_v<U, GcPtr<ClassData>>) return "<class>";
+                    else if constexpr (std::is_same_v<U, GcPtr<ClassDefinition>>) return "<class>";
                     else return std::to_string(inner);
                 }, arg->elements[i]);
             }
@@ -70,7 +70,7 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
             return "<proto " + arg->name + ">";
         } else if constexpr (std::is_same_v<T, GcPtr<Dict>>) {
             return "{dict}";
-        } else if constexpr (std::is_same_v<T, GcPtr<ClassData>>) {
+        } else if constexpr (std::is_same_v<T, GcPtr<ClassDefinition>>) {
             return "<class " + arg->name + ">";
         } else {
             return std::to_string(arg);

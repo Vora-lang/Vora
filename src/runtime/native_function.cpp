@@ -24,13 +24,10 @@ int NativeFunction::arity() const {
     return arity_;
 }
 
-void NativeFunction::markAsBoundMethod(std::shared_ptr<ObjectInstance> instance,
-                                       const FunctionPrototype* methodProto,
-                                       std::shared_ptr<VoraFunction> methodFunc) {
-    isBoundMethod_ = true;
-    boundInstance_ = std::move(instance);
-    boundMethodProto_ = methodProto;
-    boundMethodFunc_ = std::move(methodFunc);
+void NativeFunction::trace(std::vector<GcObject*>& /*wl*/) {
+    // NativeFunction no longer owns any GcObjects.
 }
+
+size_t NativeFunction::gcSize() const { return sizeof(NativeFunction); }
 
 }

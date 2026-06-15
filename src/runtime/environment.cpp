@@ -1,59 +1,37 @@
 #include "environment.h"
 #include "runtime_error.h"
 
-#include <iostream>
-
 namespace vora {
-
-Environment::Environment(
-    Environment* enclosing
-)
-    : enclosing(enclosing),
-      enclosingOwned(nullptr) {
-}
 
 Environment::Environment(
     std::shared_ptr<Environment> enclosing
 )
-    : enclosing(nullptr),
-      enclosingOwned(std::move(enclosing)) {
-}
-
-const Environment* Environment::parent() const {
-
-    if (enclosingOwned) {
-        return enclosingOwned.get();
-    }
-
-    return enclosing;
+    : enclosing_(std::move(enclosing)) {
 }
 
 void Environment::define(
     const std::string& name,
     const Value& value
 ) {
-
-    values[name] = value;
+    values_[name] = value;
 }
 
 bool Environment::hasLocal(
     const std::string& name
 ) const {
-
-    return values.find(name) != values.end();
+    return values_.find(name) != values_.end();
 }
 
 Value Environment::get(
     const std::string& name,
     const Token& token
 ) const {
-
     if (hasLocal(name)) {
-        return values.at(name);
+        return values_.at(name);
     }
 
-    if (const Environment* parentEnv = parent()) {
-        return parentEnv->get(name, token);
+    if (enclosing_) {
+        return enclosing_->get(name, token);
     }
 
     throw RuntimeError(
@@ -67,18 +45,13 @@ void Environment::assign(
     const Value& value,
     const Token& token
 ) {
-
     if (hasLocal(name)) {
-        values[name] = value;
+        values_[name] = value;
         return;
     }
 
-    if (const Environment* parentEnv = parent()) {
-        const_cast<Environment*>(parentEnv)->assign(
-            name,
-            value,
-            token
-        );
+    if (enclosing_) {
+        enclosing_->assign(name, value, token);
         return;
     }
 
@@ -88,30 +61,21 @@ void Environment::assign(
     );
 }
 
-Environment* Environment::enclosingEnvironment() const {
-
-    if (enclosingOwned) {
-        return enclosingOwned.get();
-    }
-
-    return enclosing;
+std::shared_ptr<Environment> Environment::enclosingEnvironment() const {
+    return enclosing_;
 }
 
 std::shared_ptr<Environment> Environment::snapshot(
     const Environment& env
 ) {
-
     std::shared_ptr<Environment> parentSnapshot;
 
-    if (const Environment* parentEnv = env.parent()) {
-        parentSnapshot = snapshot(*parentEnv);
+    if (env.enclosing_) {
+        parentSnapshot = snapshot(*env.enclosing_);
     }
 
-    auto copy = std::make_shared<Environment>(
-        parentSnapshot
-    );
-
-    copy->values = env.values;
+    auto copy = std::make_shared<Environment>(parentSnapshot);
+    copy->values_ = env.values_;
 
     return copy;
 }

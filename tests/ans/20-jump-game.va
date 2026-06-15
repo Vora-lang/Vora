@@ -1,0 +1,33 @@
+// Problem #20: Jump Game (Medium)
+// Array where each element = max jump length from that position.
+// Can you reach the last index? Greedy: track furthest reachable index.
+
+func canJump(nums) {
+    let furthest = 0;
+    for i in range(nums.length) {
+        if (i > furthest) {
+            return false;  // cannot reach this position
+        }
+        let reach = i + nums[i];
+        if (reach > furthest) {
+            furthest = reach;
+        }
+        if (furthest >= nums.length - 1) {
+            return true;
+        }
+    }
+    return furthest >= nums.length - 1;
+}
+
+// Test cases
+assert(canJump([2, 3, 1, 1, 4]) == true);
+assert(canJump([3, 2, 1, 0, 4]) == false);
+assert(canJump([0]) == true);
+assert(canJump([1]) == true);
+assert(canJump([2, 0]) == true);
+assert(canJump([0, 1]) == false);
+assert(canJump([2, 5, 0, 0, 0, 0]) == true);
+assert(canJump([1, 0, 1, 0]) == false);
+assert(canJump([1, 2, 3]) == true);
+
+print("PASS: 20-jump-game");

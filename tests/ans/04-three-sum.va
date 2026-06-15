@@ -1,0 +1,97 @@
+// Problem #4: 3Sum (Medium)
+// Find all unique triplets summing to 0.
+// Sort array first (bubble sort), then for each element, two-pointer find pairs.
+
+func bubbleSort(arr) {
+    let n = arr.length;
+    for i in range(n) {
+        for j in range(0, n - i - 1) {
+            if arr[j] > arr[j + 1] {
+                let temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+        }
+    }
+    return arr;
+}
+
+func arraysEqual(a, b) {
+    if a.length != b.length {
+        return false;
+    }
+    for i in range(a.length) {
+        if a[i] != b[i] {
+            return false;
+        }
+    }
+    return true;
+}
+
+func tripletEqual(a, b) {
+    return a[0] == b[0] and a[1] == b[1] and a[2] == b[2];
+}
+
+func threeSum(nums) {
+    let result = [];
+    let sorted = bubbleSort(nums);
+    let n = sorted.length;
+
+    for i in range(n) {
+        if i > 0 and sorted[i] == sorted[i - 1] {
+            continue;
+        }
+        let left = i + 1;
+        let right = n - 1;
+        while left < right {
+            let sum = sorted[i] + sorted[left] + sorted[right];
+            if sum == 0 {
+                result.add([sorted[i], sorted[left], sorted[right]]);
+                left = left + 1;
+                while left < right and sorted[left] == sorted[left - 1] {
+                    left = left + 1;
+                }
+            } else {
+                if sum < 0 {
+                    left = left + 1;
+                } else {
+                    right = right - 1;
+                }
+            }
+        }
+    }
+    return result;
+}
+
+// Test cases
+let r = threeSum([-1, 0, 1, 2, -1, -4]);
+assert(r.length == 2);
+// Check the two triplets exist
+let found1 = false;
+let found2 = false;
+for t in r {
+    if tripletEqual(t, [-1, -1, 2]) {
+        found1 = true;
+    }
+    if tripletEqual(t, [-1, 0, 1]) {
+        found2 = true;
+    }
+}
+assert(found1 and found2);
+
+r = threeSum([0, 1, 1]);
+assert(r.length == 0);
+
+r = threeSum([0, 0, 0]);
+assert(r.length == 1 and tripletEqual(r[0], [0, 0, 0]));
+
+r = threeSum([]);
+assert(r.length == 0);
+
+r = threeSum([0, 0, 0, 0]);
+assert(r.length == 1 and tripletEqual(r[0], [0, 0, 0]));
+
+r = threeSum([-2, 0, 1, 1, 2]);
+assert(r.length == 2);
+
+print("PASS: 04-three-sum");

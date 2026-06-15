@@ -6,6 +6,7 @@
 
 #include "doctest.h"
 #include "lexer/lexer.h"
+#include "gc/gc_heap.h"
 #include "vm/vm.h"
 #include "vm/value_ops.h"
 #include "vm/compiler.h"
@@ -67,7 +68,7 @@ TEST_CASE("vm_isTruthy_string") {
 }
 
 TEST_CASE("vm_isTruthy_array") {
-    auto arr = std::make_shared<Array>();
+    auto arr = GcHeap::instance().alloc<Array>();
     CHECK(isTruthy(Value(arr)));  // empty array is truthy
 }
 
@@ -167,14 +168,14 @@ TEST_CASE("vm_addValues_string_plus_int") {
 
 TEST_CASE("vm_addValues_array_concat") {
     bool err = false;
-    auto a = std::make_shared<Array>();
+    auto a = GcHeap::instance().alloc<Array>();
     a->elements.push_back(Value(static_cast<int64_t>(1)));
-    auto b = std::make_shared<Array>();
+    auto b = GcHeap::instance().alloc<Array>();
     b->elements.push_back(Value(static_cast<int64_t>(2)));
     Value result = addValues(Value(a), Value(b), err);
     CHECK_FALSE(err);
-    CHECK(std::holds_alternative<std::shared_ptr<Array>>(result));
-    auto arr = std::get<std::shared_ptr<Array>>(result);
+    CHECK(std::holds_alternative<GcPtr<Array>>(result));
+    auto arr = std::get<GcPtr<Array>>(result);
     REQUIRE(arr->elements.size() == 2);
     CHECK(std::get<int64_t>(arr->elements[0]) == 1);
     CHECK(std::get<int64_t>(arr->elements[1]) == 2);

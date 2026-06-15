@@ -1,23 +1,19 @@
 #pragma once
 
-#include <memory>
 #include <vector>
 
+#include "../gc/gc_object.h"
+#include "../gc/gc_ptr.h"
 #include "value.h"
 
 namespace vora {
 
-class Callable {
+class Callable : public GcObject {
 public:
-    virtual ~Callable() = default;
-
     virtual Value call(const std::vector<Value>& arguments) = 0;
 
-    // Returns the ObjectClass for constructor callables (used by inheritance).
-    // Returns nullptr for non-constructor callables.
-    virtual std::shared_ptr<ObjectClass> getClassDef() const { return nullptr; }
+    // Returns the ClassDefinition for constructor callables (used by inheritance).
+    virtual GcPtr<ClassDefinition> getClassDef() const { return GcPtr<ClassDefinition>(); }
 };
 
-using CallablePtr = std::shared_ptr<Callable>;
-
-}
+} // namespace vora

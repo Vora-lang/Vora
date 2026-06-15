@@ -1,0 +1,47 @@
+// Problem #28: Word Break (Medium)
+// Can a string be segmented into words from a dictionary?
+// DP: dp[i] = any(dp[j] && s[j:i] in wordDict for all j < i).
+
+// Linear search helper: check if word is in dictionary array
+func contains(arr, word) {
+    return arr.indexOf(word) != -1;
+}
+
+func wordBreak(s, wordDict) {
+    let n = s.length;
+    if (n == 0) {
+        return true;
+    }
+
+    // dp[i] = true if s[0..i-1] can be segmented
+    let dp = [];
+    dp.add(true);  // dp[0] = true (empty string)
+    for i in range(1, n + 1) {
+        dp.add(false);
+    }
+
+    for i in range(1, n + 1) {
+        for j in range(i) {
+            let sub = s.substring(j, i);
+            if (dp[j] and contains(wordDict, sub)) {
+                dp[i] = true;
+                break;
+            }
+        }
+    }
+
+    return dp[n];
+}
+
+// Test cases
+assert(wordBreak("leetcode", ["leet", "code"]) == true);
+assert(wordBreak("applepenapple", ["apple", "pen"]) == true);
+assert(wordBreak("catsandog", ["cats", "dog", "sand", "and", "cat"]) == false);
+assert(wordBreak("", ["a"]) == true);
+assert(wordBreak("a", ["a"]) == true);
+assert(wordBreak("a", ["b"]) == false);
+assert(wordBreak("aaaaaaa", ["aaaa", "aaa"]) == true);
+assert(wordBreak("goalspecial", ["go", "goal", "goals", "special"]) == true);
+assert(wordBreak("abcd", ["a", "abc", "b", "cd"]) == true);
+
+print("PASS: 28-word-break");

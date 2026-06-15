@@ -1,0 +1,49 @@
+// Problem #43: Kth Largest Element (Medium)
+// Kth largest in unsorted array.
+// Build a sorted copy using selection sort (since Vora does not support arr[idx] = val for in-place sort).
+
+func findKthLargest(nums, k) {
+    // Build sorted copy using selection sort approach
+    let sorted = [];
+    let n = nums.length;
+
+    // Copy original array
+    for i in range(n) {
+        sorted.add(nums[i]);
+    }
+
+    // Selection sort in descending order using remove+insert pattern
+    for i in range(n) {
+        let maxIdx = i;
+        let maxVal = sorted[i];
+        for j in range(i + 1, n) {
+            if (sorted[j] > maxVal) {
+                maxVal = sorted[j];
+                maxIdx = j;
+            }
+        }
+        if (maxIdx != i) {
+            // Swap sorted[i] and sorted[maxIdx] using remove+insert
+            sorted.remove(maxIdx);
+            // After removal, if maxIdx > i, the element at i is still at i
+            sorted.insert(maxIdx, sorted[i]);
+            sorted.remove(i);
+            sorted.insert(i, maxVal);
+        }
+    }
+
+    return sorted[k - 1];
+}
+
+// Test cases
+assert(findKthLargest([3, 2, 1, 5, 6, 4], 2) == 5);
+assert(findKthLargest([3, 2, 3, 1, 2, 4, 5, 5, 6], 4) == 4);
+assert(findKthLargest([1], 1) == 1);
+assert(findKthLargest([7, 10, 4, 3, 20, 15], 3) == 10);
+assert(findKthLargest([2, 1], 1) == 2);
+assert(findKthLargest([-1, -1], 2) == -1);
+assert(findKthLargest([5, 5, 5, 5], 2) == 5);
+assert(findKthLargest([3, 2, 1, 5, 6, 4], 1) == 6);
+assert(findKthLargest([3, 2, 1, 5, 6, 4], 6) == 1);
+
+print("PASS: 43-kth-largest-element");

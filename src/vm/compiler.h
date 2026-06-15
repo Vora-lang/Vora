@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -37,21 +38,25 @@ struct FunctionPrototype : GcObject {
     size_t gcSize() const override { return sizeof(FunctionPrototype); }
 };
 
-// Class data stored in constant pool for OP_CLASS.
-struct ClassData : GcObject {
+// ClassDefinition — unified compile-time + runtime class representation.
+// Replaces the former ClassData (compile-time) and ObjectClass (runtime) split.
+// Stored in the constant pool at compile time; OP_CLASS resolves parents,
+// builds method VoraFunctions, and computes MRO in-place.
+struct ClassDefinition : GcObject {
+    // --- Compile-time fields (set by visitObjStmt) ---
     std::string name;
     std::vector<std::string> parentNames;
     std::vector<std::string> params;
-    GcPtr<FunctionPrototype> ctor;
-    std::vector<GcPtr<FunctionPrototype>> methods;
+    GcPtr<FunctionPrototype> ctorProto;
+    std::vector<GcPtr<FunctionPrototype>> methodProtos;
 
-    void trace(std::vector<GcObject*>& wl) override {
-        if (ctor) wl.push_back(ctor.get());
-        for (auto& m : methods) {
-            if (m) wl.push_back(m.get());
-        }
-    }
-    size_t gcSize() const override { return sizeof(ClassData); }
+    // --- Runtime fields (set by OP_CLASS) ---
+    std::map<std::string, GcPtr<class VoraFunction>> methods;
+    std::vector<GcPtr<ClassDefinition>> parentClasses;
+    std::vector<GcPtr<ClassDefinition>> mro;
+
+    void trace(std::vector<GcObject*>& wl) override;
+    size_t gcSize() const override { return sizeof(ClassDefinition); }
 };
 
 // Compiler: AST → bytecode (side-effectful emission into a Chunk).

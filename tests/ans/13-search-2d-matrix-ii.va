@@ -1,0 +1,50 @@
+// Problem #13: Search a 2D Matrix II (Medium)
+// Matrix rows sorted ascending, cols sorted ascending. Search target.
+// Start from top-right corner, eliminate row or col each step.
+
+func searchMatrix(matrix, target) {
+    if (matrix.length == 0) {
+        return false;
+    }
+    let m = matrix.length;
+    let n = matrix[0].length;
+    // Start from top-right corner
+    let row = 0;
+    let col = n - 1;
+    while (row < m and col >= 0) {
+        let val = matrix[row][col];
+        if (val == target) {
+            return true;
+        }
+        if (val > target) {
+            col = col - 1;  // eliminate this column
+        } else {
+            row = row + 1;  // eliminate this row
+        }
+    }
+    return false;
+}
+
+// Test cases
+let matrix = [[1, 4, 7, 11, 15],
+              [2, 5, 8, 12, 19],
+              [3, 6, 9, 16, 22],
+              [10, 13, 14, 17, 24],
+              [18, 21, 23, 26, 30]];
+
+assert(searchMatrix(matrix, 5) == true);
+assert(searchMatrix(matrix, 20) == false);
+assert(searchMatrix(matrix, 1) == true);
+assert(searchMatrix(matrix, 30) == true);
+assert(searchMatrix(matrix, 15) == true);
+assert(searchMatrix(matrix, 0) == false);
+
+// Edge cases
+assert(searchMatrix([], 1) == false);
+assert(searchMatrix([[1]], 1) == true);
+assert(searchMatrix([[1]], 2) == false);
+assert(searchMatrix([[1, 3, 5]], 3) == true);
+assert(searchMatrix([[1], [3], [5]], 3) == true);
+assert(searchMatrix([[1, 3], [2, 5]], 4) == false);
+
+print("PASS: 13-search-2d-matrix-ii");

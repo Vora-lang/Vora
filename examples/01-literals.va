@@ -1,12 +1,10 @@
-// 字面量 — number, string, boolean, null
 let n = 42
 let pi = 3.14
 let s1 = "hello"
-let s2 = 'world'
+let s2 = "world"
 let t = true
 let f = false
 let nothing = null
-
 print("=== literals ===")
 print(n)
 print(pi)

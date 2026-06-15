@@ -1,3 +1,4 @@
+#include "gc/gc_heap.h"
 // tests/unit/test_value.cpp — Value system unit tests
 //
 // Tests: variant holds checks, isNumeric, toDouble, promoteToFloat,
@@ -45,9 +46,9 @@ TEST_CASE("value_string_holds") {
 }
 
 TEST_CASE("value_array_holds") {
-    auto arr = std::make_shared<Array>();
+    auto arr = GcHeap::instance().alloc<Array>();
     Value v(arr);
-    CHECK(std::holds_alternative<std::shared_ptr<Array>>(v));
+    CHECK(std::holds_alternative<GcPtr<Array>>(v));
     CHECK_FALSE(isNumeric(v));
 }
 
@@ -90,7 +91,7 @@ TEST_CASE("value_isNumeric_coverage") {
     CHECK_FALSE(isNumeric(Value(nullptr)));
     CHECK_FALSE(isNumeric(Value(true)));
     CHECK_FALSE(isNumeric(Value(std::string("hi"))));
-    CHECK_FALSE(isNumeric(Value(std::make_shared<Array>())));
+    CHECK_FALSE(isNumeric(Value(GcHeap::instance().alloc<Array>())));
 }
 
 TEST_CASE("valueToString_null") {
@@ -123,17 +124,17 @@ TEST_CASE("valueToString_string") {
 }
 
 TEST_CASE("valueToString_array") {
-    auto arr = std::make_shared<Array>();
+    auto arr = GcHeap::instance().alloc<Array>();
     // Empty array
     CHECK(valueToString(Value(arr)) == "[]");
     // Array with elements
-    auto arr2 = std::make_shared<Array>();
+    auto arr2 = GcHeap::instance().alloc<Array>();
     arr2->elements.push_back(Value(static_cast<int64_t>(1)));
     arr2->elements.push_back(Value(static_cast<int64_t>(2)));
     arr2->elements.push_back(Value(static_cast<int64_t>(3)));
     CHECK(valueToString(Value(arr2)) == "[1, 2, 3]");
     // Nested array
-    auto nested = std::make_shared<Array>();
+    auto nested = GcHeap::instance().alloc<Array>();
     nested->elements.push_back(Value(arr2));
     CHECK(valueToString(Value(nested)) == "[[1, 2, 3]]");
 }

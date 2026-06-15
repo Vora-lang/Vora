@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <iostream>
 
+#include "../gc/gc_heap.h"
 #include "native_function.h"
 #include "value.h"
 #include "vm/value_ops.h"
@@ -43,12 +44,12 @@ void registerBuiltins(VM& vm) {
                 else if constexpr (std::is_same_v<T, int64_t>) return "int";
                 else if constexpr (std::is_same_v<T, bool>) return "boolean";
                 else if constexpr (std::is_same_v<T, std::string>) return "string";
-                else if constexpr (std::is_same_v<T, std::shared_ptr<Array>>) return "array";
-                else if constexpr (std::is_same_v<T, std::shared_ptr<Dict>>) return "dict";
-                else if constexpr (std::is_same_v<T, std::shared_ptr<Callable>>) return "function";
-                else if constexpr (std::is_same_v<T, std::shared_ptr<ObjectInstance>>) return "object";
-                else if constexpr (std::is_same_v<T, std::shared_ptr<FunctionPrototype>>) return "function";
-                else if constexpr (std::is_same_v<T, std::shared_ptr<ClassData>>) return "class";
+                else if constexpr (std::is_same_v<T, GcPtr<Array>>) return "array";
+                else if constexpr (std::is_same_v<T, GcPtr<Dict>>) return "dict";
+                else if constexpr (std::is_same_v<T, GcPtr<Callable>>) return "function";
+                else if constexpr (std::is_same_v<T, GcPtr<ObjectInstance>>) return "object";
+                else if constexpr (std::is_same_v<T, GcPtr<FunctionPrototype>>) return "function";
+                else if constexpr (std::is_same_v<T, GcPtr<ClassDefinition>>) return "class";
                 else return "unknown";
             }, arguments[0]);
         });
@@ -56,12 +57,12 @@ void registerBuiltins(VM& vm) {
     vm.defineNative("len", 1,
         [](const std::vector<Value>& arguments) -> Value {
             const auto& v = arguments[0];
-            if (std::holds_alternative<std::shared_ptr<Array>>(v))
-                return static_cast<int64_t>(std::get<std::shared_ptr<Array>>(v)->elements.size());
+            if (std::holds_alternative<GcPtr<Array>>(v))
+                return static_cast<int64_t>(std::get<GcPtr<Array>>(v)->elements.size());
             if (std::holds_alternative<std::string>(v))
                 return static_cast<int64_t>(std::get<std::string>(v).size());
-            if (std::holds_alternative<std::shared_ptr<Dict>>(v))
-                return static_cast<int64_t>(std::get<std::shared_ptr<Dict>>(v)->pairs.size());
+            if (std::holds_alternative<GcPtr<Dict>>(v))
+                return static_cast<int64_t>(std::get<GcPtr<Dict>>(v)->pairs.size());
             return nullptr;  // will be caught by runtime
         });
 
@@ -145,7 +146,7 @@ void registerBuiltins(VM& vm) {
                 step = toDouble(arguments[2]);
             }
             if (step == 0.0) return nullptr;  // infinite loop guard
-            auto arr = std::make_shared<Array>();
+            auto arr = GcHeap::instance().alloc<Array>();
             if (step > 0) {
                 for (double i = start; i < end; i += step)
                     arr->elements.push_back(i);
@@ -223,19 +224,19 @@ void registerBuiltins(VM& vm) {
 // Array built-in methods
 // ============================================================================
 
-std::shared_ptr<NativeFunction> getArrayMethod(
+GcPtr<NativeFunction> getArrayMethod(
     const std::string& name,
-    std::shared_ptr<Array> arr
+    GcPtr<Array> arr
 ) {
     if (name == "add") {
-        return std::make_shared<NativeFunction>("add", 1,
+        return GcHeap::instance().alloc<NativeFunction>("add", 1,
             [arr](const std::vector<Value>& args) -> Value {
                 arr->elements.push_back(args[0]);
                 return nullptr;
             });
     }
     if (name == "pop") {
-        return std::make_shared<NativeFunction>("pop", 0,
+        return GcHeap::instance().alloc<NativeFunction>("pop", 0,
             [arr](const std::vector<Value>&) -> Value {
                 if (arr->elements.empty()) return nullptr;
                 Value v = std::move(arr->elements.back());
@@ -244,7 +245,7 @@ std::shared_ptr<NativeFunction> getArrayMethod(
             });
     }
     if (name == "insert") {
-        return std::make_shared<NativeFunction>("insert", 2,
+        return GcHeap::instance().alloc<NativeFunction>("insert", 2,
             [arr](const std::vector<Value>& args) -> Value {
                 if (!isNumeric(args[0])) return nullptr;
                 double idx = toDouble(args[0]);
@@ -259,7 +260,7 @@ std::shared_ptr<NativeFunction> getArrayMethod(
             });
     }
     if (name == "remove") {
-        return std::make_shared<NativeFunction>("remove", 1,
+        return GcHeap::instance().alloc<NativeFunction>("remove", 1,
             [arr](const std::vector<Value>& args) -> Value {
                 if (!isNumeric(args[0])) return nullptr;
                 double idx = toDouble(args[0]);
@@ -271,7 +272,7 @@ std::shared_ptr<NativeFunction> getArrayMethod(
             });
     }
     if (name == "indexOf") {
-        return std::make_shared<NativeFunction>("indexOf", 1,
+        return GcHeap::instance().alloc<NativeFunction>("indexOf", 1,
             [arr](const std::vector<Value>& args) -> Value {
                 for (size_t i = 0; i < arr->elements.size(); ++i) {
                     if (arr->elements[i].index() == args[0].index()) {
@@ -292,7 +293,7 @@ std::shared_ptr<NativeFunction> getArrayMethod(
             });
     }
     if (name == "clear") {
-        return std::make_shared<NativeFunction>("clear", 0,
+        return GcHeap::instance().alloc<NativeFunction>("clear", 0,
             [arr](const std::vector<Value>&) -> Value {
                 arr->elements.clear();
                 return nullptr;
@@ -305,14 +306,14 @@ std::shared_ptr<NativeFunction> getArrayMethod(
 // Dict built-in methods
 // ============================================================================
 
-std::shared_ptr<NativeFunction> getDictMethod(
+GcPtr<NativeFunction> getDictMethod(
     const std::string& name,
-    std::shared_ptr<Dict> dict
+    GcPtr<Dict> dict
 ) {
     if (name == "keys") {
-        return std::make_shared<NativeFunction>("keys", 0,
+        return GcHeap::instance().alloc<NativeFunction>("keys", 0,
             [dict](const std::vector<Value>&) -> Value {
-                auto arr = std::make_shared<Array>();
+                auto arr = GcHeap::instance().alloc<Array>();
                 for (const auto& [k, v] : dict->pairs) {
                     arr->elements.push_back(std::string(k));
                 }
@@ -320,9 +321,9 @@ std::shared_ptr<NativeFunction> getDictMethod(
             });
     }
     if (name == "values") {
-        return std::make_shared<NativeFunction>("values", 0,
+        return GcHeap::instance().alloc<NativeFunction>("values", 0,
             [dict](const std::vector<Value>&) -> Value {
-                auto arr = std::make_shared<Array>();
+                auto arr = GcHeap::instance().alloc<Array>();
                 for (const auto& [k, v] : dict->pairs) {
                     arr->elements.push_back(v);
                 }
@@ -330,14 +331,14 @@ std::shared_ptr<NativeFunction> getDictMethod(
             });
     }
     if (name == "has") {
-        return std::make_shared<NativeFunction>("has", 1,
+        return GcHeap::instance().alloc<NativeFunction>("has", 1,
             [dict](const std::vector<Value>& args) -> Value {
                 std::string key = valueToString(args[0]);
                 return dict->pairs.find(key) != dict->pairs.end();
             });
     }
     if (name == "remove") {
-        return std::make_shared<NativeFunction>("remove", 1,
+        return GcHeap::instance().alloc<NativeFunction>("remove", 1,
             [dict](const std::vector<Value>& args) -> Value {
                 std::string key = valueToString(args[0]);
                 auto it = dict->pairs.find(key);
@@ -354,12 +355,12 @@ std::shared_ptr<NativeFunction> getDictMethod(
 // String built-in methods
 // ============================================================================
 
-std::shared_ptr<NativeFunction> getStringMethod(
+GcPtr<NativeFunction> getStringMethod(
     const std::string& name,
     std::string str
 ) {
     if (name == "substring") {
-        return std::make_shared<NativeFunction>("substring", -1,
+        return GcHeap::instance().alloc<NativeFunction>("substring", -1,
             [str](const std::vector<Value>& args) -> Value {
                 int64_t len = static_cast<int64_t>(str.size());
                 if (len == 0) return std::string("");
@@ -376,14 +377,14 @@ std::shared_ptr<NativeFunction> getStringMethod(
             });
     }
     if (name == "include") {
-        return std::make_shared<NativeFunction>("include", 1,
+        return GcHeap::instance().alloc<NativeFunction>("include", 1,
             [str](const std::vector<Value>& args) -> Value {
                 if (!std::holds_alternative<std::string>(args[0])) return false;
                 return str.find(std::get<std::string>(args[0])) != std::string::npos;
             });
     }
     if (name == "startsWith") {
-        return std::make_shared<NativeFunction>("startsWith", 1,
+        return GcHeap::instance().alloc<NativeFunction>("startsWith", 1,
             [str](const std::vector<Value>& args) -> Value {
                 if (!std::holds_alternative<std::string>(args[0])) return false;
                 const auto& prefix = std::get<std::string>(args[0]);
@@ -391,7 +392,7 @@ std::shared_ptr<NativeFunction> getStringMethod(
             });
     }
     if (name == "endsWith") {
-        return std::make_shared<NativeFunction>("endsWith", 1,
+        return GcHeap::instance().alloc<NativeFunction>("endsWith", 1,
             [str](const std::vector<Value>& args) -> Value {
                 if (!std::holds_alternative<std::string>(args[0])) return false;
                 const auto& suffix = std::get<std::string>(args[0]);
@@ -399,7 +400,7 @@ std::shared_ptr<NativeFunction> getStringMethod(
             });
     }
     if (name == "upper") {
-        return std::make_shared<NativeFunction>("upper", 0,
+        return GcHeap::instance().alloc<NativeFunction>("upper", 0,
             [str](const std::vector<Value>&) -> Value {
                 std::string result = str;
                 for (auto& c : result) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -407,7 +408,7 @@ std::shared_ptr<NativeFunction> getStringMethod(
             });
     }
     if (name == "lower") {
-        return std::make_shared<NativeFunction>("lower", 0,
+        return GcHeap::instance().alloc<NativeFunction>("lower", 0,
             [str](const std::vector<Value>&) -> Value {
                 std::string result = str;
                 for (auto& c : result) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -415,7 +416,7 @@ std::shared_ptr<NativeFunction> getStringMethod(
             });
     }
     if (name == "trim") {
-        return std::make_shared<NativeFunction>("trim", 0,
+        return GcHeap::instance().alloc<NativeFunction>("trim", 0,
             [str](const std::vector<Value>&) -> Value {
                 size_t start = 0;
                 while (start < str.size() && std::isspace(static_cast<unsigned char>(str[start]))) ++start;
@@ -426,7 +427,7 @@ std::shared_ptr<NativeFunction> getStringMethod(
             });
     }
     if (name == "replace") {
-        return std::make_shared<NativeFunction>("replace", 2,
+        return GcHeap::instance().alloc<NativeFunction>("replace", 2,
             [str](const std::vector<Value>& args) -> Value {
                 if (!std::holds_alternative<std::string>(args[0]) || !std::holds_alternative<std::string>(args[1]))
                     return str;
@@ -441,7 +442,7 @@ std::shared_ptr<NativeFunction> getStringMethod(
             });
     }
     if (name == "replaceAll") {
-        return std::make_shared<NativeFunction>("replaceAll", 2,
+        return GcHeap::instance().alloc<NativeFunction>("replaceAll", 2,
             [str](const std::vector<Value>& args) -> Value {
                 if (!std::holds_alternative<std::string>(args[0]) || !std::holds_alternative<std::string>(args[1]))
                     return str;
@@ -458,9 +459,9 @@ std::shared_ptr<NativeFunction> getStringMethod(
             });
     }
     if (name == "split") {
-        return std::make_shared<NativeFunction>("split", 1,
+        return GcHeap::instance().alloc<NativeFunction>("split", 1,
             [str](const std::vector<Value>& args) -> Value {
-                auto result = std::make_shared<Array>();
+                auto result = GcHeap::instance().alloc<Array>();
                 if (!std::holds_alternative<std::string>(args[0])) {
                     result->elements.push_back(str);
                     return result;

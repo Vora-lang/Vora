@@ -5,6 +5,8 @@
 #include <string>
 #include <variant>
 
+#include "../gc/gc_heap.h"
+
 namespace vora {
 
 // =========================================================================
@@ -35,18 +37,18 @@ bool valuesEqual(const Value& a, const Value& b) {
     if (std::holds_alternative<bool>(a)) return std::get<bool>(a) == std::get<bool>(b);
     if (std::holds_alternative<std::string>(a)) return std::get<std::string>(a) == std::get<std::string>(b);
 
-    if (std::holds_alternative<std::shared_ptr<Array>>(a))
-        return std::get<std::shared_ptr<Array>>(a) == std::get<std::shared_ptr<Array>>(b);
-    if (std::holds_alternative<std::shared_ptr<Dict>>(a))
-        return std::get<std::shared_ptr<Dict>>(a) == std::get<std::shared_ptr<Dict>>(b);
-    if (std::holds_alternative<std::shared_ptr<Callable>>(a))
-        return std::get<std::shared_ptr<Callable>>(a) == std::get<std::shared_ptr<Callable>>(b);
-    if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(a))
-        return std::get<std::shared_ptr<ObjectInstance>>(a) == std::get<std::shared_ptr<ObjectInstance>>(b);
-    if (std::holds_alternative<std::shared_ptr<FunctionPrototype>>(a))
-        return std::get<std::shared_ptr<FunctionPrototype>>(a) == std::get<std::shared_ptr<FunctionPrototype>>(b);
-    if (std::holds_alternative<std::shared_ptr<ClassData>>(a))
-        return std::get<std::shared_ptr<ClassData>>(a) == std::get<std::shared_ptr<ClassData>>(b);
+    if (std::holds_alternative<GcPtr<Array>>(a))
+        return std::get<GcPtr<Array>>(a) == std::get<GcPtr<Array>>(b);
+    if (std::holds_alternative<GcPtr<Dict>>(a))
+        return std::get<GcPtr<Dict>>(a) == std::get<GcPtr<Dict>>(b);
+    if (std::holds_alternative<GcPtr<Callable>>(a))
+        return std::get<GcPtr<Callable>>(a) == std::get<GcPtr<Callable>>(b);
+    if (std::holds_alternative<GcPtr<ObjectInstance>>(a))
+        return std::get<GcPtr<ObjectInstance>>(a) == std::get<GcPtr<ObjectInstance>>(b);
+    if (std::holds_alternative<GcPtr<FunctionPrototype>>(a))
+        return std::get<GcPtr<FunctionPrototype>>(a) == std::get<GcPtr<FunctionPrototype>>(b);
+    if (std::holds_alternative<GcPtr<ClassDefinition>>(a))
+        return std::get<GcPtr<ClassDefinition>>(a) == std::get<GcPtr<ClassDefinition>>(b);
 
     return false;
 }
@@ -100,20 +102,20 @@ Value addValues(const Value& a, const Value& b, bool& error) {
         return valueToString(a) + std::get<std::string>(b);
     }
 
-    if (std::holds_alternative<std::shared_ptr<Array>>(a) && std::holds_alternative<std::shared_ptr<Array>>(b)) {
-        auto result = std::make_shared<Array>();
-        const auto& leftArr = std::get<std::shared_ptr<Array>>(a)->elements;
-        const auto& rightArr = std::get<std::shared_ptr<Array>>(b)->elements;
+    if (std::holds_alternative<GcPtr<Array>>(a) && std::holds_alternative<GcPtr<Array>>(b)) {
+        auto result = GcHeap::instance().alloc<Array>();
+        const auto& leftArr = std::get<GcPtr<Array>>(a)->elements;
+        const auto& rightArr = std::get<GcPtr<Array>>(b)->elements;
         result->elements.reserve(leftArr.size() + rightArr.size());
         result->elements.insert(result->elements.end(), leftArr.begin(), leftArr.end());
         result->elements.insert(result->elements.end(), rightArr.begin(), rightArr.end());
         return result;
     }
 
-    if (std::holds_alternative<std::shared_ptr<Dict>>(a) && std::holds_alternative<std::shared_ptr<Dict>>(b)) {
-        auto result = std::make_shared<Dict>();
-        const auto& leftDict = std::get<std::shared_ptr<Dict>>(a)->pairs;
-        const auto& rightDict = std::get<std::shared_ptr<Dict>>(b)->pairs;
+    if (std::holds_alternative<GcPtr<Dict>>(a) && std::holds_alternative<GcPtr<Dict>>(b)) {
+        auto result = GcHeap::instance().alloc<Dict>();
+        const auto& leftDict = std::get<GcPtr<Dict>>(a)->pairs;
+        const auto& rightDict = std::get<GcPtr<Dict>>(b)->pairs;
         result->pairs = leftDict;
         for (const auto& [k, v] : rightDict) {
             result->pairs[k] = v;  // right overwrites left
@@ -121,18 +123,18 @@ Value addValues(const Value& a, const Value& b, bool& error) {
         return result;
     }
 
-    if (std::holds_alternative<std::shared_ptr<Array>>(a)) {
-        auto result = std::make_shared<Array>();
-        const auto& leftArr = std::get<std::shared_ptr<Array>>(a)->elements;
+    if (std::holds_alternative<GcPtr<Array>>(a)) {
+        auto result = GcHeap::instance().alloc<Array>();
+        const auto& leftArr = std::get<GcPtr<Array>>(a)->elements;
         result->elements.reserve(leftArr.size() + 1);
         result->elements.insert(result->elements.end(), leftArr.begin(), leftArr.end());
         result->elements.push_back(b);
         return result;
     }
 
-    if (std::holds_alternative<std::shared_ptr<Array>>(b)) {
-        auto result = std::make_shared<Array>();
-        const auto& rightArr = std::get<std::shared_ptr<Array>>(b)->elements;
+    if (std::holds_alternative<GcPtr<Array>>(b)) {
+        auto result = GcHeap::instance().alloc<Array>();
+        const auto& rightArr = std::get<GcPtr<Array>>(b)->elements;
         result->elements.reserve(1 + rightArr.size());
         result->elements.push_back(a);
         result->elements.insert(result->elements.end(), rightArr.begin(), rightArr.end());

@@ -1,25 +1,15 @@
-// Ternary operator tests
-
 let x = 10
 let result = x > 0 ? "positive" : "negative"
 print("x > 0 ? positive : negative =>", result)
-
 let y = -5
 let result2 = y > 0 ? "positive" : "negative"
 print("y > 0 ? positive : negative =>", result2)
-
-// Nested ternary (right-associative)
 let a = 1
 let b = 2
 let nested = a > b ? "a>b" : a < b ? "a<b" : "a==b"
-print("nested ternary =>", nested)  // => a<b
-
-// Ternary in expression context
+print("nested ternary =>", nested)
 let sum = (x > 0 ? 1 : 0) + (y > 0 ? 1 : 0)
-print("sum of ternaries =>", sum)  // => 1
-
-// Ternary with comparison
+print("sum of ternaries =>", sum)
 let max = x > y ? x : y
-print("max =>", max)  // => 10
-
+print("max =>", max)
 print("=== All ternary tests passed ===")

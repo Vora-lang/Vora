@@ -1,0 +1,55 @@
+// Problem #42: Largest Rectangle in Histogram (Hard)
+// Max rectangular area in a histogram. Monotonic stack of increasing heights.
+
+func max(a, b) {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+func largestRectangleArea(heights) {
+    let n = heights.length;
+    if (n == 0) {
+        return 0;
+    }
+
+    let stack = [];  // stores indices, heights at those indices are increasing
+    let maxArea = 0;
+
+    for i in range(n + 1) {
+        // Use 0 as sentinel height at index n to flush stack
+        let h = 0;
+        if (i < n) {
+            h = heights[i];
+        }
+
+        while (stack.length > 0 and h < heights[stack[stack.length - 1]]) {
+            let height = heights[stack.pop()];
+            let width = i;
+            if (stack.length > 0) {
+                width = i - stack[stack.length - 1] - 1;
+            }
+            maxArea = max(maxArea, height * width);
+        }
+
+        stack.add(i);
+    }
+
+    return maxArea;
+}
+
+// Test cases
+assert(largestRectangleArea([2, 1, 5, 6, 2, 3]) == 10);
+assert(largestRectangleArea([2, 4]) == 4);
+assert(largestRectangleArea([1]) == 1);
+assert(largestRectangleArea([0]) == 0);
+assert(largestRectangleArea([]) == 0);
+assert(largestRectangleArea([1, 1]) == 2);
+assert(largestRectangleArea([6, 2, 5, 4, 5, 1, 6]) == 12);
+assert(largestRectangleArea([2, 1, 2]) == 3);
+assert(largestRectangleArea([4, 2, 0, 3, 2, 5]) == 6);
+assert(largestRectangleArea([1, 2, 3, 4, 5]) == 9);
+assert(largestRectangleArea([5, 4, 3, 2, 1]) == 9);
+
+print("PASS: 42-largest-rectangle-histogram");

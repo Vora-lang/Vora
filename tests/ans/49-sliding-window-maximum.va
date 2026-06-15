@@ -1,0 +1,55 @@
+// #239 Sliding Window Maximum (Hard)
+// For each window of size k, find the maximum by scanning.
+
+func maxSlidingWindow(nums, k) {
+    let result = [];
+    let n = nums.length;
+
+    if (n == 0 or k == 0) {
+        return result;
+    }
+
+    let i = 0;
+    while (i + k <= n) {
+        let maxVal = nums[i];
+        let j = 1;
+        while (j < k) {
+            if (nums[i + j] > maxVal) {
+                maxVal = nums[i + j];
+            }
+            j = j + 1;
+        }
+        result.add(maxVal);
+        i = i + 1;
+    }
+
+    return result;
+}
+
+// Tests
+func arraysEqual(a, b) {
+    if (a.length != b.length) { return false; }
+    let i = 0;
+    while (i < a.length) {
+        if (a[i] != b[i]) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+let t1 = maxSlidingWindow([1,3,-1,-3,5,3,6,7], 3);
+assert(arraysEqual(t1, [3,3,5,5,6,7]), "Test 1 failed: " + t1[0]);
+
+let t2 = maxSlidingWindow([1], 1);
+assert(arraysEqual(t2, [1]), "Test 2 failed");
+
+let t3 = maxSlidingWindow([1,-1], 1);
+assert(arraysEqual(t3, [1,-1]), "Test 3 failed");
+
+let t4 = maxSlidingWindow([9,11], 2);
+assert(arraysEqual(t4, [11]), "Test 4 failed");
+
+let t5 = maxSlidingWindow([4,-2], 2);
+assert(arraysEqual(t5, [4]), "Test 5 failed");
+
+print("49-sliding-window-maximum: PASS");

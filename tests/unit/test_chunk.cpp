@@ -1,3 +1,4 @@
+#include "gc/gc_heap.h"
 // tests/unit/test_chunk.cpp — Chunk bytecode storage unit tests
 //
 // Tests: write, writeAt, RLE line/column encoding, addConstant dedup
@@ -145,8 +146,8 @@ TEST_CASE("chunk_addConstant_cross_type_distinct") {
 
 TEST_CASE("chunk_addConstant_shared_ptr_not_deduped") {
     Chunk c;
-    auto a1 = std::make_shared<Array>();
-    auto a2 = std::make_shared<Array>();  // different pointer, same content
+    auto a1 = GcHeap::instance().alloc<Array>();
+    auto a2 = GcHeap::instance().alloc<Array>();  // different pointer, same content
     size_t i0 = c.addConstant(a1);
     size_t i1 = c.addConstant(a2);
     // Currently shared_ptr types are NOT value-deduped (by design)

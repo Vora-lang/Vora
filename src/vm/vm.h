@@ -23,7 +23,7 @@ struct CallFrame {
     const uint8_t* returnIp;    // where to resume in caller
     size_t frameBase;            // base of this frame's locals on the stack (index)
     const Chunk* callerChunk;    // chunk to restore on return
-    std::shared_ptr<VoraFunction> function;  // executing function (for upvalue access)
+    GcPtr<VoraFunction> function;  // executing function (for upvalue access)
 };
 
 class VM {
@@ -88,6 +88,13 @@ public:
                       const std::vector<bool>& defined,
                       const std::unordered_map<std::string, int>& index);
 
+    // Run a constructor chunk with a given instance and arguments.
+    // Used by ClassConstructor to execute parent and own constructors
+    // in a temporary VM. Resets internal state and runs to completion.
+    InterpretResult runConstructor(const Chunk& chunk,
+                                   const Value& instance,
+                                   const std::vector<Value>& args);
+
     // Native error reporting — set by builtins (e.g. assert) that need to
     // throw through the VM exception mechanism rather than calling exit().
     // callValue() checks this after every native call and routes through
@@ -120,11 +127,15 @@ private:
 
     // Call frame management
     bool callValue(const Value& callee, uint8_t argCount);
-    InterpretResult callVoraFunction(const std::shared_ptr<VoraFunction>& func,
+    InterpretResult callVoraFunction(const GcPtr<VoraFunction>& func,
                                       const std::vector<Value>& args);
 
     // Stack trace: walks the CallFrame chain to produce a traceback string.
     std::string captureStackTrace() const;
+
+    // Run a mark-sweep garbage collection cycle.  Gathers roots from the VM
+    // stack, globals, open upvalues, and call frames, then invokes the GC.
+    void collectGarbage();
 
     // Pre-unwind snapshot: throwException() captures the stack trace before
     // popping frames. runtimeError() uses this if non-empty (exception path)

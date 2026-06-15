@@ -1,0 +1,53 @@
+// #3 Longest Substring Without Repeating Characters (Medium)
+// Sliding window. For each start, extend end until repeat.
+
+func lengthOfLongestSubstring(s) {
+    if (s.length == 0) {
+        return 0;
+    }
+    if (s.length == 1) {
+        return 1;
+    }
+
+    let maxLen = 0;
+    let seen = [];
+    let left = 0;
+    let right = 0;
+
+    while (right < s.length) {
+        let ch = s[right];
+        let idx = seen.indexOf(ch);
+
+        if (idx != -1) {
+            // Remove characters from the left until the duplicate is gone
+            while (seen.length > 0 and seen[0] != ch) {
+                seen.remove(0);
+                left = left + 1;
+            }
+            if (seen.length > 0) {
+                seen.remove(0);
+                left = left + 1;
+            }
+        }
+
+        seen.add(ch);
+        let curLen = right - left + 1;
+        if (curLen > maxLen) {
+            maxLen = curLen;
+        }
+        right = right + 1;
+    }
+
+    return maxLen;
+}
+
+// Tests
+assert(lengthOfLongestSubstring("abcabcbb") == 3, "Test 1 failed");
+assert(lengthOfLongestSubstring("bbbbb") == 1, "Test 2 failed");
+assert(lengthOfLongestSubstring("pwwkew") == 3, "Test 3 failed");
+assert(lengthOfLongestSubstring("") == 0, "Test 4 failed");
+assert(lengthOfLongestSubstring("a") == 1, "Test 5 failed");
+assert(lengthOfLongestSubstring("au") == 2, "Test 6 failed");
+assert(lengthOfLongestSubstring("dvdf") == 3, "Test 7 failed");
+
+print("52-longest-substring-no-repeat: PASS");

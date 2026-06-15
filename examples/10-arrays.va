@@ -1,23 +1,14 @@
-// 数组：字面量、索引、拼接
 let arr = [1, 2, 3]
 print(arr)
 print(arr[0])
 print(arr[2])
-
-// 不同类型元素
 let mixed = [42, "hello", true, null]
 print(mixed)
-
-// 数组拼接
 let a = [1, 2]
 let b = [3, 4]
 print(a + b)
-
-// 追加元素
 print(a + 5)
 print(0 + a)
-
-// 嵌套数组
 let nested = [[1, 2], [3, 4]]
 print(nested[0])
 print(nested[1][1])

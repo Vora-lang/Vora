@@ -88,20 +88,20 @@ static std::string constantToString(const Value& value) {
     if (std::holds_alternative<std::string>(value)) {
         return "'" + std::get<std::string>(value) + "'";
     }
-    if (std::holds_alternative<std::shared_ptr<FunctionPrototype>>(value)) {
-        return "<proto " + std::get<std::shared_ptr<FunctionPrototype>>(value)->name + ">";
+    if (std::holds_alternative<GcPtr<FunctionPrototype>>(value)) {
+        return "<proto " + std::get<GcPtr<FunctionPrototype>>(value)->name + ">";
     }
-    if (std::holds_alternative<std::shared_ptr<ClassData>>(value)) {
-        return "<class " + std::get<std::shared_ptr<ClassData>>(value)->name + ">";
+    if (std::holds_alternative<GcPtr<ClassDefinition>>(value)) {
+        return "<class " + std::get<GcPtr<ClassDefinition>>(value)->name + ">";
     }
-    if (std::holds_alternative<std::shared_ptr<Array>>(value)) {
+    if (std::holds_alternative<GcPtr<Array>>(value)) {
         return "[array]";
     }
-    if (std::holds_alternative<std::shared_ptr<Callable>>(value)) {
+    if (std::holds_alternative<GcPtr<Callable>>(value)) {
         return "<callable>";
     }
-    if (std::holds_alternative<std::shared_ptr<ObjectInstance>>(value)) {
-        return "<instance " + std::get<std::shared_ptr<ObjectInstance>>(value)->className + ">";
+    if (std::holds_alternative<GcPtr<ObjectInstance>>(value)) {
+        return "<instance " + std::get<GcPtr<ObjectInstance>>(value)->className + ">";
     }
     return "[unknown]";
 }

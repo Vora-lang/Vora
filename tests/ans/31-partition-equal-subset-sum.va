@@ -1,0 +1,59 @@
+// Problem #31: Partition Equal Subset Sum (Medium)
+// Can array be partitioned into two subsets with equal sum?
+// DP knapsack: can we reach target = sum/2 using some elements?
+
+func canPartition(nums) {
+    let n = nums.length;
+    if (n < 2) {
+        return false;
+    }
+
+    // Calculate total sum
+    let total = 0;
+    for i in range(n) {
+        total = total + nums[i];
+    }
+
+    // If total is odd, impossible
+    if (total % 2 != 0) {
+        return false;
+    }
+
+    let target = total / 2;
+
+    // dp[i] = true if we can reach sum i
+    let dp = [];
+    dp.add(true);  // dp[0] = true
+    for i in range(1, target + 1) {
+        dp.add(false);
+    }
+
+    for i in range(n) {
+        let num = nums[i];
+        // Update dp backwards to avoid reuse
+        // Vora range: start inclusive, stop exclusive, step
+        // Walk from target down to num
+        let s = target;
+        while (s >= num) {
+            if (dp[s - num]) {
+                dp[s] = true;
+            }
+            s = s - 1;
+        }
+    }
+
+    return dp[target];
+}
+
+// Test cases
+assert(canPartition([1, 5, 11, 5]) == true);      // [1,5,5] and [11], both sum to 11
+assert(canPartition([1, 2, 3, 5]) == false);       // sum=11 (odd? 1+2+3+5=11, odd -> false)
+assert(canPartition([1, 2, 5]) == false);          // sum=8, target=4, no combination
+assert(canPartition([2, 2, 3, 5]) == true);        // sum=12, target=6, [2,2,3]=7? [2,2] and [5]? No... [2,2] sum to 6 ✓
+assert(canPartition([1]) == false);
+assert(canPartition([3, 3, 3, 4, 5]) == false);    // sum=18, target=9, can't make 9
+assert(canPartition([1, 1, 1, 1]) == true);        // sum=4, target=2, [1,1]
+assert(canPartition([100]) == false);
+assert(canPartition([14, 9, 8, 4, 3, 2]) == true); // sum=40, target=20, 14+4+2=20
+
+print("PASS: 31-partition-equal-subset-sum");

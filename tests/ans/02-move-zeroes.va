@@ -1,0 +1,41 @@
+// Problem #2: Move Zeroes (Easy)
+// Move all zeros to end in-place, keep relative order.
+// Two-pointer approach.
+
+func moveZeroes(nums) {
+    let insertPos = 0;
+    for i in range(nums.length) {
+        if nums[i] != 0 {
+            nums[insertPos] = nums[i];
+            insertPos = insertPos + 1;
+        }
+    }
+    while insertPos < nums.length {
+        nums[insertPos] = 0;
+        insertPos = insertPos + 1;
+    }
+    return nums;
+}
+
+// Helper to compare arrays
+func arraysEqual(a, b) {
+    if a.length != b.length {
+        return false;
+    }
+    for i in range(a.length) {
+        if a[i] != b[i] {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Test cases
+assert(arraysEqual(moveZeroes([0, 1, 0, 3, 12]), [1, 3, 12, 0, 0]));
+assert(arraysEqual(moveZeroes([0]), [0]));
+assert(arraysEqual(moveZeroes([1, 2, 3]), [1, 2, 3]));
+assert(arraysEqual(moveZeroes([0, 0, 1]), [1, 0, 0]));
+assert(arraysEqual(moveZeroes([0, 1, 0, 2, 0, 3]), [1, 2, 3, 0, 0, 0]));
+assert(arraysEqual(moveZeroes([]), []));
+
+print("PASS: 02-move-zeroes");

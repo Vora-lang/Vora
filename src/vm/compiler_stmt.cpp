@@ -506,21 +506,21 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     ctorProto->requiredArity = ctorRequiredArity;
     ctorProto->chunk = std::move(ctorCompiler.chunk);
 
-    // Extract param names for ClassData
+    // Extract param names for ClassDefinition
     std::vector<std::string> paramNames;
     for (const auto& p : stmt.params) {
         paramNames.push_back(p.name);
     }
 
-    // Store class data in constant pool
-    auto classData = GcHeap::instance().alloc<ClassData>();
-    classData->name = stmt.name;
-    classData->parentNames = stmt.parentNames;
-    classData->params = paramNames;
-    classData->ctor = ctorProto;
-    classData->methods = methodProtos;
+    // Store class definition in constant pool
+    auto classDef = GcHeap::instance().alloc<ClassDefinition>();
+    classDef->name = stmt.name;
+    classDef->parentNames = stmt.parentNames;
+    classDef->params = paramNames;
+    classDef->ctorProto = ctorProto;
+    classDef->methodProtos = methodProtos;
 
-    uint8_t classIndex = makeConstant(classData);
+    uint8_t classIndex = makeConstant(classDef);
 
     // Emit OP_CLASS to create the class constructor callable
     emitBytes(static_cast<uint8_t>(OpCode::OP_CLASS), classIndex);

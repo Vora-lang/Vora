@@ -1,0 +1,55 @@
+// Problem #7: Rotate Array (Medium)
+// Rotate array to the right by k steps.
+// Use array reversal technique.
+
+func reverse(arr, start, end) {
+    let i = start;
+    let j = end;
+    while i < j {
+        let temp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = temp;
+        i = i + 1;
+        j = j - 1;
+    }
+}
+
+func rotate(nums, k) {
+    let n = nums.length;
+    if n == 0 {
+        return nums;
+    }
+    k = k % n;
+    if k == 0 {
+        return nums;
+    }
+
+    reverse(nums, 0, n - 1);
+    reverse(nums, 0, k - 1);
+    reverse(nums, k, n - 1);
+    return nums;
+}
+
+// Test cases
+let r = rotate([1, 2, 3, 4, 5, 6, 7], 3);
+assert(r[0] == 5 and r[1] == 6 and r[2] == 7 and r[3] == 1 and r[4] == 2 and r[5] == 3 and r[6] == 4);
+
+r = rotate([-1, -100, 3, 99], 2);
+assert(r[0] == 3 and r[1] == 99 and r[2] == -1 and r[3] == -100);
+
+r = rotate([1, 2, 3], 0);
+assert(r[0] == 1 and r[1] == 2 and r[2] == 3);
+
+r = rotate([1, 2, 3], 3);
+assert(r[0] == 1 and r[1] == 2 and r[2] == 3);
+
+r = rotate([1, 2, 3], 4);
+assert(r[0] == 3 and r[1] == 1 and r[2] == 2);
+
+r = rotate([1], 5);
+assert(r[0] == 1);
+
+r = rotate([], 3);
+assert(r.length == 0);
+
+print("PASS: 07-rotate-array");

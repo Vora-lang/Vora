@@ -3,10 +3,12 @@
 #include "value_ops.h"
 
 #include "../gc/gc_heap.h"
+#include "../runtime/bound_method.h"
 #include "../runtime/builtins.h"
+#include "../runtime/class_constructor.h"
 #include "../runtime/native_function.h"
 #include "../runtime/vora_function.h"
-#include "../vm/compiler.h"  // for FunctionPrototype, ClassData
+#include "../vm/compiler.h"  // for FunctionPrototype, ClassDefinition
 
 #include <cctype>
 #include <cmath>
@@ -21,22 +23,21 @@ namespace vora {
 // =========================================================================
 // Computes Method Resolution Order for a class given its parent classes.
 // L[C(B1, B2, ..., Bn)] = [C] + merge(L[B1], L[B2], ..., L[Bn], [B1, B2, ..., Bn])
-// Returns: vector<shared_ptr<ObjectClass>> where [0] = self, then parents in MRO.
+// Returns: vector<GcPtr<ClassDefinition>> where [0] = self, then parents in MRO.
 // Throws std::runtime_error on inconsistent MRO (diamond problem without resolution).
 
-static std::vector<GcPtr<ObjectClass>> computeC3MRO(
-    const GcPtr<ObjectClass>& self,
-    const std::vector<GcPtr<ObjectClass>>& parents)
+static std::vector<GcPtr<ClassDefinition>> computeC3MRO(
+    const GcPtr<ClassDefinition>& self,
+    const std::vector<GcPtr<ClassDefinition>>& parents)
 {
     // Build list of linearizations for the merge: each parent's MRO + direct parent list
-    std::vector<std::vector<GcPtr<ObjectClass>>> lists;
+    std::vector<std::vector<GcPtr<ClassDefinition>>> lists;
 
     for (const auto& p : parents) {
         // Add the parent's own MRO (which is [parent, parent's parents...])
-        // Lock weak_ptrs in parent's MRO to get shared_ptrs for the merge
-        std::vector<GcPtr<ObjectClass>> parentMRO;
-        for (const auto& wp : p->mro) {
-            if (auto sp = wp) {
+        std::vector<GcPtr<ClassDefinition>> parentMRO;
+        for (const auto& sp : p->mro) {
+            if (sp) {
                 parentMRO.push_back(sp);
             }
         }
@@ -47,7 +48,7 @@ static std::vector<GcPtr<ObjectClass>> computeC3MRO(
     lists.push_back(parents);
 
     // Merge
-    std::vector<GcPtr<ObjectClass>> result;
+    std::vector<GcPtr<ClassDefinition>> result;
     result.push_back(self);
 
     // Continue while any list is non-empty
@@ -63,7 +64,7 @@ static std::vector<GcPtr<ObjectClass>> computeC3MRO(
         if (!anyNonEmpty) break;
 
         // Find a good head: the first head that doesn't appear in any tail
-        GcPtr<ObjectClass> goodHead;
+        GcPtr<ClassDefinition> goodHead;
         for (const auto& lst : lists) {
             if (lst.empty()) continue;
             const auto& candidate = lst[0];
@@ -225,10 +226,6 @@ std::string VM::captureStackTrace() const {
 
     // Walk frames from OLDEST to NEWEST — each frame's returnIp points
     // to the OP_CALL site in the caller's chunk (2 bytes: opcode + argCount).
-    // For frame[i]:
-    //   - The CALL happened in frame[i].callerChunk at (returnIp - 2)
-    //   - The CALLER is frames[i-1].function (or <script> for i==0)
-    // Then the error site is in currentChunk at ip (current function).
     for (size_t i = 0; i < frames.size(); i++) {
         const auto& frame = frames[i];
         if (!frame.callerChunk || frame.callerChunk->code.empty()) continue;
@@ -410,6 +407,27 @@ void VM::adoptGlobals(const std::vector<std::string>& names,
 }
 
 // =========================================================================
+// Constructor execution (used by ClassConstructor)
+// =========================================================================
+
+InterpretResult VM::runConstructor(const Chunk& chunk,
+                                    const Value& instance,
+                                    const std::vector<Value>& args) {
+    resetStack();
+    frameBaseIndex = 0;
+    frames.clear();
+    catchHandlers.clear();
+    exceptionInFlight = false;
+    currentChunk = &chunk;
+    ip = chunk.code.data();
+    push(instance);  // 'this' at slot 0
+    for (const auto& a : args) {
+        push(a);
+    }
+    return run();
+}
+
+// =========================================================================
 // Value operations
 // =========================================================================
 // Extracted to value_ops.cpp — see value_ops.h for isTruthy(), valuesEqual(),
@@ -423,44 +441,57 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
     if (std::holds_alternative<GcPtr<Callable>>(callee)) {
         auto callable = std::get<GcPtr<Callable>>(callee);
 
-        // Native function
-        if (auto native = dynamic_cast<NativeFunction*>(callable.get())) {
-            // Bound method: dispatch through the current VM so globals
-            // and builtins remain accessible (no temp VM).
-            if (native->isBoundMethod()) {
-                auto instance = native->getBoundInstance();
-                const auto* proto = native->getBoundMethodProto();
-                if (!proto) {
-                    runtimeErrorOrThrow("Bound method has no prototype");
-                    return false;
-                }
-
-                // Pop args (in reverse), then pop the callee
-                std::vector<Value> arguments(argCount);
-                for (int i = argCount - 1; i >= 0; i--) {
-                    arguments[static_cast<size_t>(i)] = pop();
-                }
-                pop(); // callee (bound method wrapper)
-
-                // Save frame base BEFORE pushing — it must point at 'this'
-                size_t newFrameBaseIndex = stackTopIndex;
-
-                // Push 'this' (bound instance) then method arguments as locals
-                push(instance);
-                for (const auto& a : arguments) {
-                    push(a);
-                }
-
-                // Set up call frame directly (inline callVoraFunction logic).
-                // We skip the usual arity check because 'this' is not counted
-                // in the method prototype's arity.
-                frames.push_back({ip, frameBaseIndex, currentChunk, native->getBoundMethodFunc()});
-                currentChunk = &proto->chunk;
-                ip = currentChunk->code.data();
-                frameBaseIndex = newFrameBaseIndex;  // points to instance at slot 0
-                return true;
+        // Bound method: dispatch through the current VM so globals
+        // and builtins remain accessible (no temp VM).
+        if (auto bound = dynamic_cast<BoundMethod*>(callable.get())) {
+            auto instance = bound->getInstance();
+            const auto* proto = bound->getMethodProto();
+            if (!proto) {
+                runtimeErrorOrThrow("Bound method has no prototype");
+                return false;
             }
 
+            // Pop args (in reverse), then pop the callee
+            std::vector<Value> arguments(argCount);
+            for (int i = argCount - 1; i >= 0; i--) {
+                arguments[static_cast<size_t>(i)] = pop();
+            }
+            pop(); // callee (bound method)
+
+            // Save frame base BEFORE pushing — it must point at 'this'
+            size_t newFrameBaseIndex = stackTopIndex;
+
+            // Push 'this' (bound instance) then method arguments as locals
+            push(instance);
+            for (const auto& a : arguments) {
+                push(a);
+            }
+
+            // Set up call frame directly (inline callVoraFunction logic).
+            frames.push_back({ip, frameBaseIndex, currentChunk, bound->getMethodFunc()});
+            currentChunk = &proto->chunk;
+            ip = currentChunk->code.data();
+            frameBaseIndex = newFrameBaseIndex;  // points to instance at slot 0
+            return true;
+        }
+
+        // Class constructor: delegate to ClassConstructor::call() which
+        // creates an instance and runs the constructor chain in a temp VM.
+        if (auto ctor = dynamic_cast<ClassConstructor*>(callable.get())) {
+            // Collect arguments from stack (in reverse)
+            std::vector<Value> arguments(argCount);
+            for (int i = argCount - 1; i >= 0; i--) {
+                arguments[static_cast<size_t>(i)] = pop();
+            }
+            pop(); // pop the callable itself
+
+            Value result = ctor->call(arguments);
+            push(result);
+            return true;
+        }
+
+        // Native function (pure callback)
+        if (auto native = dynamic_cast<NativeFunction*>(callable.get())) {
             if (native->arity() >= 0 && argCount != static_cast<uint8_t>(native->arity())) {
                 runtimeErrorOrThrow("Wrong arity: expected " +
                     std::to_string(native->arity()) + " but got " +
@@ -477,9 +508,7 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
 
             Value result = native->call(arguments);
 
-            // Check for native-side error (e.g. assert failure). The native
-            // sets nativeError + nativeErrorValue; we route it through the VM's
-            // exception mechanism so it is catchable by try/catch.
+            // Check for native-side error (e.g. assert failure).
             if (nativeError) {
                 nativeError = false;
                 Value errorVal = std::move(nativeErrorValue);
@@ -679,7 +708,6 @@ InterpretResult VM::run() {
             case OpCode::OP_NEGATE: {
                 if (std::holds_alternative<int64_t>(peek(0))) {
                     int64_t v = std::get<int64_t>(pop());
-                    // -INT64_MIN overflows signed int64; promote to double.
                     if (v == INT64_MIN) {
                         push(-static_cast<double>(v));
                     } else {
@@ -717,7 +745,7 @@ InterpretResult VM::run() {
                     if (db == 0) {
                         RUNTIME_ERROR_OR_THROW("Division by zero");
                     }
-                    push(toDouble(a) / db);  // always float64
+                    push(toDouble(a) / db);
                 } else {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for division");
                 }
@@ -945,9 +973,6 @@ InterpretResult VM::run() {
                     uint8_t isLocal = READ_BYTE();
                     uint8_t index = READ_BYTE();
                     if (isLocal) {
-                        // Capture local: snapshot the current value.
-                        // Each closure gets its own independent copy to match
-                        // the interpreter's Environment::snapshot() semantics.
                         function->upvalues.push_back(
                             std::make_shared<Value>(stack[frameBaseIndex + index]));
                     } else {
@@ -1253,27 +1278,20 @@ InterpretResult VM::run() {
                             if (!cls) continue;
                             auto methodIt = cls->methods.find(propName);
                             if (methodIt != cls->methods.end()) {
-                                // Create bound method: a NativeFunction carrying the
-                                // instance + prototype. callValue() detects it and
-                                // dispatches through the current VM so globals and
-                                // builtins remain accessible.
+                                // Create bound method wrapping the instance and prototype.
                                 auto methodFn = methodIt->second;
                                 const FunctionPrototype* mp = methodFn->getPrototype();
                                 if (!mp) {
                                     RUNTIME_ERROR_OR_THROW("Method has no compiled body");
                                 }
-                                auto bound = GcHeap::instance().alloc<NativeFunction>(
-                                    propName, methodFn->arity(),
-                                    /*no-op lambda — callValue intercepts before calling this*/
-                                    [](const std::vector<Value>&) -> Value { return nullptr; });
-                                bound->markAsBoundMethod(instance, mp, methodFn);
+                                auto bound = GcHeap::instance().alloc<BoundMethod>(
+                                    instance, mp, methodFn);
                                 push(bound);
-                                // Found method — break out of for + switch
                                 goto method_found;
                             }
                         }
                         method_found:
-                        break;  // found method — exit switch
+                        break;
                     }
                     RUNTIME_ERROR_OR_THROW("Undefined property: " + propName);
                 } else {
@@ -1318,8 +1336,7 @@ InterpretResult VM::run() {
 
                 // Find which class in the MRO defines the currently executing method.
                 // super.method() should search starting from the NEXT class after the
-                // defining class. For multi-level inheritance (e.g. Puppy → Dog → Animal),
-                // when Dog.speak() calls super.speak(), we must skip Dog and find Animal.
+                // defining class.
                 size_t startIdx = 1;  // default: skip self (the instance's own class)
                 if (!frames.empty() && frames.back().function) {
                     const auto* currentProto = frames.back().function->getPrototype();
@@ -1353,10 +1370,8 @@ InterpretResult VM::run() {
                         if (!mp) {
                             RUNTIME_ERROR_OR_THROW("Method has no compiled body");
                         }
-                        auto bound = GcHeap::instance().alloc<NativeFunction>(
-                            propName, methodFn->arity(),
-                            [](const std::vector<Value>&) -> Value { return nullptr; });
-                        bound->markAsBoundMethod(instance, mp, methodFn);
+                        auto bound = GcHeap::instance().alloc<BoundMethod>(
+                            instance, mp, methodFn);
                         push(bound);
                         found = true;
                         break;
@@ -1369,24 +1384,16 @@ InterpretResult VM::run() {
             }
             case OpCode::OP_CLASS: {
                 uint8_t classIndex = READ_BYTE();
-                Value classDataVal = currentChunk->constants[classIndex];
+                Value classDefVal = currentChunk->constants[classIndex];
 
-                if (!std::holds_alternative<GcPtr<ClassData>>(classDataVal)) {
-                    RUNTIME_ERROR_OR_THROW("OP_CLASS: expected class data in constant pool");
+                if (!std::holds_alternative<GcPtr<ClassDefinition>>(classDefVal)) {
+                    RUNTIME_ERROR_OR_THROW("OP_CLASS: expected class definition in constant pool");
                 }
-                auto cdPtr = std::get<GcPtr<ClassData>>(classDataVal);
-                const auto& cd = *cdPtr;
-
-                // Build ObjectClass
-                auto objClass = GcHeap::instance().alloc<ObjectClass>();
-                objClass->className = cd.name;
-                objClass->params = cd.params;
-                objClass->ctorProto = cd.ctor;
-                objClass->parentClassNames = cd.parentNames;
+                auto cd = std::get<GcPtr<ClassDefinition>>(classDefVal);
 
                 // Resolve parent classes from globals (integer-indexed lookup)
-                std::vector<GcPtr<ObjectClass>> resolvedParents;
-                for (const auto& parentName : cd.parentNames) {
+                std::vector<GcPtr<ClassDefinition>> resolvedParents;
+                for (const auto& parentName : cd->parentNames) {
                     auto it = globalIndex.find(parentName);
                     if (it != globalIndex.end()) {
                         int pSlot = it->second;
@@ -1398,7 +1405,7 @@ InterpretResult VM::run() {
                                     auto parentDef = (*callable)->getClassDef();
                                     if (parentDef) {
                                         resolvedParents.push_back(parentDef);
-                                        objClass->parentClasses.push_back(parentDef);
+                                        cd->parentClasses.push_back(parentDef);
                                     }
                                 }
                             }
@@ -1406,88 +1413,30 @@ InterpretResult VM::run() {
                     }
                 }
 
-                // Store method VoraFunctions
-                for (const auto& methodProto : cd.methods) {
+                // Store method VoraFunctions on the ClassDefinition
+                for (const auto& methodProto : cd->methodProtos) {
                     auto methodFn = GcHeap::instance().alloc<VoraFunction>(
                         methodProto->name, methodProto->arity,
                         methodProto->requiredArity, methodProto.get());
-                    objClass->methods[methodProto->name] = methodFn;
+                    cd->methods[methodProto->name] = methodFn;
                 }
 
-                // Compute C3 MRO and cache on ObjectClass
+                // Compute C3 MRO and cache on ClassDefinition
                 {
-                    auto mroShared = computeC3MRO(objClass, resolvedParents);
-                    for (const auto& cls : mroShared) {
-                        objClass->mro.push_back(cls);  // store as weak_ptr
-                    }
+                    auto mroShared = computeC3MRO(cd, resolvedParents);
+                    cd->mro = std::move(mroShared);
                 }
 
                 // Create constructor VoraFunction
                 auto ctorFn = GcHeap::instance().alloc<VoraFunction>(
-                    cd.ctor->name, cd.ctor->arity,
-                    cd.ctor->requiredArity, cd.ctor.get());
+                    cd->ctorProto->name, cd->ctorProto->arity,
+                    cd->ctorProto->requiredArity, cd->ctorProto.get());
 
-                // The constructor callable that creates instances.
-                // Parent constructors are called in reverse MRO order (most-base-first),
-                // then the child's constructor. Each parent receives ALL child
-                // constructor arguments (Python-style). This means each constructor
-                // uses the first N arguments where N is its own arity. For multi-
-                // inheritance, parents should have compatible parameter lists where
-                // shared parameters are at the same positions.
-                auto ctorCallable = GcHeap::instance().alloc<NativeFunction>(
-                    cd.name, static_cast<int>(cd.params.size()),
-                    [objClass, ctorFn, globalsNames = globalNames, globalsValues = globalValues, globalsDefined = globalDefined, globalsIndex = globalIndex](const std::vector<Value>& args) -> Value {
-                        auto instance = GcHeap::instance().alloc<ObjectInstance>();
-                        instance->className = objClass->className;
-                        instance->classDefinition = objClass;
+                // Create ClassConstructor — the clean, dedicated constructor callable.
+                auto ctorCallable = GcHeap::instance().alloc<ClassConstructor>(
+                    cd, ctorFn,
+                    globalNames, globalValues, globalDefined, globalIndex);
 
-                        // Single temporary VM reused for all constructor runs.
-                        // Globals are adopted once (O(globals)) instead of once per
-                        // constructor in the MRO chain.
-                        VM tempVm;
-                        tempVm.adoptGlobals(globalsNames, globalsValues, globalsDefined, globalsIndex);
-
-                        // Helper: run a constructor prototype on the instance.
-                        // Reuses the same tempVm — resets stack/frames/handlers
-                        // between calls.
-                        auto runCtor = [&](const FunctionPrototype* cp,
-                                          const std::vector<Value>& ctorArgs) {
-                            if (!cp) return;
-                            tempVm.resetStack();
-                            tempVm.frameBaseIndex = 0;
-                            tempVm.frames.clear();
-                            tempVm.catchHandlers.clear();
-                            tempVm.exceptionInFlight = false;
-                            tempVm.currentChunk = &cp->chunk;
-                            tempVm.ip = cp->chunk.code.data();
-                            tempVm.push(instance);  // 'this' at slot 0
-                            for (const auto& a : ctorArgs) {
-                                tempVm.push(a);
-                            }
-                            tempVm.run();
-                        };
-
-                        // Run parent constructors in reverse MRO order (most-base first, excluding self).
-                        // MRO is [self, P1, P2, ..., base]. Reverse → [base, ..., P2, P1].
-                        // Each parent receives ALL arguments — it uses its own arity to bind
-                        // parameters from the front of the argument list.
-                        for (size_t idx = objClass->mro.size(); idx > 1; idx--) {
-                            if (auto parentClass = objClass->mro[idx - 1]) {
-                                if (parentClass->ctorProto) {
-                                    runCtor(parentClass->ctorProto.get(), args);
-                                }
-                            }
-                        }
-
-                        // Run own constructor with all args
-                        if (ctorFn->getPrototype()) {
-                            runCtor(ctorFn->getPrototype(), args);
-                        }
-
-                        return instance;
-                    });
-
-                ctorCallable->setClassDef(objClass);
                 push(ctorCallable);
                 break;
             }
@@ -1526,7 +1475,6 @@ InterpretResult VM::run() {
                         runtimeError("Uncaught exception: " + valueToString(ex));
                         return InterpretResult::RUNTIME_ERROR;
                     }
-                    // throwException set exceptionInFlight again if re-caught
                     goto dispatch;
                 }
                 break;

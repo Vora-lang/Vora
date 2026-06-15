@@ -1,0 +1,133 @@
+// Problem #45: Group Anagrams (Medium)
+// Group strings that are anagrams of each other.
+// For each string, sort its characters to generate a key, then group by key using parallel arrays.
+// Vora does not support arr[idx] = val, so we use remove+insert for swaps, or build sorted string by selection.
+
+// Sort characters in a string by finding min char each iteration
+func sortString(s) {
+    let n = s.length;
+    // Build mutable copy using array
+    let chars = [];
+    for i in range(n) {
+        chars.add(s[i]);
+    }
+
+    // Selection sort
+    for i in range(n) {
+        let minIdx = i;
+        let minCh = chars[i];
+        for j in range(i + 1, n) {
+            // Compare strings: use charAt-based comparison
+            // We know these are single chars; compare lexicographically
+            // Since string comparison (<) is not supported, we use a helper
+            if (charLess(chars[j], minCh)) {
+                minCh = chars[j];
+                minIdx = j;
+            }
+        }
+        if (minIdx != i) {
+            // Swap chars[i] and chars[minIdx]
+            let temp = chars[minIdx];
+            chars.remove(minIdx);
+            chars.insert(minIdx, chars[i]);
+            chars.remove(i);
+            chars.insert(i, temp);
+        }
+    }
+
+    let result = "";
+    for i in range(n) {
+        result = result + chars[i];
+    }
+    return result;
+}
+
+// Compare single chars: return true if a < b (using int conversion for ordering)
+func charLess(a, b) {
+    // Map chars to int values via a simple ordering string
+    let order = "abcdefghijklmnopqrstuvwxyz";
+    let aVal = -1;
+    let bVal = -1;
+    for i in range(order.length) {
+        if (order[i] == a) { aVal = i; }
+        if (order[i] == b) { bVal = i; }
+    }
+    return aVal < bVal;
+}
+
+func groupAnagrams(strs) {
+    let n = strs.length;
+    if (n == 0) {
+        return [];
+    }
+
+    // Parallel arrays: keys (sorted strings) and groups
+    let keys = [];
+    let groups = [];
+
+    for i in range(n) {
+        let s = strs[i];
+        let key = sortString(s);
+
+        // Find key index
+        let found = false;
+        let idx = -1;
+        for j in range(keys.length) {
+            if (keys[j] == key) {
+                found = true;
+                idx = j;
+                break
+            }
+        }
+
+        if (found) {
+            groups[idx].add(s);
+        } else {
+            keys.add(key);
+            let newGroup = [];
+            newGroup.add(s);
+            groups.add(newGroup);
+        }
+    }
+
+    return groups;
+}
+
+// Test cases
+let result1 = groupAnagrams(["eat", "tea", "tan", "ate", "nat", "bat"]);
+assert(result1.length == 3);
+
+let result2 = groupAnagrams([""]);
+assert(result2.length == 1);
+assert(result2[0].length == 1);
+assert(result2[0][0] == "");
+
+let result3 = groupAnagrams(["a"]);
+assert(result3.length == 1);
+assert(result3[0][0] == "a");
+
+let result4 = groupAnagrams(["a", "b", "c", "d"]);
+assert(result4.length == 4);
+
+let result5 = groupAnagrams(["ddddddddddg", "dgggggggggg"]);
+assert(result5.length == 2);
+
+// Verify that "eat", "tea", "ate" are in the same group
+let foundEat = false;
+for i in range(result1.length) {
+    let group = result1[i];
+    let hasEat = false;
+    let hasTea = false;
+    let hasAte = false;
+    for j in range(group.length) {
+        if (group[j] == "eat") { hasEat = true; }
+        if (group[j] == "tea") { hasTea = true; }
+        if (group[j] == "ate") { hasAte = true; }
+    }
+    if (hasEat and hasTea and hasAte) {
+        foundEat = true;
+    }
+}
+assert(foundEat == true);
+
+print("PASS: 45-group-anagrams");

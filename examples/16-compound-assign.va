@@ -1,35 +1,24 @@
-// 复合赋值 += -= *= /= %=
 let x = 10
 x += 5
-print(x)   // 15
-
+print(x)
 x -= 3
-print(x)   // 12
-
+print(x)
 x *= 2
-print(x)   // 24
-
+print(x)
 x /= 4
-print(x)   // 6
-
+print(x)
 x %= 4
-print(x)   // 2
-
-// 字符串拼接
+print(x)
 let s = "Hello"
 s += " World"
-print(s)  // "Hello World"
-
-// 数组追加
+print(s)
 let arr = [1, 2]
 arr += [3, 4]
-print(arr)  // [1, 2, 3, 4]
-
-// 与循环配合
+print(arr)
 let sum = 0
 let i = 1
 while (i <= 5) {
     sum += i
     i += 1
 }
-print(sum)  // 15
+print(sum)

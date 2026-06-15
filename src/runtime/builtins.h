@@ -10,6 +10,8 @@
 #include <memory>
 #include <string>
 
+#include "../gc/gc_ptr.h"
+
 namespace vora {
 
 class VM;
@@ -24,22 +26,22 @@ void registerBuiltins(VM& vm);
 // Array method factory — returns a bound method for the given array.
 // Used by OP_GET_PROPERTY dispatch in the VM.
 // Returns nullptr if the method name is unknown.
-std::shared_ptr<NativeFunction> getArrayMethod(
+GcPtr<NativeFunction> getArrayMethod(
     const std::string& name,
-    std::shared_ptr<Array> arr);
+    GcPtr<Array> arr);
 
 // String method factory — returns a bound method for the given string.
 // Used by OP_GET_PROPERTY dispatch in the VM.
 // Returns nullptr if the method name is unknown.
-std::shared_ptr<NativeFunction> getStringMethod(
+GcPtr<NativeFunction> getStringMethod(
     const std::string& name,
     std::string str);
 
 // Dict method factory — returns a bound method for the given dict.
 // Used by OP_GET_PROPERTY dispatch in the VM.
 // Returns nullptr if the method name is unknown.
-std::shared_ptr<NativeFunction> getDictMethod(
+GcPtr<NativeFunction> getDictMethod(
     const std::string& name,
-    std::shared_ptr<Dict> dict);
+    GcPtr<Dict> dict);
 
 } // namespace vora

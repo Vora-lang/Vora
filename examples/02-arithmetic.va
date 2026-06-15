@@ -1,4 +1,3 @@
-// 算术运算 + - * / **
 print("=== arithmetic ===")
 print(1 + 2)
 print(5 - 3)

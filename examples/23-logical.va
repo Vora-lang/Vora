@@ -1,66 +1,41 @@
-// Logical operators: && (and) and || (or)
-//
-// && returns the first falsy value, or the last value if all are truthy.
-// || returns the first truthy value, or the last value if all are falsy.
-// Both short-circuit — the right side is only evaluated if needed.
-
-// --- && : "guard" pattern ---
-// Only access properties if the object exists
 let user = null
 let displayName = user && user.name
-print("null && ... =>", displayName)  // null (short-circuited)
-
-user = null  // would be an object in real code
+print("null && ... =>", displayName)
+user = null
 let name = "Guest"
 displayName = (user && user.name) || name
-print("(user && user.name) || name =>", displayName)  // Guest
-
-// --- || : "default value" pattern ---
+print("(user && user.name) || name =>", displayName)
 let input = ""
 let value = input || "default"
-print("'' || 'default' =>", value)  // default
-
+print("'' || 'default' =>", value)
 let count = 0
 let display = count || 10
-print("0 || 10 =>", display)  // 10
-
-// --- Chaining ---
+print("0 || 10 =>", display)
 let a = null
 let b = 0
 let c = 42
 let firstTruthy = a || b || c
-print("null || 0 || 42 =>", firstTruthy)  // 42
-
+print("null || 0 || 42 =>", firstTruthy)
 let x = 1
 let y = 2
 let z = 3
 let allTruthy = x && y && z
-print("1 && 2 && 3 =>", allTruthy)  // 3 (last value)
-
-// --- Combined with comparisons ---
+print("1 && 2 && 3 =>", allTruthy)
 let age = 25
 let isAdult = age >= 18 && age < 65
-print("25 in [18, 65) =>", isAdult)  // true
-
+print("25 in [18, 65) =>", isAdult)
 let temperature = -5
 let isExtreme = temperature < 0 || temperature > 40
-print("-5 is extreme =>", isExtreme)  // true
-
-// --- Keyword forms ---
-print("true and 42 =>", true and 42)    // 42
-print("false or 'fallback' =>", false or "fallback")  // fallback
-
-// --- Short-circuit prevents side effects ---
+print("-5 is extreme =>", isExtreme)
+print("true and 42 =>", true and 42)
+print("false or 'fallback' =>", false or "fallback")
 func expensiveCheck() {
     print("  (expensiveCheck called)")
     return true
 }
-
 print("true || expensiveCheck():")
-print("  =>", true || expensiveCheck())   // won't call expensiveCheck
-
+print("  =>", true || expensiveCheck())
 print("false && expensiveCheck():")
-print("  =>", false && expensiveCheck())  // won't call expensiveCheck
-
+print("  =>", false && expensiveCheck())
 print("false || expensiveCheck():")
-print("  =>", false || expensiveCheck())  // WILL call expensiveCheck
+print("  =>", false || expensiveCheck())

@@ -1,6 +1,7 @@
 #include "compiler.h"
 
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <variant>
 

@@ -1,0 +1,79 @@
+// #39 Combination Sum (Medium)
+// All unique combos summing to target, reuse allowed. Backtracking.
+
+func combinationSum(candidates, target) {
+    let result = [];
+
+    func backtrack(start, current, sum) {
+        if (sum == target) {
+            // Make a copy of current
+            let copy = [];
+            let i = 0;
+            while (i < current.length) {
+                copy.add(current[i]);
+                i = i + 1;
+            }
+            result.add(copy);
+            return;
+        }
+        if (sum > target) {
+            return;
+        }
+
+        let i = start;
+        while (i < candidates.length) {
+            current.add(candidates[i]);
+            backtrack(i, current, sum + candidates[i]);
+            current.pop();
+            i = i + 1;
+        }
+    }
+
+    backtrack(0, [], 0);
+    return result;
+}
+
+// Tests
+func arrayContains(arr, item) {
+    let i = 0;
+    while (i < arr.length) {
+        if (arr[i] == item) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+func arrayOfArraysContains(arr, sub) {
+    let i = 0;
+    while (i < arr.length) {
+        let a = arr[i];
+        if (a.length == sub.length) {
+            let match = true;
+            let j = 0;
+            while (j < a.length) {
+                if (a[j] != sub[j]) { match = false; break; }
+                j = j + 1;
+            }
+            if (!match) { break; }
+            if (match) { return true; }
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+let r1 = combinationSum([2,3,6,7], 7);
+assert(r1.length == 2, "Test 1 failed: count=" + r1.length);
+
+let r2 = combinationSum([2,3,5], 8);
+assert(r2.length == 3, "Test 2 failed: count=" + r2.length);
+
+let r3 = combinationSum([2], 1);
+assert(r3.length == 0, "Test 3 failed");
+
+let r4 = combinationSum([1], 1);
+assert(r4.length == 1, "Test 4 failed");
+assert(r4[0].length == 1, "Test 4a failed");
+assert(r4[0][0] == 1, "Test 4b failed");
+
+print("61-combination-sum: PASS");

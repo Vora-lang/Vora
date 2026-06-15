@@ -1,19 +1,14 @@
-// 函数：声明、参数、返回值、一等公民、闭包
 func add(a, b) {
     return a + b
 }
 print(add(3, 4))
-
 func greet(name) {
     print("Hello, " + name + "!")
 }
 greet("World")
-
-// 无 return → null
-func noop() {}
+func noop() {
+}
 print(noop())
-
-// 闭包
 func makeCounter() {
     let count = 0
     func increment() {
@@ -26,8 +21,6 @@ let counter = makeCounter()
 print(counter())
 print(counter())
 print(counter())
-
-// 函数作为参数
 func twice(fn, x) {
     return fn(fn(x))
 }
