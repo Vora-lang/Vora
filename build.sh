@@ -16,20 +16,23 @@ set -euo pipefail
 ARCH="x64"
 CONFIG="debug"
 PACKAGE=0
+CLEAN=0
 
 # ── Parse arguments ─────────────────────────────────────────────────────────
 usage() {
-    echo "Usage: $0 [-a ARCH] [-c CONFIG] [-p] [--] [extra args for Vora]"
+    echo "Usage: $0 [-a ARCH] [-c CONFIG] [-p] [-C] [--] [extra args for Vora]"
     echo ""
     echo "  -a ARCH    Target architecture: x64 | x86 | aarch64 | armhf (default: x64)"
     echo "  -c CONFIG  Build configuration: debug | release (default: debug)"
     echo "  -p         Generate package after build (Release only)"
+    echo "  -C         Force clean build (delete build directory before configuring)"
     echo ""
     echo "  Linux presets: linux-x64, linux-x86, linux-aarch64, linux-armhf"
     echo "  macOS preset:  macos-universal"
     echo ""
     echo "Examples:"
     echo "  $0                                          # native x64 debug build + run"
+    echo "  $0 -C                                       # clean build + run"
     echo "  $0 -a arm64 -c release -p                   # cross-compile ARM64 + package"
     echo "  $0 -c release -p                            # native release + .deb/.rpm"
     exit 0
@@ -43,6 +46,8 @@ while [[ $# -gt 0 ]]; do
             CONFIG="$2"; shift 2 ;;
         -p|--package)
             PACKAGE=1; shift ;;
+        -C|--clean)
+            CLEAN=1; shift ;;
         -h|--help)
             usage ;;
         --)
@@ -98,10 +103,13 @@ echo "  Preset      : ${PRESET}"
 echo ""
 
 # ── Clean ───────────────────────────────────────────────────────────────────
-echo "[1/5] Cleaning old build..."
-
-if [[ -d "$BUILD_DIR" ]]; then
-    rm -rf "$BUILD_DIR"
+if [[ $CLEAN -eq 1 ]]; then
+    echo "[1/5] Cleaning old build..."
+    if [[ -d "$BUILD_DIR" ]]; then
+        rm -rf "$BUILD_DIR"
+    fi
+else
+    echo "[1/5] Using existing build directory (use -C for clean build)..."
 fi
 
 # ── Configure ───────────────────────────────────────────────────────────────

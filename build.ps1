@@ -13,7 +13,10 @@ param(
     [string]$Config = "Debug",
 
     [Parameter(HelpMessage="Generate installer package after build (.msi for Release)")]
-    [switch]$Package
+    [switch]$Package,
+
+    [Parameter(HelpMessage="Force clean build (delete build directory before configuring)")]
+    [switch]$Clean
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,22 +25,28 @@ Write-Host ""
 Write-Host "==== Vora Build System ====" -ForegroundColor Cyan
 Write-Host "  Architecture : $Architecture"         -ForegroundColor Gray
 Write-Host "  Configuration: $Config"               -ForegroundColor Gray
+if ($Clean) {
+    Write-Host "  Clean build  : yes"               -ForegroundColor Gray
+}
 if ($Package) {
     Write-Host "  Package      : yes"               -ForegroundColor Gray
 }
 Write-Host ""
 
 $PresetName = "windows-$Architecture-$Config".ToLower()
-
-# ----------------------------------------
-# Clean old build
-# ----------------------------------------
-
-Write-Host "[1/5] Cleaning old build..." -ForegroundColor Yellow
-
 $buildDir = "build\$PresetName"
-if (Test-Path $buildDir) {
-    Remove-Item $buildDir -Recurse -Force
+
+# ----------------------------------------
+# Clean old build (only with -Clean)
+# ----------------------------------------
+
+if ($Clean) {
+    Write-Host "[1/5] Cleaning old build..." -ForegroundColor Yellow
+    if (Test-Path $buildDir) {
+        Remove-Item $buildDir -Recurse -Force
+    }
+} else {
+    Write-Host "[1/5] Using existing build directory (use -Clean for fresh build)..." -ForegroundColor Yellow
 }
 
 # ----------------------------------------
@@ -98,4 +107,4 @@ if (Test-Path $exePath) {
 # Show available presets hint
 Write-Host ""
 Write-Host "Available presets: cmake --list-presets" -ForegroundColor Gray
-Write-Host "Usage  : .\build.ps1 -Architecture arm64 -Config Release -Package" -ForegroundColor Gray
+Write-Host "Usage  : .\build.ps1 -Architecture arm64 -Config Release -Package -Clean" -ForegroundColor Gray

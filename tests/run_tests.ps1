@@ -4,15 +4,22 @@
 
 $ErrorActionPreference = "Continue"
 
-# Locate the Vora binary — try common locations
+# Locate the Vora binary — preset paths first (consistent with build.ps1),
+# then legacy generic paths as fallback.
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Split-Path -Parent $ScriptDir
 $Vora = $null
 foreach ($candidate in @(
-        "$ProjectDir\build\Debug\Vora.exe",
-        "$ProjectDir\build\Release\Vora.exe",
+        # Preset-based builds (build.ps1 / build.sh output)
         "$ProjectDir\build\windows-x64-debug\Debug\Vora.exe",
         "$ProjectDir\build\windows-x64-release\Release\Vora.exe",
+        "$ProjectDir\build\windows-x86-debug\Debug\Vora.exe",
+        "$ProjectDir\build\windows-x86-release\Release\Vora.exe",
+        "$ProjectDir\build\windows-arm64-debug\Debug\Vora.exe",
+        "$ProjectDir\build\windows-arm64-release\Release\Vora.exe",
+        # Legacy generic builds (cmake -S . -B build && cmake --build build)
+        "$ProjectDir\build\Debug\Vora.exe",
+        "$ProjectDir\build\Release\Vora.exe",
         "$ProjectDir\build\Vora.exe"
     )) {
     if (Test-Path $candidate) {
@@ -22,7 +29,8 @@ foreach ($candidate in @(
 }
 if (-not $Vora) {
     Write-Host "Error: Vora binary not found. Build the project first:" -ForegroundColor Red
-    Write-Host "  cmake -S . -B build && cmake --build build"
+    Write-Host "  .\build.ps1                      (recommended)"
+    Write-Host "  cmake --preset windows-x64-debug && cmake --build --preset windows-x64-debug"
     exit 1
 }
 

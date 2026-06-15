@@ -14,19 +14,26 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Try common locations (single-config first, then multi-config)
+# Locate the Vora binary — preset paths first (consistent with build.sh),
+# then legacy generic paths as fallback.
 VORA=""
 for candidate in \
-    "$PROJECT_DIR/build/Vora" \
-    "$PROJECT_DIR/build/Debug/Vora" \
-    "$PROJECT_DIR/build/Release/Vora" \
-    "$PROJECT_DIR/build/vora" \
-    "$PROJECT_DIR/build/Debug/vora" \
-    "$PROJECT_DIR/build/Release/vora" \
     "$PROJECT_DIR/build/linux-x64-debug/Vora" \
     "$PROJECT_DIR/build/linux-x64-release/Vora" \
+    "$PROJECT_DIR/build/linux-x86-debug/Vora" \
+    "$PROJECT_DIR/build/linux-x86-release/Vora" \
+    "$PROJECT_DIR/build/linux-aarch64-debug/Vora" \
+    "$PROJECT_DIR/build/linux-aarch64-release/Vora" \
+    "$PROJECT_DIR/build/linux-armhf-debug/Vora" \
+    "$PROJECT_DIR/build/linux-armhf-release/Vora" \
     "$PROJECT_DIR/build/macos-universal-debug/Vora" \
-    "$PROJECT_DIR/build/macos-universal-release/Vora"; do
+    "$PROJECT_DIR/build/macos-universal-release/Vora" \
+    "$PROJECT_DIR/build/Vora" \
+    "$PROJECT_DIR/build/vora" \
+    "$PROJECT_DIR/build/Debug/Vora" \
+    "$PROJECT_DIR/build/Release/Vora" \
+    "$PROJECT_DIR/build/Debug/vora" \
+    "$PROJECT_DIR/build/Release/vora"; do
     if [ -x "$candidate" ]; then
         VORA="$candidate"
         break
@@ -35,7 +42,8 @@ done
 
 if [ -z "$VORA" ]; then
     echo "Error: Vora binary not found. Build the project first:"
-    echo "  cmake -S . -B build && cmake --build build"
+    echo "  ./build.sh                       (recommended)"
+    echo "  cmake --preset linux-x64-debug && cmake --build --preset linux-x64-debug"
     exit 1
 fi
 
