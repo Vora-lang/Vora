@@ -28,6 +28,10 @@ void pushGcRefs(const Value& v, std::vector<GcObject*>& worklist) {
         if (*p) worklist.push_back(p->get());
     } else if (auto* p = std::get_if<GcPtr<ClassDefinition>>(&v)) {
         if (*p) worklist.push_back(p->get());
+    } else if (auto* p = std::get_if<GcPtr<Iterator>>(&v)) {
+        if (*p) worklist.push_back(p->get());
+    } else if (auto* p = std::get_if<GcPtr<Generator>>(&v)) {
+        if (*p) worklist.push_back(p->get());
     }
 }
 
@@ -62,6 +66,16 @@ void ClassDefinition::trace(std::vector<GcObject*>& wl) {
 void ObjectInstance::trace(std::vector<GcObject*>& wl) {
     if (classDefinition) wl.push_back(classDefinition.get());
     for (auto& [k, v] : properties) pushGcRefs(v, wl);
+}
+
+void Iterator::trace(std::vector<GcObject*>& wl) {
+    pushGcRefs(source, wl);
+}
+
+void Generator::trace(std::vector<GcObject*>& wl) {
+    if (function) wl.push_back(function.get());
+    for (auto& v : args) pushGcRefs(v, wl);
+    for (auto& v : savedStack) pushGcRefs(v, wl);
 }
 
 // =========================================================================
@@ -122,6 +136,12 @@ static void appendValue(std::string& out, const Value& value, int depth) {
             out += '<';
             out += arg->className;
             out += " object>";
+        } else if constexpr (std::is_same_v<T, GcPtr<Iterator>>) {
+            out += "<iterator>";
+        } else if constexpr (std::is_same_v<T, GcPtr<Generator>>) {
+            out += "<generator ";
+            out += (arg->function ? arg->function->name() : "?");
+            out += '>';
         } else if constexpr (std::is_same_v<T, GcPtr<FunctionPrototype>>) {
             out += "<function prototype ";
             out += arg->name;

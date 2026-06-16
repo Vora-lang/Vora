@@ -723,6 +723,33 @@ void Compiler::visitTernaryExpr(const TernaryExpr& expr) {
     patchJump(elseJump);
 }
 
+void Compiler::visitYieldExpr(const YieldExpr& expr) {
+    currentLine = expr.keyword.line;
+    currentColumn = expr.keyword.column;
+
+    // Phase 1 limitation: yield inside try blocks is not supported
+    if (tryNesting > 0) {
+        printSourceLine(std::cerr, chunk.source, expr.keyword.line,
+                       expr.keyword.column, 5,
+                       "'yield' cannot be used inside a try block",
+                       "CompilerError");
+        hadError = true;
+        return;
+    }
+
+    // Mark this function as a generator
+    isGenerator = true;
+
+    // Compile the value to yield (or null if no value)
+    if (expr.value) {
+        expr.value->accept(*this);
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+    }
+
+    emitByte(static_cast<uint8_t>(OpCode::OP_YIELD));
+}
+
 void Compiler::visitFuncExpr(const FuncExpr& expr) {
     // Compile an anonymous function expression: func(x) { body }
     // Creates a VoraFunction closure and pushes it on the stack.
@@ -795,6 +822,7 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
     proto.requiredArity = requiredArity;
     proto.upvalues = std::move(fnCompiler.upvalues);
     proto.chunk = std::move(fnCompiler.chunk);
+    proto.isGenerator = fnCompiler.isGenerator;
 
     uint8_t protoIndex = addFunctionPrototype(std::move(proto));
 

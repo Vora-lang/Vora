@@ -16,7 +16,10 @@
 
 #include "../gc/gc_heap.h"
 #include "native_function.h"
+#include "runtime_error.h"
 #include "value.h"
+#include "vora_function.h"
+#include "../vm/compiler.h"   // FunctionPrototype
 #include "vm/value_ops.h"
 #include "vm/vm.h"
 
@@ -232,6 +235,128 @@ void registerBuiltins(VM& vm) {
     vm.defineNative("toString", 1,
         [](const std::vector<Value>& arguments) -> Value {
             return GcHeap::instance().alloc<GcString>(valueToString(arguments[0]));
+        });
+
+    // --- iter(collection) — create an iterator over an array, string, or dict ---
+    // iter(iterator) returns the iterator itself (Python convention).
+    vm.defineNative("iter", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            const Value& arg = arguments[0];
+
+            // iter(iterator) → itself
+            if (std::holds_alternative<GcPtr<Iterator>>(arg)) {
+                return arg;
+            }
+
+            auto it = GcHeap::instance().alloc<Iterator>();
+            it->source = arg;
+            it->index = 0;
+
+            // Snapshot dict keys for stable iteration order
+            if (auto* d = std::get_if<GcPtr<Dict>>(&arg)) {
+                it->dictKeys.reserve((*d)->pairs.size());
+                for (const auto& [k, v] : (*d)->pairs) {
+                    it->dictKeys.push_back(k);
+                }
+            } else if (!std::holds_alternative<GcPtr<Array>>(arg) &&
+                       !std::holds_alternative<GcPtr<GcString>>(arg)) {
+                // iter() on non-iterable → null (caller can check)
+                // We still return an iterator — next() will throw StopIteration
+            }
+
+            return it;
+        });
+
+    // --- next(iterator|generator) — advance and return next element ---
+    // Supports both Iterator (array/string/dict) and Generator (yield).
+    // Uses vm.nativeError to signal StopIteration (catchable via try/catch).
+    vm.defineNative("next", 1,
+        [&vm](const std::vector<Value>& arguments) -> Value {
+            const Value& arg = arguments[0];
+
+            // --- Generator path ---
+            if (auto* genPtr = std::get_if<GcPtr<Generator>>(&arg)) {
+                auto gen = *genPtr;
+                if (!gen) {
+                    vm.nativeError = true;
+                    vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("TypeError: next() argument is null");
+                    return nullptr;
+                }
+
+                if (gen->done) {
+                    vm.nativeError = true;
+                    vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
+                    return nullptr;
+                }
+
+                // Save caller's execution context into the generator
+                gen->callerIp = vm.ip;
+                gen->callerChunk = vm.currentChunk;
+                gen->callerFrameBase = vm.frameBaseIndex;
+                gen->callerFramesSize = vm.frames.size();
+
+                // Compute target IP for pending resume
+                const FunctionPrototype* proto = gen->function->getPrototype();
+                if (gen->firstResume) {
+                    vm.pendingIp = proto->chunk.code.data();
+                } else {
+                    vm.pendingIp = proto->chunk.code.data() + gen->savedIpOffset;
+                }
+                vm.pendingChunk = &proto->chunk;
+                vm.pendingGenerator = gen;
+                vm.pendingResume = true;
+
+                return nullptr;  // Dummy — popped by pendingResume handler
+            }
+
+            // --- Iterator path ---
+            if (!std::holds_alternative<GcPtr<Iterator>>(arg)) {
+                vm.nativeError = true;
+                vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("TypeError: next() requires an iterator or generator");
+                return nullptr;
+            }
+
+            auto it = std::get<GcPtr<Iterator>>(arg);
+            const Value& source = it->source;
+            size_t idx = it->index;
+
+            // Array iteration
+            if (auto* arr = std::get_if<GcPtr<Array>>(&source)) {
+                if (idx >= (*arr)->elements.size()) {
+                    vm.nativeError = true;
+                    vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
+                    return nullptr;
+                }
+                it->index = idx + 1;
+                return (*arr)->elements[idx];
+            }
+
+            // String iteration — returns 1-char strings (consistent with for-in)
+            if (auto* s = std::get_if<GcPtr<GcString>>(&source)) {
+                if (idx >= (*s)->value.size()) {
+                    vm.nativeError = true;
+                    vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
+                    return nullptr;
+                }
+                it->index = idx + 1;
+                return GcHeap::instance().alloc<GcString>(std::string(1, (*s)->value[idx]));
+            }
+
+            // Dict iteration — iterates over keys (snapshot taken at iter() time)
+            if (std::holds_alternative<GcPtr<Dict>>(source)) {
+                if (idx >= it->dictKeys.size()) {
+                    vm.nativeError = true;
+                    vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
+                    return nullptr;
+                }
+                it->index = idx + 1;
+                return GcHeap::instance().alloc<GcString>(it->dictKeys[idx]);
+            }
+
+            // Exhausted or non-iterable source
+            vm.nativeError = true;
+            vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
+            return nullptr;
         });
 
     // Register math builtins

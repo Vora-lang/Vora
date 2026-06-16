@@ -585,6 +585,17 @@ InterpretResult VM::callVoraFunction(const GcPtr<VoraFunction>& func,
         return InterpretResult::RUNTIME_ERROR;
     }
 
+    // Generator function: don't execute body, create Generator and return it
+    if (proto->isGenerator) {
+        auto gen = GcHeap::instance().alloc<Generator>();
+        gen->function = func;
+        gen->args = args;
+        gen->done = false;
+        gen->firstResume = true;
+        push(gen);
+        return InterpretResult::OK;
+    }
+
     // Push return address, caller chunk, and function onto call frame stack
     frames.push_back({ip, frameBaseIndex, currentChunk, func});
 
@@ -624,6 +635,9 @@ InterpretResult VM::interpret(const Chunk& chunk) {
     nativeError = false;
     nativeErrorValue = nullptr;
     lastErrorStackTrace.clear();
+    pendingResume = false;
+    pendingGenerator = nullptr;
+    currentGenerator = nullptr;
     return run();
 }
 
@@ -656,6 +670,14 @@ void VM::collectGarbage() {
         }
     }
 
+    // 5. Generator state — pending resume and currently executing
+    if (pendingGenerator) {
+        roots.push_back(pendingGenerator.get());
+    }
+    if (currentGenerator) {
+        roots.push_back(currentGenerator.get());
+    }
+
     GcHeap::instance().collect(roots);
 }
 
@@ -685,6 +707,49 @@ InterpretResult VM::run() {
             interruptFlag = 0;
             std::cerr << "\nInterrupted" << std::endl;
             return InterpretResult::RUNTIME_ERROR;
+        }
+
+        // --- Generator pending resume ---
+        // next(gen) sets this to redirect execution from the caller's
+        // bytecode to the generator's saved instruction pointer.
+        if (pendingResume) {
+            // Pop the dummy nullptr that callValue pushed as next()'s return
+            pop();
+
+            // Push a frame for the generator
+            frames.push_back({ip, frameBaseIndex, currentChunk,
+                              pendingGenerator->function});
+
+            // Redirect execution to the generator's chunk
+            ip = pendingIp;
+            currentChunk = pendingChunk;
+
+            if (pendingGenerator->firstResume) {
+                // First execution: set up fresh frame with captured arguments
+                frameBaseIndex = stackTopIndex;
+                size_t arity = static_cast<size_t>(pendingGenerator->function->arity());
+                for (size_t i = 0; i < arity; i++) {
+                    if (i < pendingGenerator->args.size())
+                        push(pendingGenerator->args[i]);
+                    else
+                        push(nullptr);
+                }
+                pendingGenerator->firstResume = false;
+            } else {
+                // Resume: restore saved stack values at current stack top.
+                // We cannot use the absolute savedFrameBase from yield time
+                // because the caller's stack layout may differ between calls.
+                frameBaseIndex = stackTopIndex;
+                for (const auto& v : pendingGenerator->savedStack) {
+                    push(v);
+                }
+            }
+
+            currentGenerator = pendingGenerator;
+            pendingGenerator = nullptr;
+            pendingResume = false;
+            // Fall through: next loop iteration will fetch instruction
+            // from the generator's bytecode
         }
 
         OpCode instruction = static_cast<OpCode>(READ_BYTE());
@@ -1169,11 +1234,123 @@ InterpretResult VM::run() {
                 push(function);
                 break;
             }
+            case OpCode::OP_YIELD: {
+                // Yield from generator: save state, return to caller.
+                // The yielded value is on top of stack.
+                if (!currentGenerator) {
+                    RUNTIME_ERROR_OR_THROW("'yield' used outside of generator");
+                }
+
+                Value yieldValue = pop();
+
+                // Skip over dead OP_POP/OP_POPN emitted by ExprStmt wrapper.
+                // yield is parsed as an expression; when used as a statement,
+                // the compiler wraps it with OP_POP to discard the result.
+                // Since OP_YIELD already handles the value and switches context,
+                // this OP_POP is dead code that we must skip on resume.
+                if (*ip == static_cast<uint8_t>(OpCode::OP_POP)) {
+                    ip++;
+                } else if (*ip == static_cast<uint8_t>(OpCode::OP_POPN)) {
+                    ip += 2;  // OP_POPN + operand byte
+                }
+
+                // Save current IP offset (after dead-code skip)
+                currentGenerator->savedIpOffset =
+                    static_cast<size_t>(ip - currentChunk->code.data());
+                currentGenerator->savedFrameBase = frameBaseIndex;
+
+                // Snapshot all locals from frame base to stack top
+                currentGenerator->savedStack.clear();
+                for (size_t i = frameBaseIndex; i < stackTopIndex; i++) {
+                    currentGenerator->savedStack.push_back(stack[i]);
+                }
+
+                // Pop all locals
+                stackTopIndex = frameBaseIndex;
+
+                // Close open upvalues for this frame (prevent stale stack refs)
+                for (auto it = openUpvalues.begin(); it != openUpvalues.end(); ) {
+                    if (it->first >= frameBaseIndex &&
+                        it->first < frameBaseIndex + MAX_LOCALS_PER_FRAME) {
+                        it->second->close();
+                        it = openUpvalues.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+
+                // Pop the generator's call frame
+                frames.pop_back();
+
+                // Restore caller's execution context (saved by next())
+                ip = currentGenerator->callerIp;
+                frameBaseIndex = currentGenerator->callerFrameBase;
+                currentChunk = currentGenerator->callerChunk;
+
+                // Discard any frames pushed inside the generator
+                while (frames.size() > currentGenerator->callerFramesSize) {
+                    frames.pop_back();
+                }
+
+                // Clean up catch handlers registered inside the generator
+                while (!catchHandlers.empty() &&
+                       catchHandlers.back().frameCount > frames.size()) {
+                    catchHandlers.pop_back();
+                }
+
+                // Push yield value as the return value of next()
+                push(yieldValue);
+
+                currentGenerator = nullptr;
+                break;
+            }
             case OpCode::OP_RETURN: {
                 // Return from current function or top-level
                 if (frames.empty()) {
-                    // Top-level return
                     return InterpretResult::OK;
+                }
+
+                // Generator return: signal StopIteration
+                if (currentGenerator) {
+                    Value returnValue = pop();  // Discard — generator return value unused
+
+                    stackTopIndex = frameBaseIndex;
+
+                    for (auto it = openUpvalues.begin(); it != openUpvalues.end(); ) {
+                        if (it->first >= frameBaseIndex &&
+                            it->first < frameBaseIndex + MAX_LOCALS_PER_FRAME) {
+                            it->second->close();
+                            it = openUpvalues.erase(it);
+                        } else { ++it; }
+                    }
+
+                    currentGenerator->done = true;
+
+                    // Pop generator frame, restore caller
+                    CallFrame genFrame = frames.back();
+                    frames.pop_back();
+                    ip = currentGenerator->callerIp;
+                    frameBaseIndex = currentGenerator->callerFrameBase;
+                    currentChunk = currentGenerator->callerChunk;
+
+                    while (frames.size() > currentGenerator->callerFramesSize) {
+                        frames.pop_back();
+                    }
+
+                    while (!catchHandlers.empty() &&
+                           catchHandlers.back().frameCount > frames.size()) {
+                        catchHandlers.pop_back();
+                    }
+
+                    currentGenerator = nullptr;
+
+                    // Throw StopIteration (catchable by try/catch)
+                    if (throwException(
+                            GcHeap::instance().alloc<GcString>("StopIteration"))) {
+                        goto dispatch;
+                    }
+                    runtimeError("Uncaught StopIteration");
+                    return InterpretResult::RUNTIME_ERROR;
                 }
 
                 // Get return value (top of stack)

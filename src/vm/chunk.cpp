@@ -53,6 +53,7 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_TAIL_CALL:     return "OP_TAIL_CALL";
         case OpCode::OP_CLOSURE:        return "OP_CLOSURE";
         case OpCode::OP_RETURN:         return "OP_RETURN";
+        case OpCode::OP_YIELD:          return "OP_YIELD";
         case OpCode::OP_ARRAY:          return "OP_ARRAY";
         case OpCode::OP_DICT:           return "OP_DICT";
         case OpCode::OP_INDEX:          return "OP_INDEX";

@@ -57,6 +57,8 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
                     else if constexpr (std::is_same_v<U, GcPtr<FunctionPrototype>>) return "<proto>";
                     else if constexpr (std::is_same_v<U, GcPtr<Dict>>) return "{dict}";
                     else if constexpr (std::is_same_v<U, GcPtr<ClassDefinition>>) return "<class>";
+                    else if constexpr (std::is_same_v<U, GcPtr<Iterator>>) return "<iterator>";
+                    else if constexpr (std::is_same_v<U, GcPtr<Generator>>) return "<generator>";
                     else return std::to_string(inner);
                 }, arg->elements[i]);
             }
@@ -72,6 +74,10 @@ std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
             return "{dict}";
         } else if constexpr (std::is_same_v<T, GcPtr<ClassDefinition>>) {
             return "<class " + arg->name + ">";
+        } else if constexpr (std::is_same_v<T, GcPtr<Iterator>>) {
+            return "<iterator>";
+        } else if constexpr (std::is_same_v<T, GcPtr<Generator>>) {
+            return "<generator>";
         } else {
             return std::to_string(arg);
         }
@@ -231,6 +237,13 @@ std::string ASTPrinter::visitFuncExpr(const FuncExpr& expr) {
     }
     ss << "))";
     return ss.str();
+}
+
+std::string ASTPrinter::visitYieldExpr(const YieldExpr& expr) {
+    if (expr.value) {
+        return "(yield " + print(expr.value.get()) + ")";
+    }
+    return "(yield)";
 }
 
 // =========================================================================

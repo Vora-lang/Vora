@@ -14,6 +14,7 @@
 namespace vora {
 
 // Forward declarations for types defined elsewhere
+struct Chunk;        // defined in vm/chunk.h
 class Callable;
 class VoraFunction;
 class NativeFunction;
@@ -36,7 +37,9 @@ using Value = std::variant<
     GcPtr<Callable>,
     GcPtr<struct ObjectInstance>,
     GcPtr<FunctionPrototype>,
-    GcPtr<ClassDefinition>
+    GcPtr<ClassDefinition>,
+    GcPtr<struct Iterator>,
+    GcPtr<struct Generator>
 >;
 
 // =========================================================================
@@ -76,6 +79,43 @@ struct ObjectInstance : GcObject {
 
     void trace(std::vector<GcObject*>& wl) override;
     size_t gcSize() const override { return sizeof(ObjectInstance); }
+};
+
+// Iterator — created by iter(), advanced by next().
+// Holds a reference to the source collection and the current index.
+// Dict iterators snapshot keys at creation time for stable, O(1) advancement.
+struct Iterator : GcObject {
+    Value source;     // The collection (Array, GcString, Dict) — retains GC reference
+    size_t index = 0; // Current read position (0-based)
+    std::vector<std::string> dictKeys; // Key snapshot for Dict iteration
+
+    void trace(std::vector<GcObject*>& wl) override;
+    size_t gcSize() const override { return sizeof(Iterator) + dictKeys.capacity() * sizeof(std::string); }
+};
+
+// Generator — created by calling a generator function, driven by next().
+// Holds the suspended execution context between yield/resume cycles.
+struct Generator : GcObject {
+    GcPtr<VoraFunction> function;  // The generator bytecode
+    bool done = false;             // true when generator exhausted
+    bool firstResume = true;       // true before first next() call
+
+    // Args captured when gen_func(a, b, c) was called
+    std::vector<Value> args;
+
+    // Saved generator state (written by OP_YIELD)
+    size_t savedIpOffset = 0;       // Offset into function's chunk
+    size_t savedFrameBase = 0;
+    std::vector<Value> savedStack;  // Locals snapshot
+
+    // Saved caller state (written by next(), restored by OP_YIELD/OP_RETURN)
+    const uint8_t* callerIp = nullptr;
+    const Chunk* callerChunk = nullptr;
+    size_t callerFrameBase = 0;
+    size_t callerFramesSize = 0;
+
+    void trace(std::vector<GcObject*>& wl) override;
+    size_t gcSize() const override { return sizeof(Generator) + savedStack.capacity() * sizeof(Value) + args.capacity() * sizeof(Value); }
 };
 
 // =========================================================================

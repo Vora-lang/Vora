@@ -40,6 +40,7 @@ public:
     virtual R visitIncDecExpr(const IncDecExpr& expr) = 0;
     virtual R visitTernaryExpr(const TernaryExpr& expr) = 0;
     virtual R visitFuncExpr(const FuncExpr& expr) = 0;
+    virtual R visitYieldExpr(const YieldExpr& expr) = 0;
 };
 
 }

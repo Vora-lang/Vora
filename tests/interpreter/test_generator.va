@@ -1,0 +1,72 @@
+// tests/interpreter/test_generator.va — Test generator functions with yield
+
+// --- Basic yield ---
+func simple() {
+    yield 1
+    yield 2
+    yield 3
+}
+let g = simple()
+assert(next(g) == 1, "yield 1")
+assert(next(g) == 2, "yield 2")
+assert(next(g) == 3, "yield 3")
+let stopCaught = false
+try {
+    next(g)
+} catch (e) {
+    assert(e == "StopIteration", "StopIteration message")
+    stopCaught = true
+}
+assert(stopCaught, "StopIteration caught")
+
+// --- Empty generator (immediate return) ---
+func empty() {}
+let e = empty()
+let emptyCaught = false
+try { next(e) } catch (x) { emptyCaught = true }
+assert(emptyCaught, "empty generator StopIteration")
+
+// --- Generator with parameters ---
+func countDown(start, end) {
+    let i = start
+    while (i >= end) {
+        yield i
+        i = i - 1
+    }
+}
+let cd = countDown(5, 3)
+assert(next(cd) == 5, "countDown 5")
+assert(next(cd) == 4, "countDown 4")
+assert(next(cd) == 3, "countDown 3")
+let cdDone = false
+try { next(cd) } catch (x) { cdDone = true }
+assert(cdDone, "countDown exhausted")
+
+// --- Yield without value (yields null) ---
+func yieldNull() {
+    yield
+}
+let yn = yieldNull()
+assert(next(yn) == null, "yield null")
+let ynDone = false
+try { next(yn) } catch (x) { ynDone = true }
+assert(ynDone, "yieldNull exhausted")
+
+// --- Multiple generators independent ---
+func nums() {
+    yield 10
+    yield 20
+}
+let a = nums()
+let b = nums()
+assert(next(a) == 10, "gen a first")
+assert(next(b) == 10, "gen b first")
+assert(next(a) == 20, "gen a second")
+assert(next(b) == 20, "gen b second")
+
+// --- Generator functions return unique objects ---
+let g1 = simple()
+let g2 = simple()
+assert(g1 != g2, "generators are unique")
+
+print("test_generator: PASS")

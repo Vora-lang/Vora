@@ -49,6 +49,10 @@ bool valuesEqual(const Value& a, const Value& b) {
         return std::get<GcPtr<FunctionPrototype>>(a) == std::get<GcPtr<FunctionPrototype>>(b);
     if (std::holds_alternative<GcPtr<ClassDefinition>>(a))
         return std::get<GcPtr<ClassDefinition>>(a) == std::get<GcPtr<ClassDefinition>>(b);
+    if (std::holds_alternative<GcPtr<Iterator>>(a))
+        return std::get<GcPtr<Iterator>>(a) == std::get<GcPtr<Iterator>>(b);
+    if (std::holds_alternative<GcPtr<Generator>>(a))
+        return std::get<GcPtr<Generator>>(a) == std::get<GcPtr<Generator>>(b);
 
     return false;
 }

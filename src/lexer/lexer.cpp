@@ -30,6 +30,7 @@ namespace vora {
         {"export", TokenType::EXPORT},
         {"as", TokenType::AS},
         {"from", TokenType::FROM},
+        {"yield", TokenType::YIELD},
         {"true", TokenType::TRUE},
         {"false", TokenType::FALSE},
         {"null", TokenType::NULL_TOKEN},

@@ -43,6 +43,8 @@ private:
 
     std::unique_ptr<Expr> funcExpression();
 
+    std::unique_ptr<Expr> yieldExpression();
+
     std::unique_ptr<Expr> finishCall(
         std::unique_ptr<Expr> callee
     );

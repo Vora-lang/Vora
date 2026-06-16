@@ -30,4 +30,10 @@ const std::string& VoraFunction::name() const {
     return name_;
 }
 
+void VoraFunction::trace(std::vector<GcObject*>& wl) {
+    // Trace the prototype so it doesn't get collected while
+    // this VoraFunction is reachable (via generators, closures, etc.)
+    if (prototype_) wl.push_back(const_cast<FunctionPrototype*>(prototype_));
+}
+
 }

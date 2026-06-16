@@ -32,6 +32,7 @@ struct FunctionPrototype : GcObject {
     int requiredArity;    // params without default values
     Chunk chunk;
     std::vector<UpvalueDescriptor> upvalues;  // captured variables
+    bool isGenerator = false;  // true if function body contains yield
 
     void trace(std::vector<GcObject*>& wl) override {
         // FunctionPrototype doesn't directly reference other GcObjects.
@@ -102,6 +103,7 @@ public:
     void visitIncDecExpr(const IncDecExpr& expr) override;
     void visitTernaryExpr(const TernaryExpr& expr) override;
     void visitFuncExpr(const FuncExpr& expr) override;
+    void visitYieldExpr(const YieldExpr& expr) override;
 
     // --- StmtVisitor ---
     void visitExprStmt(const ExprStmt& stmt) override;
@@ -198,6 +200,7 @@ private:
     // Try context
     // =========================================================================
     int tryNesting = 0;  // depth of active try blocks (for OP_POP_CATCH cleanup)
+    bool isGenerator = false;  // set true when yield is encountered in function body
 
     // =========================================================================
     // Finally context (for routing break/continue/return through finally)

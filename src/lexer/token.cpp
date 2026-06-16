@@ -66,6 +66,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::EXPORT: return "EXPORT";
         case TokenType::AS: return "AS";
         case TokenType::FROM: return "FROM";
+        case TokenType::YIELD: return "YIELD";
 
         case TokenType::PLUS_EQUAL: return "PLUS_EQUAL";
         case TokenType::MINUS_EQUAL: return "MINUS_EQUAL";

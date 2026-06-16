@@ -63,6 +63,7 @@ enum class OpCode : uint8_t {
     OP_TAIL_CALL,      // tail call — reuses current frame (operand: uint8_t argCount)
     OP_CLOSURE,        // create closure from function prototype (operand: uint8_t constIndex, then N upvalue pairs)
     OP_RETURN,         // return from function
+    OP_YIELD,           // yield from generator — saves state, returns to caller
 
     // Upvalues (closures)
     OP_GET_UPVALUE,    // push upvalue (operand: uint8_t upvalue index)

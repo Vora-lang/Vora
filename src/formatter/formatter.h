@@ -93,6 +93,7 @@ private:
     std::string visitIncDecExpr(const IncDecExpr& expr) override;
     std::string visitTernaryExpr(const TernaryExpr& expr) override;
     std::string visitFuncExpr(const FuncExpr& expr) override;
+    std::string visitYieldExpr(const YieldExpr& expr) override;
 
     // =====================================================================
     // StmtVisitor<std::string> overrides

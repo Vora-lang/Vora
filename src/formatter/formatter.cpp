@@ -482,6 +482,13 @@ std::string SourceFormatter::visitFuncExpr(const FuncExpr& expr) {
     return ss.str();
 }
 
+std::string SourceFormatter::visitYieldExpr(const YieldExpr& expr) {
+    if (expr.value) {
+        return "yield " + formatExpr(*expr.value, 0);
+    }
+    return "yield";
+}
+
 // =====================================================================
 // StmtVisitor<std::string> — statement formatting
 // =====================================================================

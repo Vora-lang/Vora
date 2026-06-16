@@ -85,6 +85,7 @@ namespace vora {
         EXPORT, // export
         AS, // as
         FROM, // from
+        YIELD, // yield
 
         // Special
         END_OF_FILE, //

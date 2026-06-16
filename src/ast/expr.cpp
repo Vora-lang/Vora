@@ -423,4 +423,27 @@ std::unique_ptr<Expr> FuncExpr::clone() const {
     return std::make_unique<FuncExpr>(std::move(clonedParams), body);
 }
 
+// =========================================================================
+// YieldExpr
+// =========================================================================
+
+Value YieldExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitYieldExpr(*this);
+}
+
+void YieldExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitYieldExpr(*this);
+}
+
+std::string YieldExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitYieldExpr(*this);
+}
+
+std::unique_ptr<Expr> YieldExpr::clone() const {
+    return std::make_unique<YieldExpr>(
+        value ? value->clone() : nullptr,
+        keyword
+    );
+}
+
 }

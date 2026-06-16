@@ -83,6 +83,7 @@ void Parser::synchronize() {
             case TokenType::EXPORT:
             case TokenType::AS:
             case TokenType::FROM:
+            case TokenType::YIELD:
                 return;
             default:
                 break;
@@ -532,6 +533,18 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
     );
 }
 
+std::unique_ptr<Expr> Parser::yieldExpression() {
+    Token keyword = previous();
+    // yield <expr>  OR  yield (no value → yields null)
+    if (check(TokenType::SEMICOLON) || check(TokenType::RIGHT_BRACE) ||
+        check(TokenType::RIGHT_PAREN) || check(TokenType::COMMA) ||
+        check(TokenType::RIGHT_BRACKET) || isAtEnd()) {
+        return std::make_unique<YieldExpr>(nullptr, std::move(keyword));
+    }
+    auto value = expression();
+    return std::make_unique<YieldExpr>(std::move(value), std::move(keyword));
+}
+
 std::unique_ptr<Expr> Parser::funcExpression() {
     // Parse anonymous function: func(params) { body }
     // 'func' keyword already consumed by caller.
@@ -874,6 +887,10 @@ std::unique_ptr<Expr> Parser::primary() {
         }
 
         return std::make_unique<IncDecExpr>(op, std::move(target), true);
+    }
+
+    if (match(TokenType::YIELD)) {
+        return yieldExpression();
     }
 
     if (match(TokenType::FUNC)) {

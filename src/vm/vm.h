@@ -40,13 +40,6 @@ class VM {
     std::vector<Value> globalValues;
     std::vector<bool> globalDefined;
     std::unordered_map<std::string, int> globalIndex;
-    const Chunk* currentChunk = nullptr;
-    const uint8_t* ip = nullptr;
-
-    // Call frame stack
-    std::vector<CallFrame> frames;
-    size_t frameBaseIndex = 0;   // current frame's base (stack for top-level)
-
     // Catch handler stack: { targetIp, targetFrameBase, targetSlot, chunk, frameCount }
     struct CatchHandler {
         const uint8_t* targetIp;
@@ -78,6 +71,19 @@ class VM {
 public:
     VM();
     ~VM() = default;
+
+    // --- Runtime execution state (public for native function access) ---
+    const Chunk* currentChunk = nullptr;  // currently executing chunk
+    const uint8_t* ip = nullptr;          // instruction pointer
+    size_t frameBaseIndex = 0;            // current frame's stack base index
+    std::vector<CallFrame> frames;        // call frame stack
+
+    // --- Generator support ---
+    bool pendingResume = false;
+    const uint8_t* pendingIp = nullptr;
+    const Chunk* pendingChunk = nullptr;
+    GcPtr<Generator> pendingGenerator;
+    GcPtr<Generator> currentGenerator;  // non-null while executing a generator
 
     InterpretResult interpret(const Chunk& chunk);
 

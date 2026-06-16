@@ -431,4 +431,19 @@ public:
     std::shared_ptr<BlockStmt> body;
 };
 
+// yield <expr>  — generator suspension expression
+class YieldExpr : public Expr {
+public:
+    YieldExpr(std::unique_ptr<Expr> value, Token keyword)
+        : value(std::move(value)), keyword(std::move(keyword)) {}
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::unique_ptr<Expr> value;  // nullptr = yield with no value (yields null)
+    Token keyword;
+};
+
 }

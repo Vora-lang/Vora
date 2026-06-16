@@ -462,6 +462,7 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     proto.requiredArity = requiredArity;
     proto.upvalues = std::move(fnCompiler.upvalues);
     proto.chunk = std::move(fnCompiler.chunk);
+    proto.isGenerator = fnCompiler.isGenerator;
 
     // Store prototype in constant pool
     uint8_t protoIndex = addFunctionPrototype(std::move(proto));

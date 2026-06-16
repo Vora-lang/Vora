@@ -36,11 +36,7 @@ public:
     // the value to heap storage and redirects location there.
     std::vector<std::shared_ptr<Upvalue>> upvalues;
 
-    void trace(std::vector<GcObject*>& wl) override {
-        // VoraFunction is referenced from ObjectClass::methods,
-        // from VM frames, and from closures (upvalues).  It doesn't
-        // directly own any GcObject references itself.
-    }
+    void trace(std::vector<GcObject*>& wl) override;
     size_t gcSize() const override { return sizeof(VoraFunction); }
 
 private:
