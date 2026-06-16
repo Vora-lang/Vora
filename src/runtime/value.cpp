@@ -6,7 +6,6 @@
 #include "../vm/compiler.h"
 
 #include <iostream>
-#include <sstream>
 
 namespace vora {
 
@@ -66,182 +65,101 @@ void ObjectInstance::trace(std::vector<GcObject*>& wl) {
 }
 
 // =========================================================================
+// valueToStringAppend — internal depth-limited streaming worker
+// =========================================================================
+
+static constexpr int kMaxPrintDepth = 256;
+
+// Forward declaration for recursion within same TU
+static void appendValue(std::string& out, const Value& value, int depth);
+
+static void appendValue(std::string& out, const Value& value, int depth) {
+    if (depth > kMaxPrintDepth) {
+        out += "[max depth]";
+        return;
+    }
+
+    std::visit([&out, depth](auto&& arg) {
+        using T = std::decay_t<decltype(arg)>;
+
+        if constexpr (std::is_same_v<T, std::nullptr_t>) {
+            out += "null";
+        } else if constexpr (std::is_same_v<T, bool>) {
+            out += (arg ? "true" : "false");
+        } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
+            out += arg->value;
+        } else if constexpr (std::is_same_v<T, GcPtr<Array>>) {
+            out += '[';
+            for (size_t i = 0; i < arg->elements.size(); ++i) {
+                if (i > 0) out += ", ";
+                appendValue(out, arg->elements[i], depth + 1);
+            }
+            out += ']';
+        } else if constexpr (std::is_same_v<T, GcPtr<Dict>>) {
+            out += '{';
+            size_t i = 0;
+            for (const auto& [k, v] : arg->pairs) {
+                if (i > 0) out += ", ";
+                out += k;
+                out += ": ";
+                appendValue(out, v, depth + 1);
+                i++;
+            }
+            out += '}';
+        } else if constexpr (std::is_same_v<T, GcPtr<Callable>>) {
+            if (auto native = dynamic_cast<NativeFunction*>(arg.get())) {
+                out += "<native fn ";
+                out += native->name();
+                out += '>';
+            } else if (auto fn = dynamic_cast<VoraFunction*>(arg.get())) {
+                out += "<fn ";
+                out += fn->name();
+                out += '>';
+            } else {
+                out += "<fn>";
+            }
+        } else if constexpr (std::is_same_v<T, GcPtr<ObjectInstance>>) {
+            out += '<';
+            out += arg->className;
+            out += " object>";
+        } else if constexpr (std::is_same_v<T, GcPtr<FunctionPrototype>>) {
+            out += "<function prototype ";
+            out += arg->name;
+            out += '>';
+        } else if constexpr (std::is_same_v<T, GcPtr<ClassDefinition>>) {
+            out += "<class ";
+            out += arg->name;
+            out += '>';
+        } else if constexpr (std::is_same_v<T, int64_t>) {
+            out += std::to_string(arg);
+        } else {
+            // double
+            out += std::to_string(arg);
+        }
+    }, value);
+}
+
+void valueToStringAppend(std::string& out, const Value& value, int depth) {
+    appendValue(out, value, depth);
+}
+
+// =========================================================================
 // printValue
 // =========================================================================
 
 void printValue(const Value& value) {
-
-    std::visit([](auto&& arg) {
-
-        using T =
-            std::decay_t<decltype(arg)>;
-
-        if constexpr (
-            std::is_same_v<T, std::nullptr_t>
-        ) {
-
-            std::cout << "null";
-
-        } else if constexpr (
-            std::is_same_v<T, bool>
-        ) {
-
-            std::cout
-                << (arg ? "true" : "false");
-
-        } else if constexpr (
-            std::is_same_v<T, GcPtr<GcString>>
-        ) {
-
-            std::cout << arg->value;
-
-        } else if constexpr (
-            std::is_same_v<T, GcPtr<Array>>
-        ) {
-
-            std::cout << "[";
-
-            for (size_t i = 0; i < arg->elements.size(); ++i) {
-                if (i > 0) {
-                    std::cout << ", ";
-                }
-                printValue(arg->elements[i]);
-            }
-
-            std::cout << "]";
-
-        } else if constexpr (
-            std::is_same_v<T, GcPtr<Dict>>
-        ) {
-            std::cout << "{";
-            size_t i = 0;
-            for (const auto& [k, v] : arg->pairs) {
-                if (i > 0) std::cout << ", ";
-                std::cout << k << ": ";
-                printValue(v);
-                i++;
-            }
-            std::cout << "}";
-        } else if constexpr (
-            std::is_same_v<T, GcPtr<Callable>>
-        ) {
-
-            if (auto native =
-                dynamic_cast<NativeFunction*>(arg.get())) {
-
-                std::cout
-                    << "<native fn "
-                    << native->name()
-                    << ">";
-
-            } else if (auto function =
-                dynamic_cast<VoraFunction*>(arg.get())) {
-
-                std::cout
-                    << "<fn "
-                    << function->name()
-                    << ">";
-
-            } else {
-
-                std::cout << "<fn>";
-            }
-
-        } else if constexpr (
-            std::is_same_v<T, GcPtr<ObjectInstance>>
-        ) {
-
-            std::cout
-                << "<"
-                << arg->className
-                << " object>";
-
-        } else if constexpr (
-            std::is_same_v<T, GcPtr<FunctionPrototype>>
-        ) {
-
-            std::cout
-                << "<function prototype "
-                << arg->name
-                << ">";
-
-        } else if constexpr (
-            std::is_same_v<T, GcPtr<ClassDefinition>>
-        ) {
-
-            std::cout
-                << "<class "
-                << arg->name
-                << ">";
-
-        } else if constexpr (
-            std::is_same_v<T, int64_t>
-        ) {
-
-            std::cout << arg;
-
-        } else {
-
-            std::cout << arg;
-        }
-
-    }, value);
+    std::string s = valueToString(value);
+    std::cout << s;
 }
 
+// =========================================================================
+// valueToString
+// =========================================================================
+
 std::string valueToString(const Value& value) {
-
-    std::ostringstream oss;
-
-    std::visit([&oss](auto&& arg) {
-
-        using T = std::decay_t<decltype(arg)>;
-
-        if constexpr (std::is_same_v<T, std::nullptr_t>) {
-            oss << "null";
-        } else if constexpr (std::is_same_v<T, bool>) {
-            oss << (arg ? "true" : "false");
-        } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
-            oss << arg->value;
-        } else if constexpr (std::is_same_v<T, GcPtr<Array>>) {
-            oss << "[";
-            for (size_t i = 0; i < arg->elements.size(); ++i) {
-                if (i > 0) oss << ", ";
-                oss << valueToString(arg->elements[i]);
-            }
-            oss << "]";
-        } else if constexpr (std::is_same_v<T, GcPtr<Dict>>) {
-            oss << "{";
-            size_t i = 0;
-            for (const auto& [k, v] : arg->pairs) {
-                if (i > 0) oss << ", ";
-                oss << k << ": " << valueToString(v);
-                i++;
-            }
-            oss << "}";
-        } else if constexpr (std::is_same_v<T, GcPtr<Callable>>) {
-            if (auto native = dynamic_cast<NativeFunction*>(arg.get())) {
-                oss << "<native fn " << native->name() << ">";
-            } else if (auto fn = dynamic_cast<VoraFunction*>(arg.get())) {
-                oss << "<fn " << fn->name() << ">";
-            } else {
-                oss << "<fn>";
-            }
-        } else if constexpr (std::is_same_v<T, GcPtr<ObjectInstance>>) {
-            oss << "<" << arg->className << " object>";
-        } else if constexpr (std::is_same_v<T, GcPtr<FunctionPrototype>>) {
-            oss << "<function prototype " << arg->name << ">";
-        } else if constexpr (std::is_same_v<T, GcPtr<ClassDefinition>>) {
-            oss << "<class " << arg->name << ">";
-        } else if constexpr (std::is_same_v<T, int64_t>) {
-            oss << arg;
-        } else {
-            // double, string
-            oss << arg;
-        }
-
-    }, value);
-
-    return oss.str();
+    std::string out;
+    appendValue(out, value, 0);
+    return out;
 }
 
 }

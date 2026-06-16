@@ -1,0 +1,4 @@
+// tests/interpreter/test_module_helper.va — Module imported by other tests
+export func add(a, b) { return a + b }
+export let NAME = "helper"
+export const VERSION = 1

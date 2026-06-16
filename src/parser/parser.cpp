@@ -79,6 +79,10 @@ void Parser::synchronize() {
             case TokenType::BREAK:
             case TokenType::CONTINUE:
             case TokenType::TRY:
+            case TokenType::IMPORT:
+            case TokenType::EXPORT:
+            case TokenType::AS:
+            case TokenType::FROM:
                 return;
             default:
                 break;
@@ -156,6 +160,18 @@ std::unique_ptr<Stmt> Parser::statement() {
 
     if (match(TokenType::THROW)) {
         return throwStatement();
+    }
+
+    if (match(TokenType::IMPORT)) {
+        return importStatement();
+    }
+
+    if (match(TokenType::FROM)) {
+        return fromImportStatement();
+    }
+
+    if (match(TokenType::EXPORT)) {
+        return exportStatement();
     }
 
     auto expr = expression();
@@ -1397,6 +1413,102 @@ std::unique_ptr<Stmt> Parser::throwStatement() {
         std::move(value),
         keyword
     );
+}
+
+// =========================
+// IMPORT / EXPORT
+// =========================
+
+std::unique_ptr<Stmt> Parser::importStatement() {
+    Token keyword = previous();  // 'import' token
+
+    if (!match(TokenType::STRING)) {
+        error("Expected string path after 'import'");
+        return nullptr;
+    }
+
+    std::string modulePath = previous().lexeme;
+
+    // Optional `as <identifier>` alias
+    std::string alias;
+    if (match(TokenType::AS)) {
+        if (!match(TokenType::IDENTIFIER)) {
+            error("Expected identifier after 'as'");
+            return nullptr;
+        }
+        alias = previous().lexeme;
+    }
+
+    match(TokenType::SEMICOLON);  // optional
+
+    return std::make_unique<ImportStmt>(modulePath, keyword, alias);
+}
+
+std::unique_ptr<Stmt> Parser::fromImportStatement() {
+    Token keyword = previous();  // 'from' token
+
+    if (!match(TokenType::STRING)) {
+        error("Expected string path after 'from'");
+        return nullptr;
+    }
+
+    std::string modulePath = previous().lexeme;
+
+    if (!match(TokenType::IMPORT)) {
+        error("Expected 'import' after path in from-import");
+        return nullptr;
+    }
+
+    // Parse comma-separated identifier list
+    std::vector<std::string> names;
+    do {
+        if (!match(TokenType::IDENTIFIER)) {
+            error("Expected identifier in import list");
+            return nullptr;
+        }
+        names.push_back(previous().lexeme);
+    } while (match(TokenType::COMMA));
+
+    if (names.empty()) {
+        error("Expected at least one identifier in from-import");
+        return nullptr;
+    }
+
+    match(TokenType::SEMICOLON);  // optional
+
+    return std::make_unique<ImportStmt>(modulePath, keyword, "", names);
+}
+
+std::unique_ptr<Stmt> Parser::exportStatement() {
+    Token keyword = previous();  // 'export' token
+
+    if (match(TokenType::FUNC)) {
+        // export func name(...) { ... }
+        if (check(TokenType::LEFT_PAREN)) {
+            error("Cannot export anonymous function");
+            return nullptr;
+        }
+        auto stmt = funcStatement();
+        return stmt ? std::make_unique<ExportStmt>(std::move(stmt), keyword) : nullptr;
+    }
+
+    if (match(TokenType::LET)) {
+        auto stmt = letStatement();
+        return stmt ? std::make_unique<ExportStmt>(std::move(stmt), keyword) : nullptr;
+    }
+
+    if (match(TokenType::CONST)) {
+        auto stmt = constStatement();
+        return stmt ? std::make_unique<ExportStmt>(std::move(stmt), keyword) : nullptr;
+    }
+
+    if (match(TokenType::OBJ)) {
+        auto stmt = objStatement();
+        return stmt ? std::make_unique<ExportStmt>(std::move(stmt), keyword) : nullptr;
+    }
+
+    error("Expected func, let, const, or Obj after 'export'");
+    return nullptr;
 }
 
 }

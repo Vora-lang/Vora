@@ -1,0 +1,52 @@
+// tests/interpreter/test_json.va — Test JSON parsing and serialization
+import "json"
+
+// Basic value parsing
+assert(json.parse("null") == null, "parse null")
+assert(json.parse("true") == true, "parse true")
+assert(json.parse("false") == false, "parse false")
+assert(json.parse("42") == 42, "parse int")
+assert(json.parse("-17") == -17, "parse negative int")
+assert(json.parse("3.14") == 3.14, "parse float")
+
+// String parsing
+assert(json.parse('"hello"') == "hello", "parse string")
+
+// Array parsing
+let arr = json.parse("[1, 2, 3]")
+assert(arr[0] == 1, "array[0]")
+assert(arr[1] == 2, "array[1]")
+assert(arr[2] == 3, "array[2]")
+
+// Object parsing
+let obj = json.parse('{"name": "Vora", "version": 1}')
+assert(obj.name == "Vora", "obj.name")
+assert(obj.version == 1, "obj.version")
+
+// Nested parsing
+let nested = json.parse('{"items": [10, 20], "meta": {"ok": true}}')
+assert(nested.items[0] == 10, "nested.items[0]")
+assert(nested.meta.ok == true, "nested.meta.ok")
+
+// Stringify
+assert(json.stringify(null) == "null", "stringify null")
+assert(json.stringify(true) == "true", "stringify true")
+assert(json.stringify(42) == "42", "stringify int")
+assert(json.stringify(3.5) == "3.5", "stringify float")
+assert(json.stringify("hi") == '"hi"', "stringify string")
+assert(json.stringify([1, 2]) == "[1,2]", "stringify array")
+
+// Roundtrip
+let original = {a: 1, b: [2, 3], c: {d: "ok"}}
+let encoded = json.stringify(original)
+let decoded = json.parse(encoded)
+assert(decoded.a == 1, "roundtrip.a")
+assert(decoded.b[1] == 3, "roundtrip.b[1]")
+assert(decoded.c.d == "ok", "roundtrip.c.d")
+
+// from-import usage with json
+from "json" import parse, stringify
+assert(parse("42") == 42, "from-import parse")
+assert(stringify(100) == "100", "from-import stringify")
+
+print("test_json: PASS")

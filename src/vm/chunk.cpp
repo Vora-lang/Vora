@@ -156,6 +156,21 @@ void Chunk::writeAt(size_t offset, uint8_t byte) {
 }
 
 size_t Chunk::addConstant(Value value) {
+    // Fast path: O(1) hash lookup for string constants (most expensive to compare).
+    if (auto* s = std::get_if<GcPtr<GcString>>(&value)) {
+        auto it = stringConstantIndices_.find((*s)->value);
+        if (it != stringConstantIndices_.end()) return it->second;
+    }
+
+    // Fast path: O(1) hash lookup for int constants (very common).
+    if (auto* iv = std::get_if<int64_t>(&value)) {
+        auto it = intConstantIndices_.find(*iv);
+        if (it != intConstantIndices_.end()) return it->second;
+    }
+
+    // Linear scan for remaining types (null, bool, double, GcPtr<Callable>,
+    // GcPtr<Array>, GcPtr<Dict>, GcPtr<ObjectInstance>, GcPtr<FunctionPrototype>,
+    // GcPtr<ClassDefinition>). These are typically few and comparison is cheap.
     for (size_t i = 0; i < constants.size(); i++) {
         const auto& existing = constants[i];
         if (existing.index() != value.index()) continue;
@@ -164,13 +179,23 @@ size_t Chunk::addConstant(Value value) {
             return i;
         }
         if (std::holds_alternative<bool>(value) && std::get<bool>(existing) == std::get<bool>(value)) return i;
+        // int64_t handled above via hash map — but re-check in case hash wasn't populated
         if (std::holds_alternative<int64_t>(value) && std::holds_alternative<int64_t>(existing) && std::get<int64_t>(existing) == std::get<int64_t>(value)) return i;
         if (std::holds_alternative<double>(value) && std::holds_alternative<double>(existing) && std::get<double>(existing) == std::get<double>(value)) return i;
-        if (std::holds_alternative<GcPtr<GcString>>(value) && std::get<GcPtr<GcString>>(existing)->value == std::get<GcPtr<GcString>>(value)->value) return i;
+        // GcString handled above via hash map
     }
 
+    // Insert into constants and update hash indices.
+    size_t idx = constants.size();
     constants.push_back(value);
-    return constants.size() - 1;
+
+    if (auto* s = std::get_if<GcPtr<GcString>>(&constants[idx])) {
+        stringConstantIndices_[(*s)->value] = idx;
+    } else if (auto* iv = std::get_if<int64_t>(&constants[idx])) {
+        intConstantIndices_[*iv] = idx;
+    }
+
+    return idx;
 }
 
 void Chunk::writeConstant(Value value, int line, int column) {

@@ -3,6 +3,8 @@
 #include "value_ops.h"
 
 #include "../gc/gc_heap.h"
+#include "../lexer/lexer.h"
+#include "../parser/parser.h"
 #include "../runtime/bound_method.h"
 #include "../runtime/builtins.h"
 #include "../runtime/class_constructor.h"
@@ -13,7 +15,9 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 namespace vora {
@@ -1436,7 +1440,13 @@ InterpretResult VM::run() {
                     }
                     auto method = getDictMethod(propName, dict);
                     if (method) { push(method); break; }
-                    RUNTIME_ERROR_OR_THROW("Unknown dict method: " + propName);
+                    // Fall back to key lookup (for module objects, etc.)
+                    auto keyIt = dict->pairs.find(propName);
+                    if (keyIt != dict->pairs.end()) {
+                        push(keyIt->second);
+                        break;
+                    }
+                    RUNTIME_ERROR_OR_THROW("Unknown dict key or method: " + propName);
                 }
 
                 if (std::holds_alternative<GcPtr<ObjectInstance>>(obj)) {
@@ -1649,6 +1659,62 @@ InterpretResult VM::run() {
                 }
                 goto dispatch;
             }
+            case OpCode::OP_IMPORT: {
+                // OP_IMPORT <pathConstIndex> <nameConstIndex>
+                uint8_t pathIndex = READ_BYTE();
+                uint8_t nameIndex = READ_BYTE();
+
+                Value pathVal = currentChunk->constants[pathIndex];
+                if (!std::holds_alternative<GcPtr<GcString>>(pathVal)) {
+                    RUNTIME_ERROR_OR_THROW("OP_IMPORT: expected string constant for path");
+                    break;
+                }
+                std::string rawPath = std::get<GcPtr<GcString>>(pathVal)->value;
+
+                // Resolve the absolute path
+                std::string resolved = resolveModulePath(rawPath);
+                if (resolved.empty()) {
+                    RUNTIME_ERROR_OR_THROW("Module not found: " + rawPath);
+                    break;
+                }
+
+                // Check module cache
+                auto it = moduleCache.find(resolved);
+                if (it != moduleCache.end()) {
+                    push(it->second);  // push cached module dict
+                    break;
+                }
+
+                // Load, compile, and execute module
+                Value moduleObj = loadModule(resolved);
+                if (std::holds_alternative<std::nullptr_t>(moduleObj)) {
+                    std::string errMsg = loadModuleError;
+                    loadModuleError.clear();
+
+                    if (errMsg.empty()) {
+                        // Error was already reported by a nested OP_IMPORT
+                        // handler. Silently propagate the failure up.
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+
+                    // This is the first (innermost) error — print it once
+                    // with import chain context.
+                    if (importStack.size() > 1) {
+                        errMsg += "\nImport chain:";
+                        for (size_t i = 0; i < importStack.size(); i++) {
+                            errMsg += "\n  in import of " + importStack[i];
+                        }
+                    }
+
+                    RUNTIME_ERROR_OR_THROW(errMsg);
+                    break;
+                }
+
+                // Cache and push result
+                moduleCache[resolved] = moduleObj;
+                push(moduleObj);
+                break;
+            }
             case OpCode::OP_FINALLY_END: {
                 // If we just ran a finally block after an exception was
                 // routed through a catch handler, re-throw the exception
@@ -1677,6 +1743,262 @@ InterpretResult VM::run() {
         runtimeError(e.what());
         return InterpretResult::RUNTIME_ERROR;
     }
+}
+
+// =========================================================================
+// Module System — Path Resolution + Loading
+// =========================================================================
+
+std::string VM::resolveModulePath(const std::string& rawPath) const {
+    // Step 1: Expand environment variables ($VAR and %VAR%)
+    std::string expanded = rawPath;
+    // Expand $VAR patterns
+    size_t dollarPos = 0;
+    while ((dollarPos = expanded.find('$', dollarPos)) != std::string::npos) {
+        size_t end = dollarPos + 1;
+        while (end < expanded.size() &&
+               (std::isalnum(static_cast<unsigned char>(expanded[end])) ||
+                expanded[end] == '_')) {
+            end++;
+        }
+        if (end > dollarPos + 1) {
+            std::string varName = expanded.substr(dollarPos + 1, end - dollarPos - 1);
+            const char* envVal = std::getenv(varName.c_str());
+            std::string replacement = envVal ? envVal : "";
+            expanded.replace(dollarPos, end - dollarPos, replacement);
+            dollarPos += replacement.size();
+        } else {
+            dollarPos++;
+        }
+    }
+    // Expand %VAR% patterns (Windows style)
+    size_t pctPos = 0;
+    while ((pctPos = expanded.find('%', pctPos)) != std::string::npos) {
+        size_t end = expanded.find('%', pctPos + 1);
+        if (end != std::string::npos) {
+            std::string varName = expanded.substr(pctPos + 1, end - pctPos - 1);
+            const char* envVal = std::getenv(varName.c_str());
+            std::string replacement = envVal ? envVal : "";
+            expanded.replace(pctPos, end - pctPos + 1, replacement);
+            pctPos += replacement.size();
+        } else {
+            break;
+        }
+    }
+
+    // Helper: check if a path is absolute
+    auto isAbsolute = [](const std::string& p) -> bool {
+        if (p.empty()) return false;
+        if (p[0] == '/') return true;
+        // Windows: drive letter + colon
+        if (p.size() >= 2 && p[1] == ':' && std::isalpha(static_cast<unsigned char>(p[0]))) {
+            return true;
+        }
+        return false;
+    };
+
+    // Helper: check if a file exists
+    auto fileExists = [](const std::string& p) -> bool {
+        std::ifstream f(p);
+        return f.good();
+    };
+
+    // Helper: append ".va" if no extension
+    auto withExt = [](const std::string& p) -> std::string {
+        if (p.size() > 3 && p.substr(p.size() - 3) == ".va") return p;
+        return p + ".va";
+    };
+
+    // Helper: normalize a path — collapse ., /, .., double slashes, mixed
+    // separators. Ensures the same physical file always produces the same
+    // resolved path, which is critical for module cache and circular import
+    // detection (A → B → A with different path strings would loop forever).
+    auto normalizePath = [](std::string p) -> std::string {
+        // Replace backslashes with forward slashes
+        for (auto& c : p) { if (c == '\\') c = '/'; }
+        // Collapse double slashes and "/./" patterns
+        std::vector<std::string> parts;
+        size_t start = 0;
+        while (start < p.size()) {
+            size_t end = p.find('/', start);
+            if (end == std::string::npos) end = p.size();
+            std::string part = p.substr(start, end - start);
+            start = end + 1;
+            if (part.empty() || part == ".") continue;
+            if (part == "..") {
+                if (!parts.empty()) parts.pop_back();
+            } else {
+                parts.push_back(part);
+            }
+        }
+        std::string result;
+        for (size_t i = 0; i < parts.size(); i++) {
+            if (i > 0) result += '/';
+            result += parts[i];
+        }
+        return result.empty() ? "." : result;
+    };
+
+    std::string result;
+
+    // Step 2: Absolute path
+    if (isAbsolute(expanded)) {
+        result = normalizePath(withExt(expanded));
+        if (fileExists(result)) return result;
+        return "";
+    }
+
+    // Step 3: Relative path (./ or ../)
+    if (expanded.size() >= 2 && expanded[0] == '.' &&
+        (expanded[1] == '/' || expanded[1] == '\\')) {
+        result = normalizePath(currentModuleDir + "/" + expanded);
+        result = withExt(result);
+        if (fileExists(result)) return result;
+        return "";
+    }
+    if (expanded.size() >= 3 && expanded[0] == '.' && expanded[1] == '.' &&
+        (expanded[2] == '/' || expanded[2] == '\\')) {
+        result = normalizePath(currentModuleDir + "/" + expanded);
+        result = withExt(result);
+        if (fileExists(result)) return result;
+        return "";
+    }
+
+    // Step 4: Bare name (e.g. "math") — search stdDir first, then currentDir
+    result = normalizePath(stdDir + "/" + expanded);
+    result = withExt(result);
+    if (fileExists(result)) return result;
+
+    result = normalizePath(currentModuleDir + "/" + expanded);
+    result = withExt(result);
+    if (fileExists(result)) return result;
+
+    return "";
+}
+
+Value VM::loadModule(const std::string& resolvedPath) {
+    // Guard against circular imports. Module A → B → A would loop
+    // infinitely without this check since moduleCache is only populated
+    // after loadModule() returns.
+    for (size_t i = 0; i < importStack.size(); i++) {
+        if (importStack[i] == resolvedPath) {
+            std::string chain;
+            for (size_t j = i; j < importStack.size(); j++) {
+                if (j > i) chain += " → ";
+                chain += importStack[j];
+            }
+            chain += " → " + resolvedPath;
+            loadModuleError = "Circular import detected: " + chain;
+            return Value(nullptr);
+        }
+    }
+    importStack.push_back(resolvedPath);
+    // Pop on every return path (success or failure).
+    struct PopGuard {
+        std::vector<std::string>& s;
+        ~PopGuard() { s.pop_back(); }
+    } guard{importStack};
+
+    // 1. Read file
+    std::ifstream file(resolvedPath, std::ios::binary);
+    if (!file) {
+        loadModuleError = "Failed to read module: " + resolvedPath;
+        return Value(nullptr);
+    }
+    std::stringstream ss;
+    ss << file.rdbuf();
+    std::string source = ss.str();
+
+    // Strip UTF-8 BOM if present
+    if (source.size() >= 3 &&
+        static_cast<unsigned char>(source[0]) == 0xEF &&
+        static_cast<unsigned char>(source[1]) == 0xBB &&
+        static_cast<unsigned char>(source[2]) == 0xBF) {
+        source = source.substr(3);
+    }
+
+    // 2. Lex → Parse → Compile
+    Lexer lexer(source);
+    auto tokens = lexer.scanTokens();
+    if (lexer.hasError()) {
+        loadModuleError = "Lexer error in module: " + resolvedPath;
+        return Value(nullptr);
+    }
+
+    Parser parser(tokens);
+    parser.setSource(source);
+    auto program = parser.parse();
+    if (!program || parser.hasError()) {
+        loadModuleError = "Parse error in module: " + resolvedPath;
+        return Value(nullptr);
+    }
+
+    // 3. Create child VM first so we can seed the compiler with its globals
+    VM childVM;
+    childVM.stdDir = this->stdDir;
+
+    // Share the import stack so circular imports are detected across
+    // nested module loads (A → B → A).
+    childVM.importStack = this->importStack;
+
+    // Set currentModuleDir to the module file's directory
+    auto slashPos = resolvedPath.find_last_of("/\\");
+    if (slashPos != std::string::npos) {
+        childVM.currentModuleDir = resolvedPath.substr(0, slashPos);
+    } else {
+        childVM.currentModuleDir = ".";
+    }
+
+    // Seed child VM with the global names so builtin slot numbers match
+    childVM.initGlobals(globalNames);
+    registerBuiltins(childVM);
+
+    // Now compile with the compiler seeded from the child VM's globals,
+    // so that global slot numbers in the bytecode match the child VM.
+    // Use defined=false so that modules can shadow builtins
+    // (e.g. `export let abs = abs`).
+    Compiler compiler;
+    compiler.setSource(source);
+    compiler.seedGlobals(childVM.globalNames, false);
+    Chunk chunk = compiler.compile(program.get());
+    if (compiler.hadError) {
+        loadModuleError = "Compile error in module: " + resolvedPath;
+        return Value(nullptr);
+    }
+
+    // Extend child VM globals with any new names the module compiler created
+    // (e.g. PI, E, TAU, random in math.va). Without this, OP_DEFINE_GLOBAL
+    // for these new globals would fail with "slot out of range" because the
+    // child VM's globalNames was only seeded from the parent's names before
+    // compilation. initGlobals is idempotent — existing names are preserved.
+    childVM.initGlobals(compiler.getGlobalNames());
+
+    // 4. Execute module in child VM
+    InterpretResult result = childVM.interpret(chunk);
+    if (result != InterpretResult::OK) {
+        // Don't set loadModuleError — the child VM already reported the
+        // error through its own OP_IMPORT handler. Setting a new message
+        // here would cause the parent to print the same error again.
+        return Value(nullptr);
+    }
+
+    // 5. Extract exported symbols from child VM's globals → build Dict
+    auto exports = GcHeap::instance().alloc<Dict>();
+    const auto& exportNames = compiler.getExportNames();
+
+    for (const auto& exportName : exportNames) {
+        // Look up the slot in the child VM
+        auto idxIt = childVM.globalIndex.find(exportName);
+        if (idxIt != childVM.globalIndex.end()) {
+            int slot = idxIt->second;
+            if (slot >= 0 && static_cast<size_t>(slot) < childVM.globalValues.size() &&
+                childVM.globalDefined[slot]) {
+                exports->pairs[exportName] = childVM.globalValues[slot];
+            }
+        }
+    }
+
+    return Value(exports);
 }
 
 } // namespace vora

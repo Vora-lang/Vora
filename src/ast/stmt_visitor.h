@@ -35,6 +35,8 @@ public:
     virtual R visitContinueStmt(const ContinueStmt& stmt) = 0;
     virtual R visitTryStmt(const TryStmt& stmt) = 0;
     virtual R visitThrowStmt(const ThrowStmt& stmt) = 0;
+    virtual R visitImportStmt(const ImportStmt& stmt) = 0;
+    virtual R visitExportStmt(const ExportStmt& stmt) = 0;
 };
 
 }

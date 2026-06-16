@@ -562,12 +562,16 @@ void Compiler::visitThisExpr(const ThisExpr& expr) {
     }
 }
 
-void Compiler::visitSuperExpr(const SuperExpr& /*expr*/) {
+void Compiler::visitSuperExpr(const SuperExpr& expr) {
     // 'super' alone is an error — only 'super.method()' is valid.
     // The parser allows `super` as a primary expression, but the compiler
     // rejects it because OP_GET_SUPER needs a property name.
     hadError = true;
-    std::fprintf(stderr, "[line %d] Error: 'super' must be followed by '.method'\n", currentLine);
+    currentLine = expr.keyword.line;
+    currentColumn = expr.keyword.column;
+    printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 5,
+                    "'super' must be followed by '.method'",
+                    "Error");
 }
 
 void Compiler::visitIncDecExpr(const IncDecExpr& expr) {

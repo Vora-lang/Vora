@@ -85,6 +85,11 @@ struct ObjectInstance : GcObject {
 void printValue(const Value& value);
 std::string valueToString(const Value& value);
 
+// Append value's string representation directly to `out` (no intermediate
+// allocation).  Used by valueToString, printValue, and addValues (string
+// concatenation).  depth = current nesting depth (starts at 0).
+void valueToStringAppend(std::string& out, const Value& value, int depth = 0);
+
 inline bool isNumeric(const Value& v) {
     return std::holds_alternative<double>(v) || std::holds_alternative<int64_t>(v);
 }

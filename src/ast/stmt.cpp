@@ -171,4 +171,28 @@ std::string TryStmt::accept(StmtVisitor<std::string>& visitor) const {
     return visitor.visitTryStmt(*this);
 }
 
+// =========================================================================
+// ImportStmt
+// =========================================================================
+
+void ImportStmt::accept(StmtVisitor<void>& visitor) const {
+    visitor.visitImportStmt(*this);
+}
+
+std::string ImportStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitImportStmt(*this);
+}
+
+// =========================================================================
+// ExportStmt
+// =========================================================================
+
+void ExportStmt::accept(StmtVisitor<void>& visitor) const {
+    visitor.visitExportStmt(*this);
+}
+
+std::string ExportStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitExportStmt(*this);
+}
+
 }

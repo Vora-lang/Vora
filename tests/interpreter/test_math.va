@@ -1,0 +1,20 @@
+// tests/interpreter/test_math.va — Test math built-in functions
+
+assert(abs(-5) == 5, "abs(-5)")
+assert(abs(3.14) == 3.14, "abs(3.14)")
+assert(abs(0) == 0, "abs(0)")
+
+assert(sqrt(16) == 4.0, "sqrt(16)")
+assert(sqrt(2) > 1.41, "sqrt(2)")
+assert(sqrt(0) == 0.0, "sqrt(0)")
+
+assert(sin(0) == 0.0, "sin(0)")
+assert(cos(0) == 1.0, "cos(0)")
+
+let arr = [3, 1, 4, 1, 5]
+assert(min(arr) == 1, "min")
+assert(max(arr) == 5, "max")
+assert(min([42]) == 42, "min single")
+assert(max([-7]) == -7, "max single")
+
+print("test_math: PASS")

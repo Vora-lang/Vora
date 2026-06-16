@@ -430,6 +430,24 @@ std::string ASTPrinter::visitThrowStmt(const ThrowStmt& stmt) {
     return parenthesize("throw", { stmt.value.get() });
 }
 
+std::string ASTPrinter::visitImportStmt(const ImportStmt& stmt) {
+    if (!stmt.importNames.empty()) {
+        std::string result = "(from \"" + stmt.modulePath + "\" import";
+        for (size_t i = 0; i < stmt.importNames.size(); i++) {
+            if (i > 0) result += ",";
+            result += " " + stmt.importNames[i];
+        }
+        return result + ")";
+    }
+    std::string result = "(import \"" + stmt.modulePath + "\"";
+    if (!stmt.alias.empty()) result += " as " + stmt.alias;
+    return result + ")";
+}
+
+std::string ASTPrinter::visitExportStmt(const ExportStmt& stmt) {
+    return "(export " + print(stmt.declaration.get()) + ")";
+}
+
 // =========================================================================
 // ProgramVisitor<std::string>
 // =========================================================================

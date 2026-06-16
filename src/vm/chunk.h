@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "../runtime/value.h"
@@ -53,6 +54,16 @@ public:
     std::vector<int> lines;   // RLE line numbers (public for VM runtime errors)
     std::vector<int> columns; // RLE column numbers
     std::string source;       // original source text (for error display)
+
+private:
+    // Hash index for O(1) string constant dedup (prevents O(n²) linear scan).
+    // Maps string value → index in `constants`.
+    std::unordered_map<std::string, size_t> stringConstantIndices_;
+
+    // O(1) dedup for int64_t (very common as small loop bounds / literals).
+    std::unordered_map<int64_t, size_t> intConstantIndices_;
+
+public:
 
 private:
     void writeLineColumn(int line, int column);

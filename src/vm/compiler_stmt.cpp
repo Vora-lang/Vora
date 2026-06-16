@@ -1,5 +1,6 @@
 #include "compiler.h"
 
+#include <cctype>
 #include <cmath>
 #include <iostream>
 #include <variant>
@@ -899,6 +900,104 @@ void Compiler::visitThrowStmt(const ThrowStmt& stmt) {
     // Compile the value to throw
     stmt.value->accept(*this);
     emitByte(static_cast<uint8_t>(OpCode::OP_THROW));
+}
+
+void Compiler::visitImportStmt(const ImportStmt& stmt) {
+    currentLine = stmt.keyword.line;
+    currentColumn = stmt.keyword.column;
+
+    // --- from "path" import a, b, c ---
+    if (!stmt.importNames.empty()) {
+        // Emit OP_IMPORT with the path and a dummy name (not used for binding).
+        uint8_t pathIndex = makeConstant(
+            GcHeap::instance().alloc<GcString>(stmt.modulePath));
+        uint8_t nameIndex = makeConstant(
+            GcHeap::instance().alloc<GcString>(""));
+        emitBytes(static_cast<uint8_t>(OpCode::OP_IMPORT), pathIndex);
+        emitByte(nameIndex);
+        // Stack: [moduleDict]
+
+        for (size_t i = 0; i < stmt.importNames.size(); i++) {
+            const auto& name = stmt.importNames[i];
+            bool isLast = (i == stmt.importNames.size() - 1);
+
+            if (!isLast) {
+                // Duplicate the dict so OP_GET_PROPERTY can pop its copy.
+                emitByte(static_cast<uint8_t>(OpCode::OP_DUP));
+            }
+            // OP_GET_PROPERTY pops the dict, looks up `name`, pushes the value.
+            uint8_t propIdx = makeConstant(
+                GcHeap::instance().alloc<GcString>(name));
+            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIdx);
+            // Stack: [moduleDict (or gone if last), value]
+
+            // Bind the extracted value.
+            if (scopeDepth > 0) {
+                addLocal(name, false);
+            } else {
+                int slot = resolveGlobal(name);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
+                          static_cast<uint8_t>(slot));
+            }
+        }
+        return;
+    }
+
+    // --- import "path" / import "path" as alias ---
+    // Derive variable name: use `as` alias if provided, otherwise derive
+    // from the module path basename.
+    std::string varName;
+    if (!stmt.alias.empty()) {
+        varName = stmt.alias;
+    } else {
+        varName = stmt.modulePath;
+        auto slashPos = varName.find_last_of("/\\");
+        if (slashPos != std::string::npos) {
+            varName = varName.substr(slashPos + 1);
+        }
+        if (varName.size() > 3 && varName.substr(varName.size() - 3) == ".va") {
+            varName = varName.substr(0, varName.size() - 3);
+        }
+        while (!varName.empty() && !std::isalpha(static_cast<unsigned char>(varName[0]))) {
+            varName = varName.substr(1);
+        }
+        if (varName.empty()) {
+            varName = stmt.modulePath;
+            auto sp = varName.find_last_of("/\\");
+            if (sp != std::string::npos) varName = varName.substr(sp + 1);
+        }
+    }
+
+    // Emit OP_IMPORT with path and variable name as constants
+    uint8_t pathIndex = makeConstant(
+        GcHeap::instance().alloc<GcString>(stmt.modulePath));
+    uint8_t nameIndex = makeConstant(
+        GcHeap::instance().alloc<GcString>(varName));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_IMPORT), pathIndex);
+    emitByte(nameIndex);
+
+    // OP_IMPORT pushes the module dict onto the stack.
+    if (scopeDepth > 0) {
+        addLocal(varName, false);
+    } else {
+        int slot = resolveGlobal(varName);
+        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
+                  static_cast<uint8_t>(slot));
+    }
+}
+
+void Compiler::visitExportStmt(const ExportStmt& stmt) {
+    // Compile the inner declaration as normal
+    stmt.declaration->accept(*this);
+
+    // Track the exported name based on declaration type
+    if (auto* fs = dynamic_cast<FuncStmt*>(stmt.declaration.get())) {
+        exportNames.push_back(fs->name);
+    } else if (auto* ls = dynamic_cast<LetStmt*>(stmt.declaration.get())) {
+        exportNames.push_back(ls->name);
+    } else if (auto* os = dynamic_cast<ObjStmt*>(stmt.declaration.get())) {
+        exportNames.push_back(os->name);
+    }
 }
 
 } // namespace vora

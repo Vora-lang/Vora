@@ -62,6 +62,10 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::CATCH: return "CATCH";
         case TokenType::FINALLY: return "FINALLY";
         case TokenType::THROW: return "THROW";
+        case TokenType::IMPORT: return "IMPORT";
+        case TokenType::EXPORT: return "EXPORT";
+        case TokenType::AS: return "AS";
+        case TokenType::FROM: return "FROM";
 
         case TokenType::PLUS_EQUAL: return "PLUS_EQUAL";
         case TokenType::MINUS_EQUAL: return "MINUS_EQUAL";

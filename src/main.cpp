@@ -72,10 +72,29 @@ static int runFmt(
     return 0;
 }
 
+// Get the directory part of a file path (everything before the last / or \).
+static std::string dirname(const std::string& path) {
+    auto pos = path.find_last_of("/\\");
+    if (pos != std::string::npos) {
+        return path.substr(0, pos);
+    }
+    return ".";
+}
+
+// Determine the std/ library directory.
+static std::string findStdDir() {
+    // Allow override via environment variable
+    const char* env = std::getenv("VORA_STD_PATH");
+    if (env && env[0] != '\0') return env;
+    // Default: relative to current working directory
+    return "./std";
+}
+
 static int runScript(
     const std::string& source,
     bool printAst,
-    bool printTokens
+    bool printTokens,
+    const std::string& filePath = ""
 ) {
     Lexer lexer(source);
     auto tokens = lexer.scanTokens();
@@ -111,6 +130,10 @@ static int runScript(
     }
 
     VM vm;
+
+    // Set module resolution directories
+    vm.stdDir = findStdDir();
+    vm.currentModuleDir = filePath.empty() ? "." : dirname(filePath);
 
     // Pre-allocate global slots from compiler's interning table
     vm.initGlobals(compiler.getGlobalNames());
@@ -179,6 +202,10 @@ static void replSigintHandler(int /*signum*/) {
 
 static void runREPL() {
     VM vm;
+
+    // Set module resolution directories for REPL
+    vm.stdDir = findStdDir();
+    vm.currentModuleDir = ".";
 
     // Install Ctrl+C handler so SIGINT interrupts only the running code,
     // not the entire REPL process.
@@ -311,6 +338,30 @@ int main(
             continue;
         }
 
+        if (arg == "-h" || arg == "--help") {
+            std::cout
+                << "用法: vora [选项] [<文件>]\n"
+                << "        （执行脚本文件）\n"
+                << "  或  vora [选项]\n"
+                << "        （进入 REPL）\n"
+                << "  或  vora fmt [-w] <文件>\n"
+                << "        （格式化源文件）\n"
+                << "\n"
+                << " 其中，选项包括:\n"
+                << "\n"
+                << "    --ast-printer      打印 AST 并退出\n"
+                << "    --tokens           打印词法单元与字节码并退出\n"
+                << "    --repl             显式进入 REPL 交互模式\n"
+                << "    -h, --help         输出此帮助信息并退出\n"
+                << "    --version          输出版本信息并退出\n";
+            return 0;
+        }
+
+        if (arg == "--version") {
+            std::cout << "Vora 0.21.0\n";
+            return 0;
+        }
+
         if (path.empty()) {
             path = arg;
             continue;
@@ -357,15 +408,9 @@ int main(
     }
 
     if (path.empty()) {
-        std::cerr
-            << "Usage:\n"
-            << "  vora <file>\n"
-            << "  vora <file> --ast-printer\n"
-            << "  vora <file> --tokens\n"
-            << "  vora --repl\n"
-            << "  vora fmt <file>\n"
-            << "  vora fmt -w <file>\n";
-        return 1;
+        // No file given — enter REPL (like python3, node, etc.)
+        runREPL();
+        return 0;
     }
 
     try {
@@ -378,7 +423,7 @@ int main(
             source.erase(0, 3);
         }
 
-        return runScript(source, printAst, printTokens);
+        return runScript(source, printAst, printTokens, path);
     }
     catch (const RuntimeError& error) {
         std::cerr

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstddef>
 #include <type_traits>
 #include <utility>
@@ -29,8 +30,8 @@ public:
     GcPtr(const GcPtr<U>& other) : ptr_(other.get()) {}
 
     T* get() const { return ptr_; }
-    T* operator->() const { return ptr_; }
-    T& operator*() const { return *ptr_; }
+    T* operator->() const { assert(ptr_ && "GcPtr dereference: pointer is null"); return ptr_; }
+    T& operator*() const { assert(ptr_ && "GcPtr dereference: pointer is null"); return *ptr_; }
 
     explicit operator bool() const { return ptr_ != nullptr; }
 

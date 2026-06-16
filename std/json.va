@@ -1,0 +1,9 @@
+// std/json.va — Vora JSON Library
+//
+// Provides JSON parsing and serialization.
+// Usage: import "json"
+//        let data = json.parse("[1, 2, 3]")
+//        let s = json.stringify({a: 1})
+
+export let parse = jsonParse
+export let stringify = jsonStringify

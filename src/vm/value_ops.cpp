@@ -92,14 +92,25 @@ Value addValues(const Value& a, const Value& b, bool& error) {
     }
 
     if (std::holds_alternative<GcPtr<GcString>>(a) && std::holds_alternative<GcPtr<GcString>>(b)) {
-        return GcHeap::instance().alloc<GcString>(std::get<GcPtr<GcString>>(a)->value + std::get<GcPtr<GcString>>(b)->value);
+        // Single allocation: copy a, then append b in-place
+        std::string result = std::get<GcPtr<GcString>>(a)->value;
+        result += std::get<GcPtr<GcString>>(b)->value;
+        return GcHeap::instance().alloc<GcString>(std::move(result));
     }
 
     if (std::holds_alternative<GcPtr<GcString>>(a)) {
-        return GcHeap::instance().alloc<GcString>(std::get<GcPtr<GcString>>(a)->value + valueToString(b));
+        // Single allocation: copy a, then stream-append b
+        std::string result = std::get<GcPtr<GcString>>(a)->value;
+        valueToStringAppend(result, b);
+        return GcHeap::instance().alloc<GcString>(std::move(result));
     }
     if (std::holds_alternative<GcPtr<GcString>>(b)) {
-        return GcHeap::instance().alloc<GcString>(valueToString(a) + std::get<GcPtr<GcString>>(b)->value);
+        // Two-alloc tradeoff: stringify a, then append b (order matters for semantics)
+        // We stream a into a fresh string, then append b's raw value
+        std::string result;
+        valueToStringAppend(result, a);
+        result += std::get<GcPtr<GcString>>(b)->value;
+        return GcHeap::instance().alloc<GcString>(std::move(result));
     }
 
     if (std::holds_alternative<GcPtr<Array>>(a) && std::holds_alternative<GcPtr<Array>>(b)) {

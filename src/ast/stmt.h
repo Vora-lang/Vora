@@ -300,4 +300,41 @@ public:
     std::unique_ptr<Stmt> finallyBlock; // nullptr if no finally
 };
 
+// import "path" — statement that auto-binds a module variable (Python 3 style).
+// The variable name is derived from the path basename (without .va extension),
+// or from the optional `as` alias: `import "math" as M` binds variable `M`.
+//
+// from "path" import a, b, c — imports specific names directly into scope.
+// When importNames is non-empty, no module variable is created; each name
+// in importNames is extracted from the module dict and bound individually.
+class ImportStmt : public Stmt {
+public:
+    ImportStmt(std::string modulePath, Token keyword, std::string alias = "",
+               std::vector<std::string> importNames = {})
+        : modulePath(std::move(modulePath)), keyword(std::move(keyword)),
+          alias(std::move(alias)), importNames(std::move(importNames)) {}
+
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
+
+    std::string modulePath;    // raw path string from source
+    Token keyword;             // 'import' or 'from' token (for error location)
+    std::string alias;         // optional 'as' alias name (empty = derive from basename)
+    std::vector<std::string> importNames;  // non-empty = "from...import" form
+};
+
+// export <declaration> — marks a declaration as publicly visible.
+// Wraps a FuncStmt, LetStmt, ConstStmt, or ObjStmt.
+class ExportStmt : public Stmt {
+public:
+    ExportStmt(std::unique_ptr<Stmt> declaration, Token keyword)
+        : declaration(std::move(declaration)), keyword(std::move(keyword)) {}
+
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
+
+    std::unique_ptr<Stmt> declaration;  // FuncStmt / LetStmt / ObjStmt (const uses LetStmt.isConst)
+    Token keyword;                       // 'export' token
+};
+
 }

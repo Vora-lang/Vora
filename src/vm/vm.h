@@ -154,6 +154,38 @@ private:
     // popping frames. runtimeError() uses this if non-empty (exception path)
     // and captures fresh otherwise (direct error path).
     std::string lastErrorStackTrace;
+
+public:
+    // =========================================================================
+    // Module system
+    // =========================================================================
+
+    // Module cache: resolved absolute path → module Dict object.
+    // Each module is loaded and executed at most once.
+    std::unordered_map<std::string, Value> moduleCache;
+
+    // Stack of module paths currently being loaded (for circular import detection).
+    // Shared between parent and child VMs during nested imports.
+    std::vector<std::string> importStack;
+
+    // Error message set by loadModule() on failure. The OP_IMPORT handler
+    // reads this to print a single clean error instead of a cascade of
+    // repeated messages at each nesting level.
+    std::string loadModuleError;
+
+    // Directory for std/ library modules (set by main / REPL).
+    std::string stdDir;
+
+    // Directory of the currently-executing file (for relative imports).
+    std::string currentModuleDir;
+
+    // Resolve a raw import path to an absolute file path.
+    // Returns empty string if the module cannot be found.
+    std::string resolveModulePath(const std::string& rawPath) const;
+
+    // Load and execute a module file, returning a Dict of its exports.
+    // Returns nullptr (Value) on error.
+    Value loadModule(const std::string& resolvedPath);
 };
 
 } // namespace vora

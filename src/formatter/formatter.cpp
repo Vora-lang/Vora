@@ -700,6 +700,25 @@ std::string SourceFormatter::visitThrowStmt(const ThrowStmt& stmt) {
     return ss.str();
 }
 
+std::string SourceFormatter::visitImportStmt(const ImportStmt& stmt) {
+    if (!stmt.importNames.empty()) {
+        std::string result = "from \"" + stmt.modulePath + "\" import";
+        for (size_t i = 0; i < stmt.importNames.size(); i++) {
+            if (i > 0) result += ",";
+            result += " " + stmt.importNames[i];
+        }
+        return result;
+    }
+    std::string result = "import \"" + stmt.modulePath + "\"";
+    if (!stmt.alias.empty()) result += " as " + stmt.alias;
+    return result;
+}
+
+std::string SourceFormatter::visitExportStmt(const ExportStmt& stmt) {
+    // Visit the inner declaration and prefix with 'export '
+    return "export " + stmt.declaration->accept(*this);
+}
+
 // =====================================================================
 // ProgramVisitor<std::string>
 // =====================================================================

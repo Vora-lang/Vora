@@ -1,0 +1,8 @@
+// tests/interpreter/test_module_export.va — Test exporting and importing user module
+import "./test_module_helper"
+
+assert(test_module_helper.add(2, 3) == 5, "test_module_helper.add")
+assert(test_module_helper.NAME == "helper", "test_module_helper.NAME")
+assert(test_module_helper.VERSION == 1, "test_module_helper.VERSION")
+
+print("test_module_export: PASS")

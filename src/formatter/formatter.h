@@ -112,6 +112,8 @@ private:
     std::string visitContinueStmt(const ContinueStmt& stmt) override;
     std::string visitTryStmt(const TryStmt& stmt) override;
     std::string visitThrowStmt(const ThrowStmt& stmt) override;
+    std::string visitImportStmt(const ImportStmt& stmt) override;
+    std::string visitExportStmt(const ExportStmt& stmt) override;
 
     // =====================================================================
     // ProgramVisitor<std::string> override

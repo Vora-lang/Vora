@@ -60,7 +60,7 @@ Get-ChildItem -Path "$ProjectDir\tests\lexer", "$ProjectDir\tests\parser", "$Pro
     {
         Write-Host "FAIL" -ForegroundColor Red
         $Fail++
-        $Errors += "  $name : $output"
+        $Errors += [PSCustomObject]@{ Name = $name; Output = $output }
     }
 }
 
@@ -73,6 +73,10 @@ if ($Fail -gt 0)
 {
     Write-Host ""
     Write-Host "Failures:" -ForegroundColor Red
-    $Errors | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+    foreach ($err in $Errors) {
+        Write-Host ""
+        Write-Host ("  " + $err.Name + ":") -ForegroundColor Red
+        Write-Host $err.Output -ForegroundColor Red
+    }
     exit 1
 }

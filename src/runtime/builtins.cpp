@@ -7,9 +7,11 @@
 
 #include "builtins.h"
 
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 
 #include "../gc/gc_heap.h"
@@ -231,6 +233,12 @@ void registerBuiltins(VM& vm) {
         [](const std::vector<Value>& arguments) -> Value {
             return GcHeap::instance().alloc<GcString>(valueToString(arguments[0]));
         });
+
+    // Register math builtins
+    registerMathBuiltins(vm);
+
+    // Register JSON builtins
+    registerJsonBuiltins(vm);
 }
 
 // ============================================================================
@@ -495,6 +503,440 @@ GcPtr<NativeFunction> getStringMethod(
             });
     }
     return nullptr;
+}
+
+// ============================================================================
+// Math built-in native functions — used by std/math.va
+// ============================================================================
+
+void registerMathBuiltins(VM& vm) {
+    // abs(x) — absolute value (int64 → abs, double → fabs, other → null/error)
+    vm.defineNative("abs", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            const auto& arg = arguments[0];
+            if (std::holds_alternative<int64_t>(arg)) {
+                int64_t v = std::get<int64_t>(arg);
+                return (v < 0) ? -v : v;
+            }
+            if (std::holds_alternative<double>(arg)) {
+                double v = std::get<double>(arg);
+                return (v < 0.0) ? -v : v;
+            }
+            return nullptr;  // non-numeric → null (treated as error by user)
+        });
+
+    // sqrt(x) — square root (numeric → double, negative → null)
+    vm.defineNative("sqrt", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            const auto& arg = arguments[0];
+            double x = 0.0;
+            if (std::holds_alternative<int64_t>(arg))
+                x = static_cast<double>(std::get<int64_t>(arg));
+            else if (std::holds_alternative<double>(arg))
+                x = std::get<double>(arg);
+            else
+                return nullptr;
+            if (x < 0.0) return nullptr;
+            return std::sqrt(x);
+        });
+
+    // sin(x) — sine of x in radians
+    vm.defineNative("sin", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            const auto& arg = arguments[0];
+            double x = 0.0;
+            if (std::holds_alternative<int64_t>(arg))
+                x = static_cast<double>(std::get<int64_t>(arg));
+            else if (std::holds_alternative<double>(arg))
+                x = std::get<double>(arg);
+            else
+                return nullptr;
+            return std::sin(x);
+        });
+
+    // cos(x) — cosine of x in radians
+    vm.defineNative("cos", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            const auto& arg = arguments[0];
+            double x = 0.0;
+            if (std::holds_alternative<int64_t>(arg))
+                x = static_cast<double>(std::get<int64_t>(arg));
+            else if (std::holds_alternative<double>(arg))
+                x = std::get<double>(arg);
+            else
+                return nullptr;
+            return std::cos(x);
+        });
+
+    // min(arr) — minimum value in array (all elements must be numeric)
+    vm.defineNative("min", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            const auto& arg = arguments[0];
+            if (!std::holds_alternative<GcPtr<Array>>(arg))
+                return nullptr;
+            const auto& elems = std::get<GcPtr<Array>>(arg)->elements;
+            if (elems.empty()) return nullptr;
+
+            Value minVal = elems[0];
+            for (size_t i = 1; i < elems.size(); i++) {
+                double a = 0.0, b = 0.0;
+                if (std::holds_alternative<int64_t>(elems[i]))
+                    a = static_cast<double>(std::get<int64_t>(elems[i]));
+                else if (std::holds_alternative<double>(elems[i]))
+                    a = std::get<double>(elems[i]);
+                else
+                    return nullptr;
+                if (std::holds_alternative<int64_t>(minVal))
+                    b = static_cast<double>(std::get<int64_t>(minVal));
+                else if (std::holds_alternative<double>(minVal))
+                    b = std::get<double>(minVal);
+                else
+                    return nullptr;
+                if (a < b) minVal = elems[i];
+            }
+            return minVal;
+        });
+
+    // max(arr) — maximum value in array (all elements must be numeric)
+    vm.defineNative("max", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            const auto& arg = arguments[0];
+            if (!std::holds_alternative<GcPtr<Array>>(arg))
+                return nullptr;
+            const auto& elems = std::get<GcPtr<Array>>(arg)->elements;
+            if (elems.empty()) return nullptr;
+
+            Value maxVal = elems[0];
+            for (size_t i = 1; i < elems.size(); i++) {
+                double a = 0.0, b = 0.0;
+                if (std::holds_alternative<int64_t>(elems[i]))
+                    a = static_cast<double>(std::get<int64_t>(elems[i]));
+                else if (std::holds_alternative<double>(elems[i]))
+                    a = std::get<double>(elems[i]);
+                else
+                    return nullptr;
+                if (std::holds_alternative<int64_t>(maxVal))
+                    b = static_cast<double>(std::get<int64_t>(maxVal));
+                else if (std::holds_alternative<double>(maxVal))
+                    b = std::get<double>(maxVal);
+                else
+                    return nullptr;
+                if (a > b) maxVal = elems[i];
+            }
+            return maxVal;
+        });
+
+    // random_int(min, max) — random integer in [min, max]
+    vm.defineNative("random_int", 2,
+        [](const std::vector<Value>& arguments) -> Value {
+            double minD = 0.0, maxD = 0.0;
+            if (std::holds_alternative<int64_t>(arguments[0]))
+                minD = static_cast<double>(std::get<int64_t>(arguments[0]));
+            else if (std::holds_alternative<double>(arguments[0]))
+                minD = std::get<double>(arguments[0]);
+            else return nullptr;
+            if (std::holds_alternative<int64_t>(arguments[1]))
+                maxD = static_cast<double>(std::get<int64_t>(arguments[1]));
+            else if (std::holds_alternative<double>(arguments[1]))
+                maxD = std::get<double>(arguments[1]);
+            else return nullptr;
+
+            int64_t minVal = static_cast<int64_t>(minD);
+            int64_t maxVal = static_cast<int64_t>(maxD);
+            if (minVal > maxVal) return nullptr;
+            int64_t range = maxVal - minVal + 1;
+            return static_cast<int64_t>(minVal + (std::rand() % range));
+        });
+
+    // random_float(min, max, decimals) — random float with N decimal places
+    vm.defineNative("random_float", 3,
+        [](const std::vector<Value>& arguments) -> Value {
+            double minVal = 0.0, maxVal = 0.0;
+            int decimals = 0;
+
+            if (std::holds_alternative<int64_t>(arguments[0]))
+                minVal = static_cast<double>(std::get<int64_t>(arguments[0]));
+            else if (std::holds_alternative<double>(arguments[0]))
+                minVal = std::get<double>(arguments[0]);
+            else return nullptr;
+
+            if (std::holds_alternative<int64_t>(arguments[1]))
+                maxVal = static_cast<double>(std::get<int64_t>(arguments[1]));
+            else if (std::holds_alternative<double>(arguments[1]))
+                maxVal = std::get<double>(arguments[1]);
+            else return nullptr;
+
+            if (std::holds_alternative<int64_t>(arguments[2]))
+                decimals = static_cast<int>(std::get<int64_t>(arguments[2]));
+            else if (std::holds_alternative<double>(arguments[2]))
+                decimals = static_cast<int>(std::get<double>(arguments[2]));
+            else return nullptr;
+
+            if (minVal > maxVal || decimals < 0) return nullptr;
+            double r = minVal + (static_cast<double>(std::rand()) / RAND_MAX) * (maxVal - minVal);
+            double factor = std::pow(10.0, decimals);
+            return std::round(r * factor) / factor;
+        });
+}
+
+// ============================================================================
+// JSON built-in native functions — used by std/json.va
+// ============================================================================
+
+namespace {
+
+// JSON parser state
+struct JsonParser {
+    const std::string& src;
+    size_t pos;
+
+    explicit JsonParser(const std::string& s) : src(s), pos(0) {}
+
+    void skipWhitespace() {
+        while (pos < src.size() &&
+               (src[pos] == ' ' || src[pos] == '\t' ||
+                src[pos] == '\n' || src[pos] == '\r')) {
+            pos++;
+        }
+    }
+
+    char peek() const { return pos < src.size() ? src[pos] : '\0'; }
+    char next() { return pos < src.size() ? src[pos++] : '\0'; }
+
+    Value parseValue();
+
+    Value parseString() {
+        if (next() != '"') return nullptr;  // skip opening quote
+        std::string result;
+        while (pos < src.size()) {
+            char c = next();
+            if (c == '"') {
+                return GcHeap::instance().alloc<GcString>(result);
+            }
+            if (c == '\\') {
+                c = next();
+                switch (c) {
+                    case '"':  result += '"';  break;
+                    case '\\': result += '\\'; break;
+                    case '/':  result += '/';  break;
+                    case 'n':  result += '\n'; break;
+                    case 'r':  result += '\r'; break;
+                    case 't':  result += '\t'; break;
+                    case 'u': {
+                        // Parse \uXXXX — extract BMP codepoint as UTF-8
+                        std::string hex;
+                        for (int i = 0; i < 4 && pos < src.size(); i++)
+                            hex += next();
+                        try {
+                            unsigned long cp = std::stoul(hex, nullptr, 16);
+                            if (cp < 0x80) {
+                                result += static_cast<char>(cp);
+                            } else if (cp < 0x800) {
+                                result += static_cast<char>(0xC0 | (cp >> 6));
+                                result += static_cast<char>(0x80 | (cp & 0x3F));
+                            } else {
+                                result += static_cast<char>(0xE0 | (cp >> 12));
+                                result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                                result += static_cast<char>(0x80 | (cp & 0x3F));
+                            }
+                        } catch (...) { return nullptr; }
+                        break;
+                    }
+                    default: return nullptr;
+                }
+            } else {
+                result += c;
+            }
+        }
+        return nullptr;  // unterminated string
+    }
+
+    Value parseNumber() {
+        size_t start = pos;
+        if (peek() == '-') pos++;
+        if (peek() < '0' || peek() > '9') return nullptr;
+        while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos])))
+            pos++;
+        bool isFloat = false;
+        if (pos < src.size() && src[pos] == '.') {
+            isFloat = true;
+            pos++;
+            while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos])))
+                pos++;
+        }
+        if (pos < src.size() && (src[pos] == 'e' || src[pos] == 'E')) {
+            isFloat = true;
+            pos++;
+            if (pos < src.size() && (src[pos] == '+' || src[pos] == '-')) pos++;
+            while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos])))
+                pos++;
+        }
+        std::string numStr = src.substr(start, pos - start);
+        try {
+            if (isFloat) {
+                return std::stod(numStr);
+            } else {
+                return static_cast<int64_t>(std::stoll(numStr));
+            }
+        } catch (...) { return nullptr; }
+    }
+
+    Value parseArray() {
+        next();  // skip '['
+        auto arr = GcHeap::instance().alloc<Array>();
+        skipWhitespace();
+        if (peek() == ']') { next(); return arr; }
+        while (true) {
+            skipWhitespace();
+            Value elem = parseValue();
+            if (std::holds_alternative<std::nullptr_t>(elem) && peek() != 'n')
+                return nullptr;
+            arr->elements.push_back(elem);
+            skipWhitespace();
+            if (peek() == ']') { next(); return arr; }
+            if (peek() != ',') return nullptr;
+            next();  // skip ','
+        }
+    }
+
+    Value parseObject() {
+        next();  // skip '{'
+        auto dict = GcHeap::instance().alloc<Dict>();
+        skipWhitespace();
+        if (peek() == '}') { next(); return dict; }
+        while (true) {
+            skipWhitespace();
+            Value keyVal = parseString();
+            if (!std::holds_alternative<GcPtr<GcString>>(keyVal))
+                return nullptr;
+            std::string key = std::get<GcPtr<GcString>>(keyVal)->value;
+            skipWhitespace();
+            if (next() != ':') return nullptr;
+            skipWhitespace();
+            Value val = parseValue();
+            if (std::holds_alternative<std::nullptr_t>(val) && peek() != 'n')
+                return nullptr;
+            dict->pairs[key] = val;
+            skipWhitespace();
+            if (peek() == '}') { next(); return dict; }
+            if (peek() != ',') return nullptr;
+            next();  // skip ','
+        }
+    }
+};
+
+Value JsonParser::parseValue() {
+    skipWhitespace();
+    char c = peek();
+    if (c == '"') return parseString();
+    if (c == '{') return parseObject();
+    if (c == '[') return parseArray();
+    if (c == 't') {
+        if (src.substr(pos, 4) == "true") { pos += 4; return true; }
+        return nullptr;
+    }
+    if (c == 'f') {
+        if (src.substr(pos, 5) == "false") { pos += 5; return false; }
+        return nullptr;
+    }
+    if (c == 'n') {
+        if (src.substr(pos, 4) == "null") { pos += 4; return nullptr; }
+        return nullptr;
+    }
+    if (c == '-' || std::isdigit(static_cast<unsigned char>(c))) {
+        return parseNumber();
+    }
+    return nullptr;
+}
+
+// JSON stringify — serialize a Value to JSON string
+std::string jsonStringifyValue(const Value& val) {
+    return std::visit([](auto&& arg) -> std::string {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, std::nullptr_t>) {
+            return "null";
+        } else if constexpr (std::is_same_v<T, bool>) {
+            return arg ? "true" : "false";
+        } else if constexpr (std::is_same_v<T, int64_t>) {
+            return std::to_string(arg);
+        } else if constexpr (std::is_same_v<T, double>) {
+            std::string s = std::to_string(arg);
+            // Remove trailing zeros: "3.140000" → "3.14"
+            if (s.find('.') != std::string::npos) {
+                while (s.size() > 1 && s.back() == '0') s.pop_back();
+                if (s.back() == '.') s.pop_back();
+            }
+            return s;
+        } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
+            std::string result = "\"";
+            for (char c : arg->value) {
+                switch (c) {
+                    case '"':  result += "\\\""; break;
+                    case '\\': result += "\\\\"; break;
+                    case '\n': result += "\\n";  break;
+                    case '\r': result += "\\r";  break;
+                    case '\t': result += "\\t";  break;
+                    default:   result += c;       break;
+                }
+            }
+            return result + "\"";
+        } else if constexpr (std::is_same_v<T, GcPtr<Array>>) {
+            std::string result = "[";
+            for (size_t i = 0; i < arg->elements.size(); i++) {
+                if (i > 0) result += ",";
+                result += jsonStringifyValue(arg->elements[i]);
+            }
+            return result + "]";
+        } else if constexpr (std::is_same_v<T, GcPtr<Dict>>) {
+            std::string result = "{";
+            bool first = true;
+            for (const auto& [k, v] : arg->pairs) {
+                if (!first) result += ",";
+                first = false;
+                result += "\"" + k + "\":" + jsonStringifyValue(v);
+            }
+            return result + "}";
+        } else {
+            return "null";  // functions, objects, etc.
+        }
+    }, val);
+}
+
+} // anonymous namespace
+
+void registerJsonBuiltins(VM& vm) {
+    // jsonParse(str) — parse a JSON string into a Vora value
+    vm.defineNative("jsonParse", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0])) {
+                return nullptr;
+            }
+            const auto& str = std::get<GcPtr<GcString>>(arguments[0])->value;
+            JsonParser parser(str);
+            Value result = parser.parseValue();
+            if (std::holds_alternative<std::nullptr_t>(result) &&
+                !str.empty() && str != "null") {
+                // nullptr could mean parsing "null" or an error.
+                // If the top-level string wasn't "null", it's an error.
+                // Let parseValue handle "null" detection and check if
+                // we consumed all whitespace + valid JSON.
+                parser.skipWhitespace();
+                if (parser.pos < str.size()) return nullptr;  // trailing garbage
+            }
+            // For the "null" case, re-parse with a clean check
+            parser.pos = 0;
+            result = parser.parseValue();
+            parser.skipWhitespace();
+            if (parser.pos < str.size()) return nullptr;  // trailing garbage
+            return result;
+        });
+
+    // jsonStringify(value) — serialize a Vora value to JSON string
+    vm.defineNative("jsonStringify", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            std::string json = jsonStringifyValue(arguments[0]);
+            return GcHeap::instance().alloc<GcString>(json);
+        });
 }
 
 } // namespace vora

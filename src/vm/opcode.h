@@ -91,6 +91,9 @@ enum class OpCode : uint8_t {
     OP_CLEAR_EXCEPTION, // clear exceptionInFlight flag (catch block entry)
     OP_THROW,          // throw exception (value on stack top)
     OP_FINALLY_END,    // marker for finally block end
+
+    // Module system
+    OP_IMPORT,         // import module → push module dict (operand: uint8_t pathConstIndex, uint8_t nameConstIndex)
 };
 
 } // namespace vora

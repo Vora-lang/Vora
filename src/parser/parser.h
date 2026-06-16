@@ -75,6 +75,10 @@ private:
 
     std::unique_ptr<Stmt> throwStatement();
 
+    std::unique_ptr<Stmt> importStatement();
+    std::unique_ptr<Stmt> fromImportStatement();
+    std::unique_ptr<Stmt> exportStatement();
+
 private:
     bool isAtEnd() const;
 

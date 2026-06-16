@@ -23,6 +23,12 @@ class NativeFunction;
 // Call after initGlobals() so global slots are pre-allocated.
 void registerBuiltins(VM& vm);
 
+// Register math built-in native functions (used by std/math.va).
+void registerMathBuiltins(VM& vm);
+
+// Register JSON built-in native functions (used by std/json.va).
+void registerJsonBuiltins(VM& vm);
+
 // Array method factory — returns a bound method for the given array.
 // Used by OP_GET_PROPERTY dispatch in the VM.
 // Returns nullptr if the method name is unknown.

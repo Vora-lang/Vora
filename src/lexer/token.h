@@ -81,6 +81,10 @@ namespace vora {
         CATCH, // catch
         FINALLY, // finally
         THROW, // throw
+        IMPORT, // import
+        EXPORT, // export
+        AS, // as
+        FROM, // from
 
         // Special
         END_OF_FILE, //

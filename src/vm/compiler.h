@@ -118,6 +118,11 @@ public:
     void visitContinueStmt(const ContinueStmt& stmt) override;
     void visitTryStmt(const TryStmt& stmt) override;
     void visitThrowStmt(const ThrowStmt& stmt) override;
+    void visitImportStmt(const ImportStmt& stmt) override;
+    void visitExportStmt(const ExportStmt& stmt) override;
+
+    // Export name tracking (for modules being compiled as import targets)
+    const std::vector<std::string>& getExportNames() const { return exportNames; }
 
     // Access to compiled chunk
     const Chunk& getChunk() const { return chunk; }
@@ -131,10 +136,12 @@ public:
     // Pre-populate the global interning table so that slot assignments
     // match an existing VM (e.g. REPL). All seeded names are marked
     // "defined" so they are treated as already-existing globals.
-    void seedGlobals(const std::vector<std::string>& names) {
+    // Set defined=false when compiling import targets — modules need to
+    // be able to shadow builtins (e.g. `export let abs = abs`).
+    void seedGlobals(const std::vector<std::string>& names, bool defined = true) {
         for (const auto& name : names) {
             globalNames.push_back(name);
-            globalDefined.push_back(true);
+            globalDefined.push_back(defined);
             globalIsConst.push_back(false);
         }
     }
@@ -203,6 +210,11 @@ private:
     // Function context
     // =========================================================================
     Compiler* enclosing = nullptr;  // outer compiler (for closures)
+
+    // =========================================================================
+    // Export tracking (for modules compiled as import targets)
+    // =========================================================================
+    std::vector<std::string> exportNames;
 
     // =========================================================================
     // Upvalue tracking (closures)
