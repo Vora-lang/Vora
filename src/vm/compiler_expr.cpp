@@ -308,10 +308,7 @@ void Compiler::visitAssignmentExpr(const AssignmentExpr& expr) {
     // Check const before compiling the value (avoid wasted work)
     int localSlot = resolveLocal(expr.name);
     if (localSlot >= 0 && isLocalConst(expr.name)) {
-        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                        "Cannot assign to const variable '" + expr.name + "'",
-                        "CompilerError");
-        hadError = true;
+        error("Cannot assign to const variable '" + expr.name + "'");
         return;
     }
 
@@ -326,10 +323,7 @@ void Compiler::visitAssignmentExpr(const AssignmentExpr& expr) {
         int upvalueIdx = resolveUpvalue(this, expr.name);
         if (upvalueIdx >= 0) {
             if (isUpvalueConst(upvalueIdx)) {
-                printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                                "Cannot assign to const variable '" + expr.name + "'",
-                                "CompilerError");
-                hadError = true;
+                error("Cannot assign to const variable '" + expr.name + "'");
                 return;
             }
             emitBytes(static_cast<uint8_t>(OpCode::OP_SET_UPVALUE),
@@ -341,10 +335,7 @@ void Compiler::visitAssignmentExpr(const AssignmentExpr& expr) {
             while (root->enclosing) root = root->enclosing;
             if (slot >= 0 && static_cast<size_t>(slot) < root->globalIsConst.size() &&
                 root->globalIsConst[static_cast<size_t>(slot)]) {
-                printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                                "Cannot assign to const variable '" + expr.name + "'",
-                                "CompilerError");
-                hadError = true;
+                error("Cannot assign to const variable '" + expr.name + "'");
                 return;
             }
             emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
@@ -372,19 +363,13 @@ void Compiler::visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) {
     if (auto* var = dynamic_cast<VariableExpr*>(expr.target.get())) {
         // Check const — local, upvalue, and global
         if (isLocalConst(var->name)) {
-            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                            "Cannot assign to const variable '" + var->name + "'",
-                            "CompilerError");
-            hadError = true;
+            error("Cannot assign to const variable '" + var->name + "'");
             return;
         }
         // Check upvalue const
         int uvIdx = resolveUpvalue(this, var->name);
         if (uvIdx >= 0 && isUpvalueConst(uvIdx)) {
-            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                            "Cannot assign to const variable '" + var->name + "'",
-                            "CompilerError");
-            hadError = true;
+            error("Cannot assign to const variable '" + var->name + "'");
             return;
         }
         // Also check global const
@@ -397,10 +382,7 @@ void Compiler::visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) {
                 if (it != root->globalNames.end()) {
                     size_t idx = static_cast<size_t>(it - root->globalNames.begin());
                     if (idx < root->globalIsConst.size() && root->globalIsConst[idx]) {
-                        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                                        "Cannot assign to const variable '" + var->name + "'",
-                                        "CompilerError");
-                        hadError = true;
+                        error("Cannot assign to const variable '" + var->name + "'");
                         return;
                     }
                 }
@@ -566,12 +548,9 @@ void Compiler::visitSuperExpr(const SuperExpr& expr) {
     // 'super' alone is an error — only 'super.method()' is valid.
     // The parser allows `super` as a primary expression, but the compiler
     // rejects it because OP_GET_SUPER needs a property name.
-    hadError = true;
     currentLine = expr.keyword.line;
     currentColumn = expr.keyword.column;
-    printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 5,
-                    "'super' must be followed by '.method'",
-                    "Error");
+    errorAt(currentLine, currentColumn, 5, "'super' must be followed by '.method'");
 }
 
 void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
@@ -584,19 +563,13 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
     if (auto var = dynamic_cast<const VariableExpr*>(expr.target.get())) {
         // Check const — local, upvalue, and global
         if (isLocalConst(var->name)) {
-            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                            "Cannot modify const variable '" + var->name + "'",
-                            "CompilerError");
-            hadError = true;
+            error("Cannot modify const variable '" + var->name + "'");
             return;
         }
         // Check upvalue const
         int uvIdx = resolveUpvalue(this, var->name);
         if (uvIdx >= 0 && isUpvalueConst(uvIdx)) {
-            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                            "Cannot modify const variable '" + var->name + "'",
-                            "CompilerError");
-            hadError = true;
+            error("Cannot modify const variable '" + var->name + "'");
             return;
         }
         // Also check global const
@@ -609,10 +582,7 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
                 if (it != root->globalNames.end()) {
                     size_t idx = static_cast<size_t>(it - root->globalNames.begin());
                     if (idx < root->globalIsConst.size() && root->globalIsConst[idx]) {
-                        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                                        "Cannot modify const variable '" + var->name + "'",
-                                        "CompilerError");
-                        hadError = true;
+                        error("Cannot modify const variable '" + var->name + "'");
                         return;
                     }
                 }
@@ -729,11 +699,8 @@ void Compiler::visitYieldExpr(const YieldExpr& expr) {
 
     // Phase 1 limitation: yield inside try blocks is not supported
     if (tryNesting > 0) {
-        printSourceLine(std::cerr, chunk.source, expr.keyword.line,
-                       expr.keyword.column, 5,
-                       "'yield' cannot be used inside a try block",
-                       "CompilerError");
-        hadError = true;
+        errorAt(expr.keyword.line, expr.keyword.column, 5,
+                "'yield' cannot be used inside a try block");
         return;
     }
 
@@ -754,7 +721,7 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
     // Compile an anonymous function expression: func(x) { body }
     // Creates a VoraFunction closure and pushes it on the stack.
 
-    Compiler fnCompiler;
+    Compiler fnCompiler(errorReporter_);
     fnCompiler.enclosing = this;
     fnCompiler.chunk.source = chunk.source;
 

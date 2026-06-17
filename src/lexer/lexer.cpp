@@ -1,9 +1,6 @@
 ﻿#include "lexer.h"
 
 #include <cctype>
-#include <iostream>
-
-#include "../vm/chunk.h"  // for printSourceLine()
 
 namespace vora {
 
@@ -38,8 +35,8 @@ namespace vora {
         {"or", TokenType::OR},
     };
 
-    Lexer::Lexer(std::string source)
-        : source(std::move(source)) {
+    Lexer::Lexer(std::string source, ErrorReporter& reporter)
+        : source(std::move(source)), reporter_(reporter) {
     }
 
     std::vector<Token> Lexer::scanTokens() {
@@ -94,9 +91,7 @@ namespace vora {
     }
 
     void Lexer::error(const std::string& message) {
-        hadError = true;
-        printSourceLine(std::cerr, source, line, column, 1,
-                        message, "LexerError");
+        reporter_.error(line, column, 1, message);
     }
 
     void Lexer::addToken(TokenType type) {

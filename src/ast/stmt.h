@@ -337,4 +337,19 @@ public:
     Token keyword;                       // 'export' token
 };
 
+// ErrorStmt — placeholder for a parse error in statement context.
+// Used by error-tolerant parsing to retain partial AST structure.
+// Visitors that execute code should treat it as a no-op.
+class ErrorStmt : public Stmt {
+public:
+    ErrorStmt(std::string message, Token errorToken)
+        : message(std::move(message)), errorToken(std::move(errorToken)) {}
+
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
+
+    std::string message;
+    Token errorToken;
+};
+
 }

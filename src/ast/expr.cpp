@@ -446,4 +446,24 @@ std::unique_ptr<Expr> YieldExpr::clone() const {
     );
 }
 
+// =========================================================================
+// ErrorExpr
+// =========================================================================
+
+Value ErrorExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitErrorExpr(*this);
+}
+
+void ErrorExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitErrorExpr(*this);
+}
+
+std::string ErrorExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitErrorExpr(*this);
+}
+
+std::unique_ptr<Expr> ErrorExpr::clone() const {
+    return std::make_unique<ErrorExpr>(message, errorToken);
+}
+
 }

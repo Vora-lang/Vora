@@ -446,4 +446,21 @@ public:
     Token keyword;
 };
 
+// ErrorExpr — placeholder for a parse error in expression context.
+// Used by error-tolerant parsing to retain partial AST structure.
+// Has no meaningful value; visitors that execute code should treat it as null.
+class ErrorExpr : public Expr {
+public:
+    ErrorExpr(std::string message, Token errorToken)
+        : message(std::move(message)), errorToken(std::move(errorToken)) {}
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::string message;
+    Token errorToken;
+};
+
 }

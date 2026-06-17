@@ -195,4 +195,16 @@ std::string ExportStmt::accept(StmtVisitor<std::string>& visitor) const {
     return visitor.visitExportStmt(*this);
 }
 
+// =========================================================================
+// ErrorStmt
+// =========================================================================
+
+void ErrorStmt::accept(StmtVisitor<void>& visitor) const {
+    visitor.visitErrorStmt(*this);
+}
+
+std::string ErrorStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitErrorStmt(*this);
+}
+
 }

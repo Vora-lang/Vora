@@ -15,6 +15,7 @@
 #include <iostream>
 
 #include "../gc/gc_heap.h"
+#include "nlohmann/json.hpp"  // nlohmann/json — JSON parsing engine
 #include "native_function.h"
 #include "runtime_error.h"
 #include "value.h"
@@ -807,222 +808,86 @@ void registerMathBuiltins(VM& vm) {
 // ============================================================================
 // JSON built-in native functions — used by std/json.va
 // ============================================================================
+//
+// Powered by nlohmann/json v3.11.3 (header-only, MIT license).
+// This gives us full JSON spec compliance (RFC 8259), correct Unicode
+// handling including surrogate pairs, and robust number parsing — all
+// through a thin bridge layer between nlohmann::json and Vora::Value.
 
 namespace {
 
-// JSON parser state
-struct JsonParser {
-    const std::string& src;
-    size_t pos;
-
-    explicit JsonParser(const std::string& s) : src(s), pos(0) {}
-
-    void skipWhitespace() {
-        while (pos < src.size() &&
-               (src[pos] == ' ' || src[pos] == '\t' ||
-                src[pos] == '\n' || src[pos] == '\r')) {
-            pos++;
+/// Convert a nlohmann::json value to a Vora Value.
+///
+/// Mapping:
+///   null          → nullptr
+///   boolean       → bool
+///   number_integer/unsigned → int64_t
+///   number_float  → double
+///   string        → GcPtr<GcString> (GC-allocated)
+///   array         → GcPtr<Array>    (GC-allocated)
+///   object        → GcPtr<Dict>     (GC-allocated, string keys only)
+Value jsonToValue(const nlohmann::json& j) {
+    switch (j.type()) {
+        case nlohmann::json::value_t::null:
+            return nullptr;
+        case nlohmann::json::value_t::boolean:
+            return j.get<bool>();
+        case nlohmann::json::value_t::number_integer:
+            return static_cast<int64_t>(j.get<int64_t>());
+        case nlohmann::json::value_t::number_unsigned:
+            return static_cast<int64_t>(j.get<uint64_t>());
+        case nlohmann::json::value_t::number_float:
+            return j.get<double>();
+        case nlohmann::json::value_t::string:
+            return GcHeap::instance().alloc<GcString>(j.get<std::string>());
+        case nlohmann::json::value_t::array: {
+            auto arr = GcHeap::instance().alloc<Array>();
+            arr->elements.reserve(j.size());
+            for (const auto& elem : j)
+                arr->elements.push_back(jsonToValue(elem));
+            return arr;
         }
-    }
-
-    char peek() const { return pos < src.size() ? src[pos] : '\0'; }
-    char next() { return pos < src.size() ? src[pos++] : '\0'; }
-
-    Value parseValue();
-
-    Value parseString() {
-        if (next() != '"') return nullptr;  // skip opening quote
-        std::string result;
-        while (pos < src.size()) {
-            char c = next();
-            if (c == '"') {
-                return GcHeap::instance().alloc<GcString>(result);
-            }
-            if (c == '\\') {
-                c = next();
-                switch (c) {
-                    case '"':  result += '"';  break;
-                    case '\\': result += '\\'; break;
-                    case '/':  result += '/';  break;
-                    case 'n':  result += '\n'; break;
-                    case 'r':  result += '\r'; break;
-                    case 't':  result += '\t'; break;
-                    case 'u': {
-                        // Parse \uXXXX — extract BMP codepoint as UTF-8
-                        std::string hex;
-                        for (int i = 0; i < 4 && pos < src.size(); i++)
-                            hex += next();
-                        try {
-                            unsigned long cp = std::stoul(hex, nullptr, 16);
-                            if (cp < 0x80) {
-                                result += static_cast<char>(cp);
-                            } else if (cp < 0x800) {
-                                result += static_cast<char>(0xC0 | (cp >> 6));
-                                result += static_cast<char>(0x80 | (cp & 0x3F));
-                            } else {
-                                result += static_cast<char>(0xE0 | (cp >> 12));
-                                result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-                                result += static_cast<char>(0x80 | (cp & 0x3F));
-                            }
-                        } catch (...) { return nullptr; }
-                        break;
-                    }
-                    default: return nullptr;
-                }
-            } else {
-                result += c;
-            }
+        case nlohmann::json::value_t::object: {
+            auto dict = GcHeap::instance().alloc<Dict>();
+            for (auto it = j.begin(); it != j.end(); ++it)
+                dict->pairs[it.key()] = jsonToValue(it.value());
+            return dict;
         }
-        return nullptr;  // unterminated string
+        default:
+            return nullptr;  // binary, discarded — shouldn't occur in JSON
     }
-
-    Value parseNumber() {
-        size_t start = pos;
-        if (peek() == '-') pos++;
-        if (peek() < '0' || peek() > '9') return nullptr;
-        while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos])))
-            pos++;
-        bool isFloat = false;
-        if (pos < src.size() && src[pos] == '.') {
-            isFloat = true;
-            pos++;
-            while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos])))
-                pos++;
-        }
-        if (pos < src.size() && (src[pos] == 'e' || src[pos] == 'E')) {
-            isFloat = true;
-            pos++;
-            if (pos < src.size() && (src[pos] == '+' || src[pos] == '-')) pos++;
-            while (pos < src.size() && std::isdigit(static_cast<unsigned char>(src[pos])))
-                pos++;
-        }
-        std::string numStr = src.substr(start, pos - start);
-        try {
-            if (isFloat) {
-                return std::stod(numStr);
-            } else {
-                return static_cast<int64_t>(std::stoll(numStr));
-            }
-        } catch (...) { return nullptr; }
-    }
-
-    Value parseArray() {
-        next();  // skip '['
-        auto arr = GcHeap::instance().alloc<Array>();
-        skipWhitespace();
-        if (peek() == ']') { next(); return arr; }
-        while (true) {
-            skipWhitespace();
-            Value elem = parseValue();
-            if (std::holds_alternative<std::nullptr_t>(elem) && peek() != 'n')
-                return nullptr;
-            arr->elements.push_back(elem);
-            skipWhitespace();
-            if (peek() == ']') { next(); return arr; }
-            if (peek() != ',') return nullptr;
-            next();  // skip ','
-        }
-    }
-
-    Value parseObject() {
-        next();  // skip '{'
-        auto dict = GcHeap::instance().alloc<Dict>();
-        skipWhitespace();
-        if (peek() == '}') { next(); return dict; }
-        while (true) {
-            skipWhitespace();
-            Value keyVal = parseString();
-            if (!std::holds_alternative<GcPtr<GcString>>(keyVal))
-                return nullptr;
-            std::string key = std::get<GcPtr<GcString>>(keyVal)->value;
-            skipWhitespace();
-            if (next() != ':') return nullptr;
-            skipWhitespace();
-            Value val = parseValue();
-            if (std::holds_alternative<std::nullptr_t>(val) && peek() != 'n')
-                return nullptr;
-            dict->pairs[key] = val;
-            skipWhitespace();
-            if (peek() == '}') { next(); return dict; }
-            if (peek() != ',') return nullptr;
-            next();  // skip ','
-        }
-    }
-};
-
-Value JsonParser::parseValue() {
-    skipWhitespace();
-    char c = peek();
-    if (c == '"') return parseString();
-    if (c == '{') return parseObject();
-    if (c == '[') return parseArray();
-    if (c == 't') {
-        if (src.substr(pos, 4) == "true") { pos += 4; return true; }
-        return nullptr;
-    }
-    if (c == 'f') {
-        if (src.substr(pos, 5) == "false") { pos += 5; return false; }
-        return nullptr;
-    }
-    if (c == 'n') {
-        if (src.substr(pos, 4) == "null") { pos += 4; return nullptr; }
-        return nullptr;
-    }
-    if (c == '-' || std::isdigit(static_cast<unsigned char>(c))) {
-        return parseNumber();
-    }
-    return nullptr;
 }
 
-// JSON stringify — serialize a Value to JSON string
-std::string jsonStringifyValue(const Value& val) {
-    return std::visit([](auto&& arg) -> std::string {
+/// Convert a Vora Value to a nlohmann::json value.
+///
+/// Mapping (reverse of above).  Functions, objects, classes, and other
+/// non-serializable Vora types are mapped to JSON null.
+nlohmann::json valueToJson(const Value& val) {
+    return std::visit([](auto&& arg) -> nlohmann::json {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, std::nullptr_t>) {
-            return "null";
+            return nullptr;
         } else if constexpr (std::is_same_v<T, bool>) {
-            return arg ? "true" : "false";
+            return arg;
         } else if constexpr (std::is_same_v<T, int64_t>) {
-            return std::to_string(arg);
+            return arg;
         } else if constexpr (std::is_same_v<T, double>) {
-            std::string s = std::to_string(arg);
-            // Remove trailing zeros: "3.140000" → "3.14"
-            if (s.find('.') != std::string::npos) {
-                while (s.size() > 1 && s.back() == '0') s.pop_back();
-                if (s.back() == '.') s.pop_back();
-            }
-            return s;
+            return arg;
         } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
-            std::string result = "\"";
-            for (char c : arg->value) {
-                switch (c) {
-                    case '"':  result += "\\\""; break;
-                    case '\\': result += "\\\\"; break;
-                    case '\n': result += "\\n";  break;
-                    case '\r': result += "\\r";  break;
-                    case '\t': result += "\\t";  break;
-                    default:   result += c;       break;
-                }
-            }
-            return result + "\"";
+            return arg->value;
         } else if constexpr (std::is_same_v<T, GcPtr<Array>>) {
-            std::string result = "[";
-            for (size_t i = 0; i < arg->elements.size(); i++) {
-                if (i > 0) result += ",";
-                result += jsonStringifyValue(arg->elements[i]);
-            }
-            return result + "]";
+            nlohmann::json arr = nlohmann::json::array();
+            for (const auto& e : arg->elements)
+                arr.push_back(valueToJson(e));
+            return arr;
         } else if constexpr (std::is_same_v<T, GcPtr<Dict>>) {
-            std::string result = "{";
-            bool first = true;
-            for (const auto& [k, v] : arg->pairs) {
-                if (!first) result += ",";
-                first = false;
-                result += "\"" + k + "\":" + jsonStringifyValue(v);
-            }
-            return result + "}";
+            nlohmann::json obj = nlohmann::json::object();
+            for (const auto& [k, v] : arg->pairs)
+                obj[k] = valueToJson(v);
+            return obj;
         } else {
-            return "null";  // functions, objects, etc.
+            // Functions, objects, classes, generators, etc. → JSON null
+            return nullptr;
         }
     }, val);
 }
@@ -1030,37 +895,45 @@ std::string jsonStringifyValue(const Value& val) {
 } // anonymous namespace
 
 void registerJsonBuiltins(VM& vm) {
-    // jsonParse(str) — parse a JSON string into a Vora value
+    /// jsonParse(str) — parse a JSON string into a Vora value.
+    /// Returns null on parse error (including empty string or non-string input).
     vm.defineNative("jsonParse", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0])) {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+                return nullptr;
+            const auto& str = std::get<GcPtr<GcString>>(arguments[0])->value;
+            try {
+                nlohmann::json j = nlohmann::json::parse(str);
+                return jsonToValue(j);
+            } catch (const nlohmann::json::parse_error&) {
                 return nullptr;
             }
-            const auto& str = std::get<GcPtr<GcString>>(arguments[0])->value;
-            JsonParser parser(str);
-            Value result = parser.parseValue();
-            if (std::holds_alternative<std::nullptr_t>(result) &&
-                !str.empty() && str != "null") {
-                // nullptr could mean parsing "null" or an error.
-                // If the top-level string wasn't "null", it's an error.
-                // Let parseValue handle "null" detection and check if
-                // we consumed all whitespace + valid JSON.
-                parser.skipWhitespace();
-                if (parser.pos < str.size()) return nullptr;  // trailing garbage
-            }
-            // For the "null" case, re-parse with a clean check
-            parser.pos = 0;
-            result = parser.parseValue();
-            parser.skipWhitespace();
-            if (parser.pos < str.size()) return nullptr;  // trailing garbage
-            return result;
         });
 
-    // jsonStringify(value) — serialize a Vora value to JSON string
-    vm.defineNative("jsonStringify", 1,
+    /// jsonStringify(value, indent?) — serialize a Vora value to a JSON string.
+    ///
+    /// indent < 0  → compact, single-line output (default)
+    /// indent >= 0 → pretty-printed with that many spaces per nesting level
+    ///
+    /// Returns null if serialization fails (e.g., deeply-nested structures
+    /// that exhaust the output buffer).
+    vm.defineNative("jsonStringify", -1,
         [](const std::vector<Value>& arguments) -> Value {
-            std::string json = jsonStringifyValue(arguments[0]);
-            return GcHeap::instance().alloc<GcString>(json);
+            if (arguments.empty()) return nullptr;
+            try {
+                nlohmann::json j = valueToJson(arguments[0]);
+                int indent = -1;  // compact by default
+                if (arguments.size() >= 2) {
+                    if (std::holds_alternative<int64_t>(arguments[1]))
+                        indent = static_cast<int>(std::get<int64_t>(arguments[1]));
+                    else if (std::holds_alternative<double>(arguments[1]))
+                        indent = static_cast<int>(std::get<double>(arguments[1]));
+                }
+                std::string result = (indent >= 0) ? j.dump(indent) : j.dump();
+                return GcHeap::instance().alloc<GcString>(result);
+            } catch (...) {
+                return nullptr;
+            }
         });
 }
 

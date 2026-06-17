@@ -37,6 +37,7 @@ public:
     virtual R visitThrowStmt(const ThrowStmt& stmt) = 0;
     virtual R visitImportStmt(const ImportStmt& stmt) = 0;
     virtual R visitExportStmt(const ExportStmt& stmt) = 0;
+    virtual R visitErrorStmt(const ErrorStmt& stmt) = 0;
 };
 
 }

@@ -196,9 +196,13 @@ void VM::runtimeError(const std::string& message) {
     int line = 0, column = 0;
     decodeLineFromChunk(*currentChunk, offset, line, column);
 
-    // Print source snippet with caret
-    printSourceLine(std::cerr, currentChunk->source, line, column, 1,
-                    message, "RuntimeError");
+    // Report via ErrorReporter if available, otherwise print to stderr.
+    if (errorReporter) {
+        errorReporter->error(line, column, 1, message);
+    } else {
+        printSourceLine(std::cerr, currentChunk->source, line, column, 1,
+                        message, "RuntimeError");
+    }
 
     if (!lastErrorStackTrace.empty()) {
         std::cerr << lastErrorStackTrace;
@@ -209,8 +213,10 @@ void VM::runtimeError(const std::string& message) {
 }
 
 void VM::runtimeError(const std::string& message, int line, int column) {
-    // Print source snippet with caret (uses currentChunk for source if available)
-    if (currentChunk) {
+    // Report via ErrorReporter if available, otherwise print to stderr.
+    if (errorReporter) {
+        errorReporter->error(line, column, 1, message);
+    } else if (currentChunk) {
         printSourceLine(std::cerr, currentChunk->source, line, column, 1,
                         message, "RuntimeError");
     } else {
@@ -2095,14 +2101,15 @@ Value VM::loadModule(const std::string& resolvedPath) {
     }
 
     // 2. Lex → Parse → Compile
-    Lexer lexer(source);
+    StderrErrorReporter moduleReporter(source);
+    Lexer lexer(source, moduleReporter);
     auto tokens = lexer.scanTokens();
     if (lexer.hasError()) {
         loadModuleError = "Lexer error in module: " + resolvedPath;
         return Value(nullptr);
     }
 
-    Parser parser(tokens);
+    Parser parser(tokens, moduleReporter);
     parser.setSource(source);
     auto program = parser.parse();
     if (!program || parser.hasError()) {
@@ -2134,7 +2141,7 @@ Value VM::loadModule(const std::string& resolvedPath) {
     // so that global slot numbers in the bytecode match the child VM.
     // Use defined=false so that modules can shadow builtins
     // (e.g. `export let abs = abs`).
-    Compiler compiler;
+    Compiler compiler(moduleReporter);
     compiler.setSource(source);
     compiler.seedGlobals(childVM.globalNames, false);
     Chunk chunk = compiler.compile(program.get());

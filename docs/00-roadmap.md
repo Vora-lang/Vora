@@ -197,13 +197,87 @@ try { ... } catch (e if TypeError) { ... }
 
 基于现有 lexer/parser/compiler，实现 Language Server Protocol：
 
+**目标功能**：
 - 诊断（编译错误实时提示）
 - 补全（变量/函数/方法/属性）
 - 跳转定义 / 查找引用
 - 悬停类型提示
 - 格式化（已有 formatter）
 
-**预估工期**：3-4 周
+**预估总工期**：6-8 周（含前置工作 3-5 周 + 协议实现 2-3 周）
+
+#### 3.1.1 前置工作（阻塞级 — 必须先行完成）
+
+##### #1 ErrorReporter 抽象（2-3 天）
+将分散在各组件中的 `printSourceLine(std::cerr, ...)` 调用统一为 `ErrorReporter` 接口：
+- 创建 `Severity` 枚举、`Diagnostic` 结构体、`ErrorReporter` 抽象基类
+- 提供 `StderrErrorReporter`（保持现有 CLI 行为）
+- Lexer、Parser、Compiler、VM 全部通过 `ErrorReporter&` 报告错误
+- 为 LSP 的 `textDocument/publishDiagnostics` 打下基础
+
+##### #2 错误容忍解析 + AST 保留（3-5 天）
+当前 Parser 在 `hadError` 时返回 `nullptr`，AST 全部丢弃。LSP 需要：
+- 引入 `ErrorExpr` / `ErrorStmt` 占位节点
+- 增强 `synchronize()` 恢复粒度
+- 即使有语法错误也保留尽可能多的 AST 节点
+- 支持补全、跳转等需要部分 AST 的场景
+
+##### #3 JSON-RPC 库引入（1 天）
+项目目前零 JSON 处理能力。LSP 基于 JSON-RPC 2.0：
+- 引入 nlohmann/json（header-only，MIT 协议）
+- 实现 stdio 传输层（Content-Length 头部解析）
+- 请求/响应/通知消息路由框架
+
+##### #4 独立语义分析 Pass（5-7 天）
+当前变量解析、作用域检查、const 检查全部夹杂在 Compiler 的字节码生成中。需要抽取：
+- `SemanticAnalyzer : ExprVisitor<void>, StmtVisitor<void>, ProgramVisitor<void>`
+- `SymbolTable`（作用域链：`{name → Definition}`）
+- 引用收集（每个符号的定义点 + 引用点列表）
+- 类型信息推断（从类型标注和使用模式）
+- 诊断产出（未定义变量、未使用变量、类型不匹配…）
+
+#### 3.1.2 重要前置（影响功能完整度）
+
+##### #5 UTF-16 位置映射（1-2 天）
+LSP 要求 UTF-16 码元偏移，Vora 内部使用 1-based line + column（UTF-8 字节）：
+- `TextPosition` 双向映射
+- 对 ASCII 源码恒等，非 ASCII 需处理
+
+##### #6 Per-Document 状态管理（2-3 天）
+- `DocumentState`：URI、源码、Token[]、AST、SymbolTable、Diagnostic[]
+- 增量更新支持（`textDocument/didChange`）
+- 常驻内存、响应增量变更
+
+##### #7 跨文件模块索引（3-4 天）
+- `ModuleIndex`：不执行代码解析 import 路径、提取导出符号
+- `resolveModulePath()` 复用
+- `workspaceSymbol` 查询基础
+
+#### 3.1.3 协议实现（前置完成后）
+
+| LSP 方法 | 依赖的前置工作 | 工作量 |
+|----------|--------------|--------|
+| `textDocument/publishDiagnostics` | #1, #4 | 2 天 |
+| `textDocument/completion` | #1, #2, #4 | 3 天 |
+| `textDocument/definition` | #1, #2, #4, #7 | 2 天 |
+| `textDocument/references` | #1, #2, #4, #7 | 2 天 |
+| `textDocument/hover` | #1, #2, #4 | 2 天 |
+| `textDocument/formatting` | 已有 formatter | 1 天 |
+| `textDocument/documentSymbol` | #2, #4 | 1 天 |
+| `workspace/symbol` | #4, #7 | 1 天 |
+| `initialize` / `shutdown` / 生命周期 | #3 | 2 天 |
+
+#### 3.1.4 实施路线
+
+```
+第 1 周：  #1 ErrorReporter 抽象 + #3 JSON-RPC 引入
+第 2 周：  #2 错误容忍解析 (前半)
+第 3 周：  #2 错误容忍解析 (后半) + #4 语义分析 (前半)
+第 4 周：  #4 语义分析 (后半) + #5 位置映射
+第 5 周：  #6 Document 状态管理 + #7 跨文件索引
+第 6-7 周：协议实现（diagnostics → completion → goto-def → hover）
+第 8 周：  测试、打磨、编辑器插件（VS Code extension）
+```
 
 ---
 

@@ -20,10 +20,7 @@ void Compiler::visitLetStmt(const LetStmt& stmt) {
     } else {
         // const must have an initializer
         if (stmt.isConst) {
-            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                            "const variable '" + stmt.name + "' must be initialized",
-                            "CompilerError");
-            hadError = true;
+            error("const variable '" + stmt.name + "' must be initialized");
             return;
         }
         emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
@@ -378,7 +375,7 @@ void Compiler::visitCForStmt(const CForStmt& stmt) {
 
 void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     // Create a separate compiler for the function body
-    Compiler fnCompiler;
+    Compiler fnCompiler(errorReporter_);
     fnCompiler.enclosing = this;
     fnCompiler.chunk.source = chunk.source;  // propagate source for error display
 
@@ -509,7 +506,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     std::vector<GcPtr<FunctionPrototype>> methodProtos;
     for (const auto& methodStmt : stmt.methods) {
         if (auto funcStmt = dynamic_cast<const FuncStmt*>(methodStmt.get())) {
-            Compiler methodCompiler;
+            Compiler methodCompiler(errorReporter_);
             methodCompiler.enclosing = this;
             methodCompiler.chunk.source = chunk.source;  // propagate source for error display
 
@@ -588,7 +585,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     }
     int ctorTotalArity = static_cast<int>(stmt.params.size());
 
-    Compiler ctorCompiler;
+    Compiler ctorCompiler(errorReporter_);
     ctorCompiler.enclosing = this;
     ctorCompiler.chunk.source = chunk.source;  // propagate source for error display
     ctorCompiler.beginScope();

@@ -13,6 +13,7 @@
 #include "../ast/program.h"
 #include "../ast/stmt.h"
 #include "../ast/stmt_visitor.h"
+#include "../common/error_reporter.h"
 #include "../lexer/token.h"
 #include "../runtime/value.h"
 
@@ -73,6 +74,8 @@ class Compiler : public ExprVisitor<void>,
                  public StmtVisitor<void>,
                  public ProgramVisitor<void> {
 public:
+    explicit Compiler(ErrorReporter& reporter) : errorReporter_(reporter) {}
+
     Chunk compile(const Program* program);
 
     // True if any compilation error occurred (constant pool overflow, jump
@@ -104,6 +107,7 @@ public:
     void visitTernaryExpr(const TernaryExpr& expr) override;
     void visitFuncExpr(const FuncExpr& expr) override;
     void visitYieldExpr(const YieldExpr& expr) override;
+    void visitErrorExpr(const ErrorExpr& expr) override;
 
     // --- StmtVisitor ---
     void visitExprStmt(const ExprStmt& stmt) override;
@@ -122,6 +126,7 @@ public:
     void visitThrowStmt(const ThrowStmt& stmt) override;
     void visitImportStmt(const ImportStmt& stmt) override;
     void visitExportStmt(const ExportStmt& stmt) override;
+    void visitErrorStmt(const ErrorStmt& stmt) override;
 
     // Export name tracking (for modules being compiled as import targets)
     const std::vector<std::string>& getExportNames() const { return exportNames; }
@@ -152,6 +157,20 @@ private:
     Chunk chunk;
     int currentLine = 1;
     int currentColumn = 1;
+    ErrorReporter& errorReporter_;
+
+    // Report a compilation error at the current source position.
+    // Sets hadError = true and delegates to the error reporter.
+    void error(const std::string& message) {
+        hadError = true;
+        errorReporter_.error(currentLine, currentColumn, 1, message);
+    }
+
+    // Report a compilation error at a specific source position.
+    void errorAt(int line, int column, int length, const std::string& message) {
+        hadError = true;
+        errorReporter_.error(line, column, length, message);
+    }
 
     // =========================================================================
     // Global variable interning

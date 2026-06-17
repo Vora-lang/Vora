@@ -21,6 +21,12 @@ endif()
 
 add_library(vora_lib OBJECT
 
+    src/common/error_reporter.cpp
+
+    src/json_rpc/json_rpc.cpp
+    src/json_rpc/transport.cpp
+    src/json_rpc/message_router.cpp
+
     src/ast/ast_printer.cpp
     src/ast/param_decl.cpp
     src/ast/program.cpp
@@ -53,7 +59,7 @@ add_library(vora_lib OBJECT
     src/vm/vm.cpp
 )
 
-target_include_directories(vora_lib PRIVATE src)
+target_include_directories(vora_lib PRIVATE src include)
 
 target_compile_features(vora_lib PRIVATE cxx_std_17)
 
@@ -86,6 +92,40 @@ include(GNUInstallDirs)
 install(TARGETS Vora
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+# ──────────────────────────────────────────────────
+# LSP server executable
+# Source files live in the sibling Vora-LSP repository
+# (<repo-root>/../Vora-LSP/server/).
+# ──────────────────────────────────────────────────
+
+set(VORA_LSP_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Vora-LSP/server"
+    CACHE PATH "Path to Vora-LSP server source directory")
+
+if(EXISTS "${VORA_LSP_SOURCE_DIR}/main.cpp")
+    add_executable(vora-lsp
+        "${VORA_LSP_SOURCE_DIR}/main.cpp"
+        "${VORA_LSP_SOURCE_DIR}/lsp_server.cpp"
+        "${VORA_LSP_SOURCE_DIR}/lsp_server.h"
+        $<TARGET_OBJECTS:vora_lib>
+    )
+
+    target_include_directories(vora-lsp PRIVATE
+        src
+        include
+        "${VORA_LSP_SOURCE_DIR}"
+    )
+
+    target_compile_features(vora-lsp PRIVATE cxx_std_17)
+
+    install(TARGETS vora-lsp
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+
+    message(STATUS "LSP server target enabled (source: ${VORA_LSP_SOURCE_DIR})")
+else()
+    message(STATUS "LSP server target disabled (Vora-LSP not found at ${VORA_LSP_SOURCE_DIR})")
+endif()
 
 # ──────────────────────────────────────────────────
 # CTest — one test per .va file
@@ -142,10 +182,12 @@ add_executable(Vora_tests
     tests/unit/test_compiler.cpp
     tests/unit/test_vm.cpp
     tests/unit/test_formatter.cpp
+    tests/unit/test_json_rpc.cpp
 )
 
 target_include_directories(Vora_tests PRIVATE
     src
+    include
     tests/unit
 )
 
@@ -176,6 +218,7 @@ vora_unit_test(tests/unit/test_parser.cpp   "parser")
 vora_unit_test(tests/unit/test_compiler.cpp "compiler")
 vora_unit_test(tests/unit/test_vm.cpp       "vm")
 vora_unit_test(tests/unit/test_formatter.cpp "fmt")
+vora_unit_test(tests/unit/test_json_rpc.cpp "jsonrpc|lsp")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -7,16 +7,17 @@
 #include "../ast/expr.h"
 #include "../ast/stmt.h"
 #include "../ast/program.h"
+#include "../common/error_reporter.h"
 
 namespace vora {
 
 class Parser {
 public:
-    explicit Parser(std::vector<Token> tokens);
+    Parser(std::vector<Token> tokens, ErrorReporter& reporter);
 
     std::unique_ptr<Program> parse();
 
-    bool hasError() const { return hadError; }
+    bool hasError() const { return reporter_.hadError(); }
 
     // Set source text for error display (parser errors show source snippets).
     void setSource(const std::string& source) { sourceText = source; }
@@ -24,14 +25,21 @@ public:
 private:
     std::vector<Token> tokens;
     std::string sourceText;
+    ErrorReporter& reporter_;
 
     size_t current = 0;
-
-    bool hadError = false;
 
 private:
 
     void error(const std::string& message);
+
+    // Error recovery helpers for error-tolerant parsing.
+    // Call error(), synchronize to next statement boundary, and return an
+    // ErrorStmt placeholder so the AST retains structural coverage even
+    // for malformed source (essential for LSP features).
+    std::unique_ptr<Stmt> errorStmt(const std::string& message);
+    std::unique_ptr<Expr> errorExpr(const std::string& message);
+
     void synchronize();
     std::unique_ptr<Expr> expression();
 

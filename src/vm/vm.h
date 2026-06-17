@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "chunk.h"
+#include "../common/error_reporter.h"
 #include "../runtime/value.h"
 
 namespace vora {
@@ -113,6 +114,11 @@ public:
     InterpretResult runConstructor(const Chunk& chunk,
                                    const Value& instance,
                                    const std::vector<Value>& args);
+
+    // Error reporter — set by the host to redirect runtime errors.
+    // When nullptr (default), runtime errors are printed to stderr directly.
+    // Set to a custom ErrorReporter for LSP or other programmatic error handling.
+    ErrorReporter* errorReporter = nullptr;
 
     // Native error reporting — set by builtins (e.g. assert) that need to
     // throw through the VM exception mechanism rather than calling exit().

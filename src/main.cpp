@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "common/error_reporter.h"
 #include "lexer/lexer.h"
 #include "parser/parser.h"
 
@@ -43,16 +44,17 @@ static int runFmt(
     const std::string& path,
     bool writeBack
 ) {
-    Lexer lexer(source);
+    StderrErrorReporter reporter(source);
+    Lexer lexer(source, reporter);
     auto tokens = lexer.scanTokens();
 
-    Parser parser(tokens);
+    Parser parser(tokens, reporter);
     parser.setSource(source);
     auto program = parser.parse();
 
-    if (!program) {
-        std::cerr << "vora fmt: parse failed for " << path << std::endl;
-        return 1;
+    if (parser.hasError()) {
+        std::cerr << "vora fmt: parse had errors for " << path << std::endl;
+        // Continue anyway — format the partial AST for best-effort output.
     }
 
     SourceFormatter formatter;
@@ -96,7 +98,8 @@ static int runScript(
     bool printTokens,
     const std::string& filePath = ""
 ) {
-    Lexer lexer(source);
+    StderrErrorReporter reporter(source);
+    Lexer lexer(source, reporter);
     auto tokens = lexer.scanTokens();
 
     if (printTokens) {
@@ -105,12 +108,12 @@ static int runScript(
         }
     }
 
-    Parser parser(tokens);
+    Parser parser(tokens, reporter);
     parser.setSource(source);
     auto program = parser.parse();
 
-    if (!program) {
-        std::cerr << "Parse failed" << std::endl;
+    if (parser.hasError()) {
+        std::cerr << "Parse errors detected" << std::endl;
         return 1;
     }
 
@@ -120,7 +123,7 @@ static int runScript(
     }
 
     // Bytecode VM path
-    Compiler compiler;
+    Compiler compiler(reporter);
     compiler.setSource(source);
     Chunk chunk = compiler.compile(program.get());
 
@@ -130,6 +133,7 @@ static int runScript(
     }
 
     VM vm;
+    vm.errorReporter = &reporter;
 
     // Set module resolution directories
     vm.stdDir = findStdDir();
@@ -202,6 +206,8 @@ static void replSigintHandler(int /*signum*/) {
 
 static void runREPL() {
     VM vm;
+    // REPL runtime errors go to stderr (no per-line reporter; the VM's
+    // errorReporter stays null, so runtimeError falls back to stderr).
 
     // Set module resolution directories for REPL
     vm.stdDir = findStdDir();
@@ -252,17 +258,19 @@ static void runREPL() {
         std::string source = std::move(accumulated);
         accumulated.clear();
 
-        Lexer lexer(source);
+        StderrErrorReporter reporter(source);
+        Lexer lexer(source, reporter);
         auto tokens = lexer.scanTokens();
-        Parser parser(tokens);
+        Parser parser(tokens, reporter);
         parser.setSource(source);
         auto program = parser.parse();
 
-        if (!program) {
+        if (parser.hasError()) {
+            // Skip execution of errored input in REPL.
             continue;
         }
 
-        Compiler compiler;
+        Compiler compiler(reporter);
         compiler.setSource(source);
 
         // Seed the compiler with the VM's current global table so that

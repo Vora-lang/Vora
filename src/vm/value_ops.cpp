@@ -11,6 +11,10 @@ namespace vora {
 
 // =========================================================================
 // isTruthy
+//
+// Python-style truthiness:
+//   falsy: null, false, 0, 0.0, "", [], {}
+//   truthy: everything else (including non-empty arrays/dicts, objects, etc.)
 // =========================================================================
 
 bool isTruthy(const Value& value) {
@@ -19,6 +23,8 @@ bool isTruthy(const Value& value) {
     if (std::holds_alternative<int64_t>(value)) return std::get<int64_t>(value) != 0;
     if (std::holds_alternative<double>(value)) return std::get<double>(value) != 0.0;
     if (std::holds_alternative<GcPtr<GcString>>(value)) return !std::get<GcPtr<GcString>>(value)->value.empty();
+    if (std::holds_alternative<GcPtr<Array>>(value)) return !std::get<GcPtr<Array>>(value)->elements.empty();
+    if (std::holds_alternative<GcPtr<Dict>>(value)) return !std::get<GcPtr<Dict>>(value)->pairs.empty();
     return true;
 }
 

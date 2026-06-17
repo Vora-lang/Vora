@@ -46,6 +46,7 @@ private:
     std::string visitTernaryExpr(const TernaryExpr& expr) override;
     std::string visitFuncExpr(const FuncExpr& expr) override;
     std::string visitYieldExpr(const YieldExpr& expr) override;
+    std::string visitErrorExpr(const ErrorExpr& expr) override;
 
     // --- StmtVisitor<std::string> overrides ---
     std::string visitExprStmt(const ExprStmt& stmt) override;
@@ -64,6 +65,7 @@ private:
     std::string visitThrowStmt(const ThrowStmt& stmt) override;
     std::string visitImportStmt(const ImportStmt& stmt) override;
     std::string visitExportStmt(const ExportStmt& stmt) override;
+    std::string visitErrorStmt(const ErrorStmt& stmt) override;
 
     // --- ProgramVisitor<std::string> override ---
     std::string visitProgram(const Program& program) override;

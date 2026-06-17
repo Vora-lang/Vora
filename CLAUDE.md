@@ -8,6 +8,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the canonical description — use it verbatim in all metadata, package manifests, version info, and documentation.
 
+## Cross-repo references
+
+| Repository | Path | Purpose |
+|-----------|------|---------|
+| **Vora** (this repo) | `D:\Vora` | Language core: lexer, parser, AST, compiler, VM, runtime, stdlib |
+| **Vora-LSP** | `D:\Vora-LSP` | LSP server (C++) + VS Code extension (TypeScript) |
+| **Vora website** | `D:\Vora-lang.github.io` | Generated user documentation site |
+| **Docs** | `D:\Vora\docs` | Design docs, roadmaps, architecture notes |
+
+**When working on LSP-related tasks**: always consult both repos — the LSP server (`D:\Vora-LSP\server\`) depends on the Vora core (`D:\Vora\src\`), and the VS Code extension (`D:\Vora-LSP\src\`) connects to the LSP server binary. The LSP server is built as part of the Vora project (`cmake --build build --target vora-lsp`).
+
+**When adding syntax or new features**: you MUST update all three locations:
+1. `USER_GUIDE.md` — user-facing language manual
+2. `D:\Vora\docs\` — detailed design docs (if the feature warrants it)
+3. `D:\Vora-lang.github.io` — run `scripts/build-website-docs.py` to regenerate the website
+Also update `syntaxes/vora.tmLanguage.json` in `D:\Vora-LSP` if the syntax changes (new keywords, operators, literals).
+
 ## Build & Run
 
 **优先使用项目自带的 build 脚本**（跨平台一键构建 + 运行，支持多架构和打包）：
@@ -84,13 +101,13 @@ Before every commit, run **all examples and tests**. Never skip this.
 ./tests/run_tests.sh
 ```
 
-### Current expected results (2026-06-15)
+### Current expected results (2026-06-17)
 
 | Suite | Status |
 |-------|--------|
-| **Tests** (22 files) | 22/22 ✅ |
-| **Examples** (29 files) | 29/29 ✅ |
-| **C++ Unit Tests** (228 cases) | 228/228 ✅ (735 assertions) |
+| **Tests** (41 files) | 41/41 ✅ (1 known failure: `test_input.va` — stdin piping) |
+| **Examples** (39 files) | 39/39 ✅ |
+| **C++ Unit Tests** (302 cases) | 302/302 ✅ (939 assertions) |
 
 > `17-type-annotations.va` requires piped input (uses `input()`). Pipe `"42`n3.14`n100`ntest`n"` in PowerShell or `printf '42\n3.14\n100\ntest\n'` in bash.
 
@@ -128,14 +145,18 @@ The **VM** (bytecode compiler + stack-based virtual machine) is the sole executi
 
 | Directory | Purpose |
 |-----------|---------|
+| `include/` | **Third-party dependencies** (header-only libraries, vendored sources). Currently: nlohmann/json (header-only JSON). All third-party code lives here — never mix with `src/`. |
 | `src/lexer/` | Lexer: source → tokens. `token.h` defines `TokenType` enum and `Token` struct. |
-| `src/ast/` | AST nodes: `expr.h` (14 expression types), `stmt.h` (13 statement types), `program.h` (root + `ProgramVisitor<R>`). `expr_visitor.h` / `stmt_visitor.h` define templated visitor interfaces. `ast_printer.h/.cpp` for S-expression debug output (implements `ExprVisitor<std::string>` + `StmtVisitor<std::string>` + `ProgramVisitor<std::string>`, no side-channel `result_` member). |
-| `src/parser/` | Recursive-descent + Pratt parser. `statement()` dispatches by keyword; `expression()` enters Pratt via `parsePrecedence(0)`. |
+| `src/ast/` | AST nodes: `expr.h` (15 expression types including `ErrorExpr`), `stmt.h` (17 statement types including `ErrorStmt`), `program.h` (root + `ProgramVisitor<R>`). `expr_visitor.h` / `stmt_visitor.h` define templated visitor interfaces. `ast_printer.h/.cpp` for S-expression debug output (implements `ExprVisitor<std::string>` + `StmtVisitor<std::string>` + `ProgramVisitor<std::string>`, no side-channel `result_` member). |
+| `src/parser/` | Recursive-descent + Pratt parser with **error-tolerant parsing**. `statement()` dispatches by keyword; `expression()` enters Pratt via `parsePrecedence(0)`. On error, returns `ErrorExpr`/`ErrorStmt` (never `nullptr`). `parse()` always returns a Program — callers check `hasError()`. `synchronize()` skips to next statement boundary. |
 | `src/vm/` | Bytecode VM. `opcode.h` (40+ instructions), `chunk.h/.cpp` (bytecode + constant pool + RLE line/column + disassembler), `compiler.h` (contains `FunctionPrototype` and `ClassDefinition` structs), `compiler.cpp` + `compiler_expr.cpp` + `compiler_stmt.cpp` (AST → bytecode, implements `ExprVisitor<void>` + `StmtVisitor<void>` + `ProgramVisitor<void>`), `vm.h/.cpp` (stack machine execution loop, call frames, catch handlers, value operations). |
 | `src/runtime/` | `value.h` (Value variant + `Array`/`Dict`/`ObjectInstance` structs), `callable.h` (abstract base), `native_function.h/.cpp` (pure native callbacks), `class_constructor.h/.cpp` (class instance factories), `bound_method.h/.cpp` (instance-bound methods), `vora_function.h/.cpp` (bytecode functions), `environment.h/.cpp` (scope chain, shared_ptr-only ownership), `runtime_error.h/.cpp`. |
+| `src/common/` | `error_reporter.h/.cpp` — abstract `ErrorReporter` interface + `StderrErrorReporter`. Used by lexer, parser, compiler, and LSP server (via `DiagnosticCollector`). |
+| `src/json_rpc/` | JSON-RPC infrastructure: `json_rpc.h/.cpp` (message types + parse/serialize), `transport.h/.cpp` (stdio Content-Length framing), `message_router.h/.cpp` (handler registration + dispatch). |
+| `src/formatter/` | `SourceFormatter` — AST-based source code formatter (`vora fmt`). |
 | `examples/` | `.va` example files covering language features. |
-| `docs/` | Project documentation in Chinese. `08-已实现功能总结.md` is the most useful reference for implemented features. |
-| `std/` | Placeholder for future standard library. |
+| `docs/` | Project documentation in Chinese. `00-roadmap.md` is the roadmap; `08-已实现功能总结.md` summarises implemented features. |
+| `std/` | Standard library modules loaded via `import`. |
 
 ### Adding a language feature (typical workflow)
 
@@ -147,6 +168,7 @@ The **VM** (bytecode compiler + stack-based virtual machine) is the sole executi
 6. **AST Printer** (`ast_printer.h` + `ast_printer.cpp`): Override `visit*` returning `std::string` directly (inherits `ExprVisitor<std::string>`, `StmtVisitor<std::string>`, `ProgramVisitor<std::string>`).
 7. **VM Compiler** (`vm/compiler.h` + `vm/compiler.cpp`): Override `visit*` emitting bytecode (inherits `ExprVisitor<void>` + `StmtVisitor<void>` + `ProgramVisitor<void>`). Use `emitByte()`/`emitJump()`/`patchJump()` for code generation. For loops, push/pop `LoopContext` on `loopStack` for break/continue back-patching. For functions, create a nested `Compiler` instance and store the result as `FunctionPrototype` in the constant pool. For objects, compile methods and constructor separately and wrap in `ClassDefinition`. For try/catch, use `emitJump(OP_PUSH_CATCH)` and manually patch to the catch block's offset.
 8. **VM runtime** (if needed): Add new `OpCode` value(s) to `vm/opcode.h` and the corresponding `case` in `vm/vm.cpp` `run()`.
+9. **User guide + website + LSP** (`USER_GUIDE.md` + `D:\Vora-lang.github.io` + `D:\Vora-LSP`): Update the relevant section with the new feature — add version tag, code examples, and brief explanation. If the feature adds/changes a built-in function or standard library module, also update the corresponding section (内建函数 / 标准库). Run `scripts/build-website-docs.py` to regenerate the website language reference. If the feature introduces new keywords, operators, or syntax, update `syntaxes/vora.tmLanguage.json` in `D:\Vora-LSP` so syntax highlighting stays correct. **Never skip this step** — the user guide is the single source of truth for user-facing documentation.
 
 ### C++ patterns in use
 
@@ -154,7 +176,7 @@ The **VM** (bytecode compiler + stack-based virtual machine) is the sole executi
 - `std::shared_ptr` for runtime objects that need shared lifetime (closures, arrays, object instances, callables). `blockStatement()` returns `std::unique_ptr<BlockStmt>` (the concrete type, not `Stmt`), so callers that need a `shared_ptr<BlockStmt>` can move-construct it directly — no `dynamic_cast` or `release()` hack.
 - `dynamic_cast` is used in the Pratt loop to distinguish `VariableExpr` from `PropertyExpr` for assignment targets, and in `objStatement()` to separate `FuncStmt` nodes (→ methods) from other statements (→ constructor body).
 - Templates over runtime polymorphism for visitors: `ExprVisitor<R>`, `StmtVisitor<R>`, `ProgramVisitor<R>`. A new pass with a new return type only needs a new `accept()` overload in `Expr`/`Stmt` + all subclasses (mechanical one-liners). The visitor interface itself is generic.
-- The parser returns `nullptr` on error; the caller checks `hadError` or skips null expression-statements.
+- The parser uses **error-tolerant parsing**: `parse()` always returns a `Program` (never `nullptr`). On error, `ErrorExpr`/`ErrorStmt` placeholder nodes are inserted into the AST. Callers check `Parser::hasError()` to decide whether to execute. `ErrorExpr` compiles to `OP_NULL`; `ErrorStmt` compiles to a no-op. This ensures partial ASTs are available for LSP diagnostics/completion/formatting. **Statement-level recovery**: if/while/for/func/obj/try/let/const all return partial nodes (e.g., IfStmt with ErrorExpr condition) instead of bare ErrorStmt when parts are missing. **Expression-level recovery**: missing operands produce ErrorExpr placeholders rather than discarding surrounding valid sub-expressions; invalid assignment targets return the RHS value. **`synchronize()`** tracks brace/paren/bracket depth to correctly skip to the matching close-delimiter.
 - **VM jump back-patching**: `emitJump(OpCode)` emits the instruction + two placeholder bytes (0xFF 0xFF) and returns the offset of the first placeholder. `patchJump(offset)` computes the forward offset from that position to the current code end and writes it in little-endian. `emitLoop(loopStart)` emits OP_LOOP + a backward offset. This avoids a separate AST→IR pass.
 - **VM native function calling**: `NativeFunction::call()` takes `const std::vector<Value>&` directly — no external dependencies needed by the VM's `OP_CALL` handler.
 

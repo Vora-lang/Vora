@@ -489,6 +489,12 @@ std::string SourceFormatter::visitYieldExpr(const YieldExpr& expr) {
     return "yield";
 }
 
+std::string SourceFormatter::visitErrorExpr(const ErrorExpr& expr) {
+    // Emit a placeholder that is valid Vora syntax (null) so formatted
+    // output remains syntactically valid even for partial/error ASTs.
+    return "null /* ERROR: " + expr.message + " */";
+}
+
 // =====================================================================
 // StmtVisitor<std::string> — statement formatting
 // =====================================================================
@@ -724,6 +730,11 @@ std::string SourceFormatter::visitImportStmt(const ImportStmt& stmt) {
 std::string SourceFormatter::visitExportStmt(const ExportStmt& stmt) {
     // Visit the inner declaration and prefix with 'export '
     return "export " + stmt.declaration->accept(*this);
+}
+
+std::string SourceFormatter::visitErrorStmt(const ErrorStmt& stmt) {
+    // Emit as a comment so formatted output remains valid Vora.
+    return "/* ERROR: " + stmt.message + " */";
 }
 
 // =====================================================================

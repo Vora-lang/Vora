@@ -12,7 +12,8 @@ using namespace vora;
 
 // Helper: scan source and return tokens.
 static std::vector<Token> scan(const std::string& src) {
-    Lexer lexer(src);
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
     return lexer.scanTokens();
 }
 

@@ -39,12 +39,9 @@ void Compiler::patchJump(size_t operandOffset) {
     size_t jumpSize = jumpEnd - operandOffset - 2;
 
     if (jumpSize > UINT16_MAX) {
-        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                        "Jump offset " + std::to_string(jumpSize) +
-                        " exceeds 16-bit limit (max " + std::to_string(UINT16_MAX) +
-                        "). Function body too large.",
-                        "CompilerError");
-        hadError = true;
+        error("Jump offset " + std::to_string(jumpSize) +
+              " exceeds 16-bit limit (max " + std::to_string(UINT16_MAX) +
+              "). Function body too large.");
         return;
     }
 
@@ -58,12 +55,9 @@ void Compiler::emitLoop(size_t loopStart) {
 
     size_t offset = chunk.code.size() - loopStart + 2;
     if (offset > UINT16_MAX) {
-        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                        "Loop offset " + std::to_string(offset) +
-                        " exceeds 16-bit limit (max " + std::to_string(UINT16_MAX) +
-                        "). Loop body too large.",
-                        "CompilerError");
-        hadError = true;
+        error("Loop offset " + std::to_string(offset) +
+              " exceeds 16-bit limit (max " + std::to_string(UINT16_MAX) +
+              "). Loop body too large.");
         return;
     }
 
@@ -78,11 +72,8 @@ uint8_t Compiler::makeConstant(Value value) {
     // (e.g. property names, closure/class indices). OP_CONSTANT_LONG handles
     // value constants with 16-bit indices — see Chunk::writeConstant().
     if (index > UINT8_MAX) {
-        printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                        "Constant pool overflow (" + std::to_string(index) +
-                        " entries, max 256).",
-                        "CompilerError");
-        hadError = true;
+        error("Constant pool overflow (" + std::to_string(index) +
+              " entries, max 256).");
         return 0;
     }
     return static_cast<uint8_t>(index);
@@ -141,10 +132,7 @@ void Compiler::addLocal(const std::string& name, bool isConst) {
     for (int i = static_cast<int>(locals.size()) - 1; i >= 0; i--) {
         if (locals[i].depth == -1 || locals[i].depth < scopeDepth) break;
         if (locals[i].name == name) {
-            printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                            "Variable '" + name + "' already defined in this scope",
-                            "CompilerError");
-            hadError = true;
+            error("Variable '" + name + "' already defined in this scope");
             return;
         }
     }
@@ -197,10 +185,7 @@ int Compiler::defineGlobal(const std::string& name) {
     for (size_t i = 0; i < root->globalNames.size(); i++) {
         if (root->globalNames[i] == name) {
             if (root->globalDefined[i]) {
-                printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                                "Global variable '" + name + "' already defined",
-                                "CompilerError");
-                hadError = true;
+                error("Global variable '" + name + "' already defined");
             } else {
                 // Forward reference created the slot — mark as defined now.
                 root->globalDefined[i] = true;
@@ -228,10 +213,7 @@ int Compiler::defineGlobalConst(const std::string& name) {
     for (size_t i = 0; i < root->globalNames.size(); i++) {
         if (root->globalNames[i] == name) {
             if (root->globalDefined[i]) {
-                printSourceLine(std::cerr, chunk.source, currentLine, currentColumn, 1,
-                                "Global variable '" + name + "' already defined",
-                                "CompilerError");
-                hadError = true;
+                error("Global variable '" + name + "' already defined");
             } else {
                 // Forward reference — mark as defined const.
                 root->globalDefined[i] = true;
@@ -350,6 +332,19 @@ void Compiler::visitBlockStmt(const BlockStmt& stmt) {
 
     // Exit scope (emits OP_POPN to clean up locals)
     endScope();
+}
+
+// =========================================================================
+// Error nodes — tolerate at bytecode level
+// =========================================================================
+
+void Compiler::visitErrorExpr(const ErrorExpr& /*expr*/) {
+    // Emit null as a safe placeholder so the VM doesn't crash on partial ASTs.
+    emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+}
+
+void Compiler::visitErrorStmt(const ErrorStmt& /*stmt*/) {
+    // No-op: error statements produce no bytecode.
 }
 
 } // namespace vora

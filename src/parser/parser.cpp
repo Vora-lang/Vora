@@ -1,13 +1,14 @@
 #include "parser.h"
+
+#include <stdexcept>
+
 #include "../ast/stmt.h"
 #include "../gc/gc_heap.h"
-#include "../vm/chunk.h"  // for printSourceLine()
-#include <iostream>
 
 namespace vora {
 
-Parser::Parser(std::vector<Token> tokens)
-    : tokens(std::move(tokens)) {
+Parser::Parser(std::vector<Token> tokens, ErrorReporter& reporter)
+    : tokens(std::move(tokens)), reporter_(reporter) {
 }
 
 std::unique_ptr<Program> Parser::parse() {
@@ -19,78 +20,110 @@ std::unique_ptr<Program> Parser::parse() {
         auto stmt = statement();
 
         if (!stmt) {
-            // Synchronize and keep going so we report all errors,
-            // not just the first one.
+            // Safety net: if a statement method returns nullptr despite error
+            // recovery, synchronize and emit an ErrorStmt to preserve AST coverage.
             synchronize();
-            continue;
+            stmt = std::make_unique<ErrorStmt>("Failed to parse statement", previous());
         }
 
-        // Skip statements whose expression failed to parse (ExprStmt
-        // with a null inner expression is a parse error marker).
+        // Skip ExprStmt wrappers whose inner expression failed to parse.
+        // ErrorExpr nodes are kept for LSP coverage; bare nullptr expressions
+        // (from unrecoverable paths) are replaced with ErrorExpr.
         if (auto* es = dynamic_cast<ExprStmt*>(stmt.get())) {
             if (!es->expression) {
-                synchronize();
-                continue;
+                es->expression = std::make_unique<ErrorExpr>("Failed to parse expression", previous());
             }
         }
 
-        statements.push_back(
-            std::move(stmt)
-        );
+        statements.push_back(std::move(stmt));
     }
 
-    if (hadError) {
-        return nullptr;
-    }
-
-    return std::make_unique<Program>(
-        std::move(statements)
-    );
+    // Always return a Program — even with errors, the partial AST is
+    // useful for LSP diagnostics, completion, and go-to-definition.
+    // Callers check Parser::hasError() to decide whether to execute.
+    return std::make_unique<Program>(std::move(statements));
 }
 
 void Parser::error(const std::string& message) {
-    hadError = true;
-    printSourceLine(std::cerr, sourceText, peek().line, peek().column,
+    reporter_.error(peek().line, peek().column,
                     static_cast<int>(peek().lexeme.size()),
-                    message, "ParseError");
+                    message);
 }
 
 void Parser::synchronize() {
     // Guard: if called with no tokens consumed, previous() would OOB.
     if (current == 0) return;
+
+    // Track delimiter nesting depth so we can synchronize to the matching
+    // close-brace rather than stopping at the first one we encounter.
+    // This prevents cascading parse errors when recovering inside nested blocks.
+    int braceDepth = 0;
+    int parenDepth = 0;
+    int bracketDepth = 0;
+
     // Skip tokens until we hit a likely statement boundary.
     while (!isAtEnd()) {
-        // If we just passed a semicolon or closing brace, we're at a boundary.
-        if (previous().type == TokenType::SEMICOLON ||
-            previous().type == TokenType::RIGHT_BRACE) {
+        // Track delimiter depth as we skip.
+        TokenType prevType = previous().type;
+        if (prevType == TokenType::LEFT_BRACE) braceDepth++;
+        if (prevType == TokenType::RIGHT_BRACE) braceDepth--;
+        if (prevType == TokenType::LEFT_PAREN) parenDepth++;
+        if (prevType == TokenType::RIGHT_PAREN) parenDepth--;
+        if (prevType == TokenType::LEFT_BRACKET) bracketDepth++;
+        if (prevType == TokenType::RIGHT_BRACKET) bracketDepth--;
+
+        // If we just passed a semicolon at depth 0, we're at a clean boundary.
+        if (prevType == TokenType::SEMICOLON &&
+            braceDepth <= 0 && parenDepth <= 0 && bracketDepth <= 0) {
             return;
         }
 
-        // Statement-start keywords are safe resync points.
-        switch (peek().type) {
-            case TokenType::LET:
-            case TokenType::CONST:
-            case TokenType::FUNC:
-            case TokenType::IF:
-            case TokenType::WHILE:
-            case TokenType::FOR:
-            case TokenType::RETURN:
-            case TokenType::OBJ:
-            case TokenType::BREAK:
-            case TokenType::CONTINUE:
-            case TokenType::TRY:
-            case TokenType::IMPORT:
-            case TokenType::EXPORT:
-            case TokenType::AS:
-            case TokenType::FROM:
-            case TokenType::YIELD:
-                return;
-            default:
-                break;
+        // A closing brace at depth 0 means we've exited the current block
+        // and are back at the enclosing level — a safe resync point.
+        if (prevType == TokenType::RIGHT_BRACE &&
+            braceDepth <= 0 && parenDepth <= 0 && bracketDepth <= 0) {
+            return;
+        }
+
+        // Statement-start keywords are safe resync points (at depth 0).
+        if (braceDepth <= 0 && parenDepth <= 0 && bracketDepth <= 0) {
+            switch (peek().type) {
+                case TokenType::LET:
+                case TokenType::CONST:
+                case TokenType::FUNC:
+                case TokenType::IF:
+                case TokenType::WHILE:
+                case TokenType::FOR:
+                case TokenType::RETURN:
+                case TokenType::OBJ:
+                case TokenType::BREAK:
+                case TokenType::CONTINUE:
+                case TokenType::TRY:
+                case TokenType::IMPORT:
+                case TokenType::EXPORT:
+                case TokenType::THROW:
+                case TokenType::YIELD:
+                    return;
+                default:
+                    break;
+            }
         }
 
         advance();
     }
+}
+
+std::unique_ptr<Stmt> Parser::errorStmt(const std::string& message) {
+    error(message);
+    synchronize();
+    return std::make_unique<ErrorStmt>(message, previous());
+}
+
+std::unique_ptr<Expr> Parser::errorExpr(const std::string& message) {
+    error(message);
+    // Skip the bad token so we don't loop on it.
+    if (!isAtEnd()) advance();
+    return std::make_unique<ErrorExpr>(message, previous());
 }
 
 // =========================
@@ -136,7 +169,9 @@ std::unique_ptr<Stmt> Parser::statement() {
         // Anonymous function expression: func(x) { ... }
         if (check(TokenType::LEFT_PAREN)) {
             auto expr = funcExpression();
-            if (!expr) return nullptr;
+            if (!expr) {
+                return errorStmt("Failed to parse anonymous function expression");
+            }
             match(TokenType::SEMICOLON);
             return std::make_unique<ExprStmt>(std::move(expr));
         }
@@ -187,8 +222,7 @@ std::unique_ptr<Stmt> Parser::statement() {
 std::unique_ptr<Stmt> Parser::letStatement() {
 
     if (!match(TokenType::IDENTIFIER)) {
-        error("Expected variable name");
-        return nullptr;
+        return errorStmt("Expected variable name");
     }
 
     std::string name = previous().lexeme;
@@ -198,17 +232,27 @@ std::unique_ptr<Stmt> Parser::letStatement() {
     if (match(TokenType::COLON)) {
         if (!match(TokenType::IDENTIFIER)) {
             error("Expected type name after ':'");
-            return nullptr;
+            // Continue — still try to parse the initializer
+        } else {
+            typeAnnotation = previous().lexeme;
         }
-        typeAnnotation = previous().lexeme;
     }
 
     if (!match(TokenType::EQUAL)) {
         error("Expected '=' after variable name");
-        return nullptr;
+        // Return partial LetStmt — the variable name is still useful for LSP.
+        match(TokenType::SEMICOLON);
+        return std::make_unique<LetStmt>(
+            name,
+            std::make_unique<ErrorExpr>("Missing initializer", previous()),
+            typeAnnotation
+        );
     }
 
     auto initializer = expression();
+    if (!initializer) {
+        initializer = std::make_unique<ErrorExpr>("Expected initializer expression", peek());
+    }
 
     match(TokenType::SEMICOLON);
 
@@ -222,8 +266,7 @@ std::unique_ptr<Stmt> Parser::letStatement() {
 std::unique_ptr<Stmt> Parser::constStatement() {
 
     if (!match(TokenType::IDENTIFIER)) {
-        error("Expected variable name");
-        return nullptr;
+        return errorStmt("Expected variable name");
     }
 
     std::string name = previous().lexeme;
@@ -233,17 +276,28 @@ std::unique_ptr<Stmt> Parser::constStatement() {
     if (match(TokenType::COLON)) {
         if (!match(TokenType::IDENTIFIER)) {
             error("Expected type name after ':'");
-            return nullptr;
+            // Continue anyway
+        } else {
+            typeAnnotation = previous().lexeme;
         }
-        typeAnnotation = previous().lexeme;
     }
 
     if (!match(TokenType::EQUAL)) {
         error("Expected '=' after const variable name");
-        return nullptr;
+        // Return partial LetStmt — the variable name is still useful for LSP.
+        match(TokenType::SEMICOLON);
+        return std::make_unique<LetStmt>(
+            name,
+            std::make_unique<ErrorExpr>("Missing initializer", previous()),
+            typeAnnotation,
+            true  // isConst
+        );
     }
 
     auto initializer = expression();
+    if (!initializer) {
+        initializer = std::make_unique<ErrorExpr>("Expected initializer expression", peek());
+    }
 
     match(TokenType::SEMICOLON);
 
@@ -265,7 +319,8 @@ std::unique_ptr<BlockStmt> Parser::blockStatement() {
         auto stmt = statement();
 
         if (!stmt) {
-            return nullptr;
+            // Inner statement failed — emit an ErrorStmt and keep going.
+            stmt = std::make_unique<ErrorStmt>("Failed to parse statement in block", peek());
         }
 
         statements.push_back(
@@ -277,7 +332,9 @@ std::unique_ptr<BlockStmt> Parser::blockStatement() {
 
                     error("Expected '}' after block\n");
 
-        return nullptr;
+        // Return partial block anyway — the caller can still use what
+        // was parsed before the error.
+        return std::make_unique<BlockStmt>(std::move(statements));
     }
 
     return std::make_unique<BlockStmt>(
@@ -307,27 +364,32 @@ std::unique_ptr<Stmt> Parser::returnStatement() {
 std::unique_ptr<Stmt> Parser::ifStatement() {
 
     if (!match(TokenType::LEFT_PAREN)) {
-
-                    error("Expected '(' after if\n");
-
-        return nullptr;
+        error("Expected '(' after if");
+        // Continue anyway — try to parse condition without '('
     }
 
     auto condition = expression();
+    if (!condition) {
+        condition = std::make_unique<ErrorExpr>("Expected condition after if", peek());
+    }
 
     if (!match(TokenType::RIGHT_PAREN)) {
-
-                    error("Expected ')' after condition\n");
-
-        return nullptr;
+        error("Expected ')' after condition");
+        // Continue — thenBranch is still parsable
     }
 
     auto thenBranch = statement();
+    if (!thenBranch) {
+        thenBranch = std::make_unique<ErrorStmt>("Expected body for if statement", peek());
+    }
 
     std::unique_ptr<Stmt> elseBranch;
 
     if (match(TokenType::ELSE)) {
         elseBranch = statement();
+        if (!elseBranch) {
+            elseBranch = std::make_unique<ErrorStmt>("Expected body for else clause", peek());
+        }
     }
 
     return std::make_unique<IfStmt>(
@@ -347,29 +409,35 @@ std::unique_ptr<Stmt> Parser::forStatement() {
     }
 
     // For-in: for variable in iterable { body }
+    std::string variable;
     if (!match(TokenType::IDENTIFIER)) {
-                    error("Expected loop variable name after 'for'\n");
-        return nullptr;
+        error("Expected loop variable name after 'for'");
+        variable = "?error?";
+    } else {
+        variable = previous().lexeme;
     }
 
-    std::string variable = previous().lexeme;
-
     if (!match(TokenType::IN)) {
-                    error("Expected 'in' after loop variable\n");
-        return nullptr;
+        error("Expected 'in' after loop variable");
+        // Continue — try to parse the iterable anyway
     }
 
     auto iterable = expression();
-
-    if (!match(TokenType::LEFT_BRACE)) {
-                    error("Expected '{' before for loop body\n");
-        return nullptr;
+    if (!iterable) {
+        iterable = std::make_unique<ErrorExpr>("Expected iterable after 'in'", peek());
     }
 
-    auto body = blockStatement();
+    std::unique_ptr<BlockStmt> body;
+    if (!match(TokenType::LEFT_BRACE)) {
+        error("Expected '{' before for loop body");
+        // Create an empty block so the partial ForStmt is still valid.
+        body = std::make_unique<BlockStmt>(std::vector<std::unique_ptr<Stmt>>{});
+    } else {
+        body = blockStatement();
+    }
 
     if (!body) {
-        return nullptr;
+        body = std::make_unique<BlockStmt>(std::vector<std::unique_ptr<Stmt>>{});
     }
 
     return std::make_unique<ForStmt>(
@@ -391,15 +459,13 @@ std::unique_ptr<Stmt> Parser::cForStatement(Token forToken) {
     bool initHadSemicolon = false;
 
     if (match(TokenType::LET)) {
-        // let x = expr  — letStatement() consumes the trailing semicolon
+        // let x = expr  — letStatement() always returns a valid node now
         initializer = letStatement();
-        if (!initializer) return nullptr;
         initHadSemicolon = true;  // letStatement already consumed ';'
     } else if (match(TokenType::CONST)) {
-        // const x = expr  — constStatement() consumes the trailing semicolon
+        // const x = expr  — constStatement() always returns a valid node now
         initializer = constStatement();
-        if (!initializer) return nullptr;
-        initHadSemicolon = true;  // letStatement already consumed ';'
+        initHadSemicolon = true;  // constStatement already consumed ';'
     } else if (!check(TokenType::SEMICOLON)) {
         // Expression initializer (e.g. x = 0)
         auto expr = expression();
@@ -421,7 +487,7 @@ std::unique_ptr<Stmt> Parser::cForStatement(Token forToken) {
 
     if (!match(TokenType::SEMICOLON)) {
         error("Expected ';' after for-loop condition");
-        return nullptr;
+        // Continue — increment and body might still be parsable.
     }
 
     // Parse increment (optional)
@@ -432,17 +498,17 @@ std::unique_ptr<Stmt> Parser::cForStatement(Token forToken) {
 
     if (!match(TokenType::RIGHT_PAREN)) {
         error("Expected ')' after for-loop clauses");
-        return nullptr;
+        // Continue — body might still be parsable.
     }
 
     // Parse body (block or single statement)
     std::unique_ptr<Stmt> body;
     if (match(TokenType::LEFT_BRACE)) {
         body = blockStatement();
-        if (!body) return nullptr;
+        if (!body) body = std::make_unique<ErrorStmt>("Failed to parse for-loop body", peek());
     } else {
         body = statement();
-        if (!body) return nullptr;
+        if (!body) body = std::make_unique<ErrorStmt>("Failed to parse for-loop body", peek());
     }
 
     return std::make_unique<CForStmt>(
@@ -455,20 +521,17 @@ std::unique_ptr<Stmt> Parser::cForStatement(Token forToken) {
 
 std::unique_ptr<Stmt> Parser::funcStatement() {
 
+    std::string name;
     if (!match(TokenType::IDENTIFIER)) {
-
-                    error("Expected function name\n");
-
-        return nullptr;
+        error("Expected function name");
+        name = "?error?";
+    } else {
+        name = previous().lexeme;
     }
 
-    std::string name = previous().lexeme;
-
     if (!match(TokenType::LEFT_PAREN)) {
-
-                    error("Expected '(' after function name\n");
-
-        return nullptr;
+        error("Expected '(' after function name");
+        // Continue — try to parse params without '('
     }
 
     std::vector<ParamDecl> params;
@@ -478,10 +541,12 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
         do {
 
             if (!match(TokenType::IDENTIFIER)) {
-
-                            error("Expected parameter name\n");
-
-                return nullptr;
+                error("Expected parameter name");
+                // Skip this param and continue
+                if (!check(TokenType::COMMA) && !check(TokenType::RIGHT_PAREN)) {
+                    advance();  // skip the bad token
+                }
+                continue;
             }
 
             std::string paramName = previous().lexeme;
@@ -491,13 +556,12 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
             if (match(TokenType::EQUAL)) {
                 defaultValue = expression();
                 if (!defaultValue) {
-                    return nullptr;
+                    defaultValue = std::make_unique<ErrorExpr>("Expected default value", peek());
                 }
             } else {
                 // Validate: required params cannot follow default params
                 if (!params.empty() && params.back().defaultValue) {
-                    error("Required parameter cannot follow a parameter with a default value\n");
-                    return nullptr;
+                    error("Required parameter cannot follow a parameter with a default value");
                 }
             }
 
@@ -507,29 +571,27 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
     }
 
     if (!match(TokenType::RIGHT_PAREN)) {
-
-                    error("Expected ')' after parameters\n");
-
-        return nullptr;
+        error("Expected ')' after parameters");
+        // Continue — body is still parsable
     }
 
+    std::shared_ptr<BlockStmt> body;
     if (!match(TokenType::LEFT_BRACE)) {
-
-                    error("Expected '{' before function body\n");
-
-        return nullptr;
-    }
-
-    auto body = blockStatement();
-
-    if (!body) {
-        return nullptr;
+        error("Expected '{' before function body");
+        body = std::make_shared<BlockStmt>(std::vector<std::unique_ptr<Stmt>>{});
+    } else {
+        auto bodyResult = blockStatement();
+        if (!bodyResult) {
+            body = std::make_shared<BlockStmt>(std::vector<std::unique_ptr<Stmt>>{});
+        } else {
+            body = std::shared_ptr<BlockStmt>(std::move(bodyResult));
+        }
     }
 
     return std::make_unique<FuncStmt>(
         name,
         std::move(params),
-        std::shared_ptr<BlockStmt>(std::move(body))
+        std::move(body)
     );
 }
 
@@ -550,8 +612,7 @@ std::unique_ptr<Expr> Parser::funcExpression() {
     // 'func' keyword already consumed by caller.
 
     if (!match(TokenType::LEFT_PAREN)) {
-        error("Expected '(' after 'func'\n");
-        return nullptr;
+        return errorExpr("Expected '(' after 'func'");
     }
 
     std::vector<ParamDecl> params;
@@ -559,8 +620,7 @@ std::unique_ptr<Expr> Parser::funcExpression() {
     if (!check(TokenType::RIGHT_PAREN)) {
         do {
             if (!match(TokenType::IDENTIFIER)) {
-                error("Expected parameter name\n");
-                return nullptr;
+                return errorExpr("Expected parameter name");
             }
 
             std::string paramName = previous().lexeme;
@@ -570,12 +630,11 @@ std::unique_ptr<Expr> Parser::funcExpression() {
             if (match(TokenType::EQUAL)) {
                 defaultValue = expression();
                 if (!defaultValue) {
-                    return nullptr;
+                    return errorExpr("Expected default value expression");
                 }
             } else {
                 if (!params.empty() && params.back().defaultValue) {
-                    error("Required parameter cannot follow a parameter with a default value\n");
-                    return nullptr;
+                    return errorExpr("Required parameter cannot follow a parameter with a default value");
                 }
             }
 
@@ -585,18 +644,16 @@ std::unique_ptr<Expr> Parser::funcExpression() {
     }
 
     if (!match(TokenType::RIGHT_PAREN)) {
-        error("Expected ')' after parameters\n");
-        return nullptr;
+        return errorExpr("Expected ')' after parameters");
     }
 
     if (!match(TokenType::LEFT_BRACE)) {
-        error("Expected '{' before function body\n");
-        return nullptr;
+        return errorExpr("Expected '{' before function body");
     }
 
     auto body = blockStatement();
     if (!body) {
-        return nullptr;
+        return errorExpr("Failed to parse function body");
     }
 
     return std::make_unique<FuncExpr>(
@@ -607,32 +664,33 @@ std::unique_ptr<Expr> Parser::funcExpression() {
 
 std::unique_ptr<Stmt> Parser::objStatement() {
 
+    std::string name;
     if (!match(TokenType::IDENTIFIER)) {
-
-                    error("Expected object name\n");
-
-        return nullptr;
+        error("Expected object name");
+        name = "?error?";
+    } else {
+        name = previous().lexeme;
     }
-
-    std::string name = previous().lexeme;
 
     // Optional inheritance: Obj Child : Parent1, Parent2, ... (params) { ... }
     std::vector<std::string> parentNames;
     if (match(TokenType::COLON)) {
         do {
             if (!match(TokenType::IDENTIFIER)) {
-                error("Expected parent class name after ':'\n");
-                return nullptr;
+                error("Expected parent class name after ':'");
+                // Skip bad token and continue
+                if (!check(TokenType::COMMA) && !check(TokenType::LEFT_PAREN)) {
+                    advance();
+                }
+                continue;
             }
             parentNames.push_back(previous().lexeme);
         } while (match(TokenType::COMMA));
     }
 
     if (!match(TokenType::LEFT_PAREN)) {
-
-                    error("Expected '(' after object name\n");
-
-        return nullptr;
+        error("Expected '(' after object name");
+        // Continue — try to parse params without '('
     }
 
     std::vector<ParamDecl> params;
@@ -642,10 +700,11 @@ std::unique_ptr<Stmt> Parser::objStatement() {
         do {
 
             if (!match(TokenType::IDENTIFIER)) {
-
-                            error("Expected parameter name\n");
-
-                return nullptr;
+                error("Expected parameter name");
+                if (!check(TokenType::COMMA) && !check(TokenType::RIGHT_PAREN)) {
+                    advance();
+                }
+                continue;
             }
 
             std::string paramName = previous().lexeme;
@@ -655,16 +714,14 @@ std::unique_ptr<Stmt> Parser::objStatement() {
             if (match(TokenType::EQUAL)) {
                 defaultValue = expression();
                 if (!defaultValue) {
-                    return nullptr;
+                    defaultValue = std::make_unique<ErrorExpr>("Expected default value", peek());
                 }
                 if (!params.empty() && !params.back().defaultValue) {
-                    error("Required parameter cannot follow a parameter with a default value\n");
-                    return nullptr;
+                    error("Required parameter cannot follow a parameter with a default value");
                 }
             } else {
                 if (!params.empty() && params.back().defaultValue) {
-                    error("Required parameter cannot follow a parameter with a default value\n");
-                    return nullptr;
+                    error("Required parameter cannot follow a parameter with a default value");
                 }
             }
 
@@ -674,63 +731,63 @@ std::unique_ptr<Stmt> Parser::objStatement() {
     }
 
     if (!match(TokenType::RIGHT_PAREN)) {
-
-                    error("Expected ')' after parameters\n");
-
-        return nullptr;
+        error("Expected ')' after parameters");
+        // Continue — body is still parsable
     }
 
+    std::shared_ptr<BlockStmt> body;
     if (!match(TokenType::LEFT_BRACE)) {
+        error("Expected '{' before object body");
+        body = std::make_shared<BlockStmt>(std::vector<std::unique_ptr<Stmt>>{});
+    } else {
+        // Object body members are classified by statement type:
+        // - FuncStmt nodes (from `func` keyword) → methods vector
+        // - All other statements → constructor body (bodyStmts)
+        std::vector<std::unique_ptr<Stmt>> methods;
+        std::vector<std::unique_ptr<Stmt>> bodyStmts;
 
-                    error("Expected '{' before object body\n");
+        while (!isAtEnd() &&
+               peek().type != TokenType::RIGHT_BRACE) {
 
-        return nullptr;
-    }
+            auto stmt = statement();
 
-    // Object body members are classified by statement type:
-    // - FuncStmt nodes (from `func` keyword) → methods vector
-    // - All other statements → constructor body (bodyStmts)
-    // This convention means that `func` declarations inside an obj
-    // are automatically treated as methods, while `let`, `if`,
-    // `while`, expression-statements, etc. run in the constructor.
-    // The separation relies on the parser dispatch in statement():
-    // `func` → funcStatement() returns FuncStmt; everything else
-    // returns a different Stmt subclass.
-    std::vector<std::unique_ptr<Stmt>> methods;
-    std::vector<std::unique_ptr<Stmt>> bodyStmts;
+            if (!stmt) {
+                stmt = std::make_unique<ErrorStmt>("Failed to parse object member", peek());
+            }
 
-    while (!isAtEnd() &&
-           peek().type != TokenType::RIGHT_BRACE) {
-
-        auto stmt = statement();
-
-        if (!stmt) {
-            return nullptr;
+            if (dynamic_cast<FuncStmt*>(stmt.get())) {
+                methods.push_back(std::move(stmt));
+            } else {
+                bodyStmts.push_back(std::move(stmt));
+            }
         }
 
-        if (dynamic_cast<FuncStmt*>(stmt.get())) {
-            methods.push_back(std::move(stmt));
-        } else {
-            bodyStmts.push_back(std::move(stmt));
+        if (!match(TokenType::RIGHT_BRACE)) {
+            error("Expected '}' after object body");
+            // Return partial object — methods and body parsed so far are preserved.
         }
+
+        body = std::make_shared<BlockStmt>(std::move(bodyStmts));
+
+        // We already built the methods vector inside the brace block.
+        // Need to restructure: ObjStmt takes methods as a separate vector.
+        // We can't easily return both body and methods from inside this scope,
+        // so let's restructure the return.
+        return std::make_unique<ObjStmt>(
+            name,
+            std::move(parentNames),
+            std::move(params),
+            std::move(methods),
+            body
+        );
     }
 
-    if (!match(TokenType::RIGHT_BRACE)) {
-
-                    error("Expected '}' after object body\n");
-
-        return nullptr;
-    }
-
-    auto body = std::make_shared<BlockStmt>(
-        std::move(bodyStmts)
-    );
-
+    // This path is taken when '{' was missing — no methods, empty body.
     return std::make_unique<ObjStmt>(
         name,
         std::move(parentNames),
         std::move(params),
-        std::move(methods),
+        std::vector<std::unique_ptr<Stmt>>{},  // no methods
         body
     );
 }
@@ -738,22 +795,24 @@ std::unique_ptr<Stmt> Parser::objStatement() {
 std::unique_ptr<Stmt> Parser::whileStatement() {
 
     if (!match(TokenType::LEFT_PAREN)) {
-
-                    error("Expected '(' after while\n");
-
-        return nullptr;
+        error("Expected '(' after while");
+        // Continue anyway — try to parse condition without '('
     }
 
     auto condition = expression();
+    if (!condition) {
+        condition = std::make_unique<ErrorExpr>("Expected condition after while", peek());
+    }
 
     if (!match(TokenType::RIGHT_PAREN)) {
-
-                    error("Expected ')' after condition\n");
-
-        return nullptr;
+        error("Expected ')' after condition");
+        // Continue — body is still parsable
     }
 
     auto body = statement();
+    if (!body) {
+        body = std::make_unique<ErrorStmt>("Expected body for while loop", peek());
+    }
 
     return std::make_unique<WhileStmt>(
         std::move(condition),
@@ -857,7 +916,7 @@ std::unique_ptr<Expr> Parser::primary() {
         // bind tighter than unary minus: -a[i] → -(a[i]).
         auto right = call();
 
-        if (!right) return nullptr;
+        if (!right) right = std::make_unique<ErrorExpr>("Expected expression after '-'", op);
 
         return std::make_unique<UnaryExpr>(op, std::move(right));
     }
@@ -867,7 +926,7 @@ std::unique_ptr<Expr> Parser::primary() {
         // Same as unary minus: postfix binds tighter than not.
         auto right = call();
 
-        if (!right) return nullptr;
+        if (!right) right = std::make_unique<ErrorExpr>("Expected expression after '!'", op);
 
         return std::make_unique<UnaryExpr>(op, std::move(right));
     }
@@ -877,13 +936,12 @@ std::unique_ptr<Expr> Parser::primary() {
         Token op = previous();
         auto target = call();  // use call() so ++obj.prop chains work
 
-        if (!target) return nullptr;
+        if (!target) target = std::make_unique<ErrorExpr>("Expected target for prefix " + op.lexeme, op);
 
         // target must be assignable
         if (!dynamic_cast<VariableExpr*>(target.get()) &&
             !dynamic_cast<PropertyExpr*>(target.get())) {
-            error("Invalid target for prefix " + op.lexeme);
-            return nullptr;
+            return errorExpr("Invalid target for prefix " + op.lexeme);
         }
 
         return std::make_unique<IncDecExpr>(op, std::move(target), true);
@@ -996,7 +1054,7 @@ std::unique_ptr<Expr> Parser::primary() {
                 auto element = expression();
 
                 if (!element) {
-                    return nullptr;
+                    element = std::make_unique<ErrorExpr>("Expected expression in array literal", peek());
                 }
 
                 elements.push_back(std::move(element));
@@ -1006,7 +1064,11 @@ std::unique_ptr<Expr> Parser::primary() {
 
         if (!match(TokenType::RIGHT_BRACKET)) {
             error("Expected ']' after array literal");
-            return nullptr;
+            // Return partial array with whatever elements we parsed.
+            return std::make_unique<ArrayExpr>(
+                std::move(elements),
+                leftBracket
+            );
         }
 
         return std::make_unique<ArrayExpr>(
@@ -1023,7 +1085,9 @@ std::unique_ptr<Expr> Parser::primary() {
         if (!check(TokenType::RIGHT_BRACE)) {
             do {
                 auto key = expression();
-                if (!key) return nullptr;
+                if (!key) {
+                    key = std::make_unique<ErrorExpr>("Expected dict key", peek());
+                }
 
                 // Bare identifiers in dict keys are treated as string literals
                 // (e.g. {name: "Vora"} — "name" is the string key, not a variable).
@@ -1033,11 +1097,14 @@ std::unique_ptr<Expr> Parser::primary() {
 
                 if (!match(TokenType::COLON)) {
                     error("Expected ':' after dict key");
-                    return nullptr;
+                    // Skip this malformed pair and continue.
+                    continue;
                 }
 
                 auto value = expression();
-                if (!value) return nullptr;
+                if (!value) {
+                    value = std::make_unique<ErrorExpr>("Expected dict value", peek());
+                }
 
                 pairs.push_back({std::move(key), std::move(value)});
             } while (match(TokenType::COMMA));
@@ -1045,7 +1112,8 @@ std::unique_ptr<Expr> Parser::primary() {
 
         if (!match(TokenType::RIGHT_BRACE)) {
             error("Expected '}' after dict literal");
-            return nullptr;
+            // Return partial dict with whatever pairs we parsed.
+            return std::make_unique<DictExpr>(std::move(pairs), leftBrace);
         }
 
         return std::make_unique<DictExpr>(std::move(pairs), leftBrace);
@@ -1056,15 +1124,14 @@ std::unique_ptr<Expr> Parser::primary() {
 
         if (!match(TokenType::RIGHT_PAREN)) {
             error("Expected ')' after expression");
-            return nullptr;
+            // Return partial grouping — the inner expression is still valid.
+            return std::make_unique<GroupingExpr>(std::move(expr));
         }
 
         return std::make_unique<GroupingExpr>(std::move(expr));
     }
 
-    error("Unexpected token: " + peek().lexeme);
-    advance();  // consume the bad token so we don't loop on it
-    return std::make_unique<LiteralExpr>(nullptr);  // placeholder
+    return errorExpr("Unexpected token: " + peek().lexeme);
 }
 
 std::unique_ptr<Expr> Parser::finishCall(
@@ -1080,7 +1147,7 @@ std::unique_ptr<Expr> Parser::finishCall(
             auto argument = expression();
 
             if (!argument) {
-                return nullptr;
+                argument = std::make_unique<ErrorExpr>("Expected expression", peek());
             }
 
             arguments.push_back(
@@ -1094,7 +1161,12 @@ std::unique_ptr<Expr> Parser::finishCall(
 
         error("Expected ')' after arguments");
 
-        return nullptr;
+        // Return partial call with whatever arguments we parsed.
+        return std::make_unique<CallExpr>(
+            std::move(callee),
+            std::move(arguments),
+            previous()
+        );
     }
 
     return std::make_unique<CallExpr>(
@@ -1108,8 +1180,9 @@ std::unique_ptr<Expr> Parser::call() {
 
     auto expr = primary();
 
+    // Safety: primary() always returns a node now (ErrorExpr at minimum).
     if (!expr) {
-        return nullptr;
+        expr = std::make_unique<ErrorExpr>("Expected expression", peek());
     }
 
     while (true) {
@@ -1121,7 +1194,7 @@ std::unique_ptr<Expr> Parser::call() {
             );
 
             if (!expr) {
-                return nullptr;
+                return std::make_unique<ErrorExpr>("Failed to parse call", previous());
             }
 
             continue;
@@ -1132,12 +1205,18 @@ std::unique_ptr<Expr> Parser::call() {
             auto indexExpr = expression();
 
             if (!indexExpr) {
-                return nullptr;
+                indexExpr = std::make_unique<ErrorExpr>("Expected index expression", peek());
             }
 
             if (!match(TokenType::RIGHT_BRACKET)) {
                 error("Expected ']' after index expression");
-                return nullptr;
+                // Return partial index expression anyway.
+                expr = std::make_unique<IndexExpr>(
+                    std::move(expr),
+                    std::move(indexExpr),
+                    previous()
+                );
+                continue;
             }
 
             expr = std::make_unique<IndexExpr>(
@@ -1153,7 +1232,16 @@ std::unique_ptr<Expr> Parser::call() {
 
             if (!match(TokenType::IDENTIFIER)) {
                 error("Expected property name after '.'");
-                return nullptr;
+                // Keep the object expression (expr unchanged) — the ErrorExpr
+                // approach would lose the object. Skip the bad token if it's
+                // not a valid start of a new expression.
+                if (!isAtEnd() &&
+                    peek().type != TokenType::DOT &&
+                    peek().type != TokenType::LEFT_PAREN &&
+                    peek().type != TokenType::LEFT_BRACKET) {
+                    advance();  // skip the non-identifier token
+                }
+                continue;
             }
 
             std::string property = previous().lexeme;
@@ -1191,8 +1279,7 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
     auto left = call();
 
     if (!left) {
-        error("Expected expression");
-        return std::make_unique<LiteralExpr>(nullptr);  // placeholder
+        return errorExpr("Expected expression");
     }
 
     while (!isAtEnd() &&
@@ -1207,19 +1294,23 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
         if (op.type == TokenType::QUESTION) {
             auto thenBranch = parsePrecedence(0);
             if (!thenBranch) {
-                error("Expected expression after '?'");
-                return nullptr;
+                thenBranch = std::make_unique<ErrorExpr>("Expected expression after '?'", op);
             }
             if (!match(TokenType::COLON)) {
                 error("Expected ':' in ternary expression");
-                return nullptr;
+                // Return partial ternary with ErrorExpr in else position.
+                left = std::make_unique<TernaryExpr>(
+                    std::move(left),
+                    std::move(thenBranch),
+                    std::make_unique<ErrorExpr>("Missing ':' in ternary", op)
+                );
+                continue;
             }
             // Right-associative: else-branch parsed at opPrec-1 so nested
             // ternaries in the else position bind to the right.
             auto elseBranch = parsePrecedence(opPrec - 1);
             if (!elseBranch) {
-                error("Expected expression after ':'");
-                return nullptr;
+                elseBranch = std::make_unique<ErrorExpr>("Expected expression after ':'", previous());
             }
             left = std::make_unique<TernaryExpr>(
                 std::move(left),
@@ -1244,8 +1335,7 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
         auto right = parsePrecedence(nextPrec);
 
         if (!right) {
-            error("Expected right-hand expression after operator");
-            return nullptr;
+            right = std::make_unique<ErrorExpr>("Expected expression after operator", op);
         }
 
         // =========================
@@ -1288,8 +1378,10 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
                 );
             }
 
+            // Invalid assignment target — report error but return the
+            // right-hand side value so the AST retains something useful.
             error("Invalid assignment target");
-            return nullptr;
+            return right;
         }
 
         // =========================
@@ -1313,8 +1405,9 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
                 );
             }
 
+            // Invalid target — report error but return right-hand side.
             error("Invalid target for compound assignment");
-            return nullptr;
+            return right;
         }
 
         // =========================
@@ -1349,14 +1442,13 @@ std::unique_ptr<Stmt> Parser::continueStatement() {
 std::unique_ptr<Stmt> Parser::tryStatement() {
     Token tryToken = previous();  // the 'try' keyword
 
+    std::unique_ptr<Stmt> tryBlock;
     if (!match(TokenType::LEFT_BRACE)) {
         error("Expected '{' after 'try'");
-        return nullptr;
-    }
-
-    auto tryBlock = blockStatement();
-    if (!tryBlock) {
-        return nullptr;
+        tryBlock = std::make_unique<ErrorStmt>("Expected block after 'try'", tryToken);
+    } else {
+        tryBlock = blockStatement();
+        // blockStatement() now never returns nullptr (returns partial block on error)
     }
 
     std::string catchVar;
@@ -1365,29 +1457,26 @@ std::unique_ptr<Stmt> Parser::tryStatement() {
     if (match(TokenType::CATCH)) {
         if (!match(TokenType::LEFT_PAREN)) {
             error("Expected '(' after 'catch'");
-            return nullptr;
+            // Continue anyway
         }
 
         if (!match(TokenType::IDENTIFIER)) {
             error("Expected catch variable name");
-            return nullptr;
+            catchVar = "?error?";
+        } else {
+            catchVar = previous().lexeme;
         }
-
-        catchVar = previous().lexeme;
 
         if (!match(TokenType::RIGHT_PAREN)) {
             error("Expected ')' after catch variable");
-            return nullptr;
+            // Continue anyway
         }
 
         if (!match(TokenType::LEFT_BRACE)) {
             error("Expected '{' after catch clause");
-            return nullptr;
-        }
-
-        catchBlock = blockStatement();
-        if (!catchBlock) {
-            return nullptr;
+            catchBlock = std::make_unique<ErrorStmt>("Expected block for catch", peek());
+        } else {
+            catchBlock = blockStatement();
         }
     }
 
@@ -1396,18 +1485,15 @@ std::unique_ptr<Stmt> Parser::tryStatement() {
     if (match(TokenType::FINALLY)) {
         if (!match(TokenType::LEFT_BRACE)) {
             error("Expected '{' after 'finally'");
-            return nullptr;
-        }
-
-        finallyBlock = blockStatement();
-        if (!finallyBlock) {
-            return nullptr;
+            finallyBlock = std::make_unique<ErrorStmt>("Expected block for finally", peek());
+        } else {
+            finallyBlock = blockStatement();
         }
     }
 
     if (!catchBlock && !finallyBlock) {
         error("Expected 'catch' or 'finally' after 'try'");
-        return nullptr;
+        // Still return a partial TryStmt with just the try block.
     }
 
     return std::make_unique<TryStmt>(
@@ -1423,7 +1509,7 @@ std::unique_ptr<Stmt> Parser::throwStatement() {
 
     auto value = expression();
     if (!value) {
-        return nullptr;
+        value = std::make_unique<ErrorExpr>("Expected expression after 'throw'", keyword);
     }
 
     return std::make_unique<ThrowStmt>(
@@ -1440,8 +1526,7 @@ std::unique_ptr<Stmt> Parser::importStatement() {
     Token keyword = previous();  // 'import' token
 
     if (!match(TokenType::STRING)) {
-        error("Expected string path after 'import'");
-        return nullptr;
+        return errorStmt("Expected string path after 'import'");
     }
 
     std::string modulePath = previous().lexeme;
@@ -1450,8 +1535,7 @@ std::unique_ptr<Stmt> Parser::importStatement() {
     std::string alias;
     if (match(TokenType::AS)) {
         if (!match(TokenType::IDENTIFIER)) {
-            error("Expected identifier after 'as'");
-            return nullptr;
+            return errorStmt("Expected identifier after 'as'");
         }
         alias = previous().lexeme;
     }
@@ -1465,30 +1549,26 @@ std::unique_ptr<Stmt> Parser::fromImportStatement() {
     Token keyword = previous();  // 'from' token
 
     if (!match(TokenType::STRING)) {
-        error("Expected string path after 'from'");
-        return nullptr;
+        return errorStmt("Expected string path after 'from'");
     }
 
     std::string modulePath = previous().lexeme;
 
     if (!match(TokenType::IMPORT)) {
-        error("Expected 'import' after path in from-import");
-        return nullptr;
+        return errorStmt("Expected 'import' after path in from-import");
     }
 
     // Parse comma-separated identifier list
     std::vector<std::string> names;
     do {
         if (!match(TokenType::IDENTIFIER)) {
-            error("Expected identifier in import list");
-            return nullptr;
+            return errorStmt("Expected identifier in import list");
         }
         names.push_back(previous().lexeme);
     } while (match(TokenType::COMMA));
 
     if (names.empty()) {
-        error("Expected at least one identifier in from-import");
-        return nullptr;
+        return errorStmt("Expected at least one identifier in from-import");
     }
 
     match(TokenType::SEMICOLON);  // optional
@@ -1502,30 +1582,32 @@ std::unique_ptr<Stmt> Parser::exportStatement() {
     if (match(TokenType::FUNC)) {
         // export func name(...) { ... }
         if (check(TokenType::LEFT_PAREN)) {
-            error("Cannot export anonymous function");
-            return nullptr;
+            return errorStmt("Cannot export anonymous function");
         }
         auto stmt = funcStatement();
-        return stmt ? std::make_unique<ExportStmt>(std::move(stmt), keyword) : nullptr;
+        if (!stmt) return errorStmt("Failed to parse exported function");
+        return std::make_unique<ExportStmt>(std::move(stmt), keyword);
     }
 
     if (match(TokenType::LET)) {
         auto stmt = letStatement();
-        return stmt ? std::make_unique<ExportStmt>(std::move(stmt), keyword) : nullptr;
+        if (!stmt) return errorStmt("Failed to parse exported let declaration");
+        return std::make_unique<ExportStmt>(std::move(stmt), keyword);
     }
 
     if (match(TokenType::CONST)) {
         auto stmt = constStatement();
-        return stmt ? std::make_unique<ExportStmt>(std::move(stmt), keyword) : nullptr;
+        if (!stmt) return errorStmt("Failed to parse exported const declaration");
+        return std::make_unique<ExportStmt>(std::move(stmt), keyword);
     }
 
     if (match(TokenType::OBJ)) {
         auto stmt = objStatement();
-        return stmt ? std::make_unique<ExportStmt>(std::move(stmt), keyword) : nullptr;
+        if (!stmt) return errorStmt("Failed to parse exported object");
+        return std::make_unique<ExportStmt>(std::move(stmt), keyword);
     }
 
-    error("Expected func, let, const, or Obj after 'export'");
-    return nullptr;
+    return errorStmt("Expected func, let, const, or Obj after 'export'");
 }
 
 }

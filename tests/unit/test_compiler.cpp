@@ -16,12 +16,13 @@ using namespace vora;
 
 // Helper: lex + parse + compile source, return the compiled Chunk.
 static Chunk compile(const std::string& src) {
-    Lexer lexer(src);
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
     auto tokens = lexer.scanTokens();
-    Parser parser(std::move(tokens));
+    Parser parser(std::move(tokens), reporter);
     auto prog = parser.parse();
     REQUIRE(prog != nullptr);
-    Compiler compiler;
+    Compiler compiler(reporter);
     Chunk chunk = compiler.compile(prog.get());
     REQUIRE_FALSE(compiler.hadError);
     return chunk;

@@ -10,7 +10,8 @@ namespace vora {
 // keep the VM execution loop lean.
 // =========================================================================
 
-// Truthiness: null, false, 0, 0.0, "" are falsy; everything else is truthy.
+// Truthiness (Python-style): null, false, 0, 0.0, "", [], {} are falsy;
+// everything else is truthy.
 bool isTruthy(const Value& value);
 
 // Equality with cross-type numeric promotion (42 == 42.0).

@@ -19,15 +19,17 @@ using namespace vora;
 // Helper: compile + interpret source, return (result, VM reference).
 // The VM outlives the call so callers can inspect vm state.
 static std::pair<InterpretResult, VM> run(const std::string& src) {
-    Lexer lexer(src);
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
     auto tokens = lexer.scanTokens();
-    Parser parser(std::move(tokens));
+    Parser parser(std::move(tokens), reporter);
     auto prog = parser.parse();
     REQUIRE(prog != nullptr);
-    Compiler compiler;
+    Compiler compiler(reporter);
     Chunk chunk = compiler.compile(prog.get());
     REQUIRE_FALSE(compiler.hadError);
     VM vm;
+    vm.errorReporter = &reporter;
     vm.initGlobals(compiler.getGlobalNames());
     // Register all user-facing builtins from the centralized module.
     registerBuiltins(vm);
@@ -69,7 +71,22 @@ TEST_CASE("vm_isTruthy_string") {
 
 TEST_CASE("vm_isTruthy_array") {
     auto arr = GcHeap::instance().alloc<Array>();
-    CHECK(isTruthy(Value(arr)));  // empty array is truthy
+    CHECK_FALSE(isTruthy(Value(arr)));  // empty array is falsy (Python-style)
+
+    // Non-empty array is truthy
+    auto arr2 = GcHeap::instance().alloc<Array>();
+    arr2->elements.push_back(Value(static_cast<int64_t>(1)));
+    CHECK(isTruthy(Value(arr2)));
+}
+
+TEST_CASE("vm_isTruthy_dict") {
+    auto dict = GcHeap::instance().alloc<Dict>();
+    CHECK_FALSE(isTruthy(Value(dict)));  // empty dict is falsy (Python-style)
+
+    // Non-empty dict is truthy
+    auto dict2 = GcHeap::instance().alloc<Dict>();
+    dict2->pairs["key"] = Value(static_cast<int64_t>(1));
+    CHECK(isTruthy(Value(dict2)));
 }
 
 // ============================================================================

@@ -5,19 +5,21 @@
 #include <unordered_map>
 
 #include "token.h"
+#include "../common/error_reporter.h"
 
 namespace vora {
 
 class Lexer {
 public:
-    explicit Lexer(std::string source);
+    Lexer(std::string source, ErrorReporter& reporter);
 
     std::vector<Token> scanTokens();
 
-    bool hasError() const { return hadError; }
+    bool hasError() const { return reporter_.hadError(); }
 
 private:
     std::string source;
+    ErrorReporter& reporter_;
 
     std::vector<Token> tokens;
 
@@ -27,7 +29,6 @@ private:
     int line = 1;
     int column = 1;       // current position column
     int startColumn = 1;  // column at `start` (used for token creation)
-    bool hadError = false;
 
 private:
     static const std::unordered_map<std::string, TokenType> keywords;

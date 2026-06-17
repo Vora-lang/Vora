@@ -36,7 +36,8 @@ namespace {
  */
 void runVoraPipeline(const std::string& source) {
     // ── Lex ──────────────────────────────────────────────────────────
-    vora::Lexer lexer(source);
+    vora::StderrErrorReporter reporter(source);
+    vora::Lexer lexer(source, reporter);
     std::vector<vora::Token> tokens;
     try {
         tokens = lexer.scanTokens();
@@ -45,7 +46,7 @@ void runVoraPipeline(const std::string& source) {
     }
 
     // ── Parse ────────────────────────────────────────────────────────
-    vora::Parser parser(tokens);
+    vora::Parser parser(tokens, reporter);
     parser.setSource(source);
     auto program = parser.parse();
     if (!program) {
@@ -53,7 +54,7 @@ void runVoraPipeline(const std::string& source) {
     }
 
     // ── Compile ──────────────────────────────────────────────────────
-    vora::Compiler compiler;
+    vora::Compiler compiler(reporter);
     compiler.setSource(source);
     vora::Chunk chunk = compiler.compile(program.get());
     if (compiler.hadError) {

@@ -246,6 +246,10 @@ std::string ASTPrinter::visitYieldExpr(const YieldExpr& expr) {
     return "(yield)";
 }
 
+std::string ASTPrinter::visitErrorExpr(const ErrorExpr& expr) {
+    return "(error \"" + expr.message + "\")";
+}
+
 // =========================================================================
 // StmtVisitor<std::string> — visit methods return strings directly
 // =========================================================================
@@ -459,6 +463,10 @@ std::string ASTPrinter::visitImportStmt(const ImportStmt& stmt) {
 
 std::string ASTPrinter::visitExportStmt(const ExportStmt& stmt) {
     return "(export " + print(stmt.declaration.get()) + ")";
+}
+
+std::string ASTPrinter::visitErrorStmt(const ErrorStmt& stmt) {
+    return "(error-stmt \"" + stmt.message + "\")";
 }
 
 // =========================================================================

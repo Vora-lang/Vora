@@ -15,9 +15,10 @@ using namespace vora;
 
 // Helper: lex + parse + format source, return formatted string.
 static std::string fmt(const std::string& src) {
-    Lexer lexer(src);
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
     auto tokens = lexer.scanTokens();
-    Parser parser(std::move(tokens));
+    Parser parser(std::move(tokens), reporter);
     parser.setSource(src);
     auto prog = parser.parse();
     REQUIRE(prog != nullptr);
@@ -29,9 +30,10 @@ static std::string fmt(const std::string& src) {
 static bool isIdempotent(const std::string& src) {
     std::string first = fmt(src);
     // Re-parse and re-format
-    Lexer lexer(first);
+    StderrErrorReporter reporter(first);
+    Lexer lexer(first, reporter);
     auto tokens = lexer.scanTokens();
-    Parser parser(std::move(tokens));
+    Parser parser(std::move(tokens), reporter);
     parser.setSource(first);
     auto prog = parser.parse();
     if (!prog) return false;
