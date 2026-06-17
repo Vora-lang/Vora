@@ -146,6 +146,12 @@ file(GLOB TEST_FORMATTER    tests/formatter/*.va)
 # VM mode (default) tests
 foreach(test_file ${TEST_LEXER} ${TEST_PARSER} ${TEST_RUNTIME} ${TEST_INTERPRETER} ${TEST_FORMATTER})
     get_filename_component(test_name ${test_file} NAME_WLE)
+
+    # test_input.va requires stdin piping — handled separately below.
+    if(test_name STREQUAL "test_input")
+        continue()
+    endif()
+
     # Strip CMAKE_CURRENT_SOURCE_DIR prefix if present (handles abs paths)
     set(rel_path "${test_file}")
     if(rel_path MATCHES "^${CMAKE_CURRENT_SOURCE_DIR}")
@@ -157,6 +163,42 @@ foreach(test_file ${TEST_LEXER} ${TEST_PARSER} ${TEST_RUNTIME} ${TEST_INTERPRETE
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
 endforeach()
+
+# ── test_input.va — requires piped stdin ────────────────────────────────
+# The test expects three lines: "hello", "", "42" (the empty line tests that
+# input() returns "" for blank lines; the last line has no trailing newline).
+# We write the input to a file at configure time, then use a shell to
+# redirect stdin (add_test COMMAND passes < literally, so a shell is needed).
+#
+# Bracket syntax produces literal LF newlines — std::getline handles them
+# on all platforms.  The \r-strip in builtins.cpp covers terminal CRLF.
+set(TEST_INPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/test_input_data.txt")
+file(WRITE "${TEST_INPUT_FILE}" [=[
+hello
+
+42
+]=])
+
+if(WIN32)
+    # file(GENERATE ...) evaluates $<TARGET_FILE:Vora> at generate time.
+    # Use a multi-line string so the batch file ends with a real newline
+    # (CMake does not interpret \n escape sequences).
+    file(GENERATE
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/run_test_input$<CONFIG>.bat"
+        CONTENT "@$<TARGET_FILE:Vora> \"${CMAKE_CURRENT_SOURCE_DIR}/tests/interpreter/test_input.va\" < \"${TEST_INPUT_FILE}\"
+")
+    add_test(
+        NAME "vm-test_input"
+        COMMAND "${CMAKE_CURRENT_BINARY_DIR}/run_test_input$<CONFIG>.bat"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+else()
+    add_test(
+        NAME "vm-test_input"
+        COMMAND sh -c "\"$<TARGET_FILE:Vora>\" \"${CMAKE_CURRENT_SOURCE_DIR}/tests/interpreter/test_input.va\" < \"${TEST_INPUT_FILE}\""
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+endif()
 
 # ──────────────────────────────────────────────────
 # C++ unit tests (doctest)

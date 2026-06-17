@@ -176,6 +176,10 @@ void registerBuiltins(VM& vm) {
                 std::cin.clear();
                 return nullptr;
             }
+            // Strip trailing \r (Windows CRLF) for cross-platform consistency.
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
             return GcHeap::instance().alloc<GcString>(line);
         });
 
