@@ -16,6 +16,7 @@ public:
         std::string name,
         int arity,
         int requiredArity,
+        bool hasRest,
         const FunctionPrototype* prototype
     );
 
@@ -27,6 +28,7 @@ public:
 
     int arity() const { return arity_; }
     int requiredArity() const { return requiredArity_; }
+    bool hasRest() const { return hasRest_; }
     const FunctionPrototype* getPrototype() const { return prototype_; }
     bool isCompiled() const { return prototype_ != nullptr; }
 
@@ -43,6 +45,7 @@ private:
     std::string name_;
     int arity_ = 0;
     int requiredArity_ = 0;
+    bool hasRest_ = false;
     const FunctionPrototype* prototype_ = nullptr;
 };
 

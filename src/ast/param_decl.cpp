@@ -3,8 +3,8 @@
 
 namespace vora {
 
-ParamDecl::ParamDecl(std::string name, std::unique_ptr<Expr> defaultValue)
-    : name(std::move(name)), defaultValue(std::move(defaultValue)) {}
+ParamDecl::ParamDecl(std::string name, std::unique_ptr<Expr> defaultValue, bool isRest)
+    : name(std::move(name)), defaultValue(std::move(defaultValue)), isRest(isRest) {}
 
 ParamDecl::~ParamDecl() = default;
 

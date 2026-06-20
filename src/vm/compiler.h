@@ -34,6 +34,7 @@ struct FunctionPrototype : GcObject {
     Chunk chunk;
     std::vector<UpvalueDescriptor> upvalues;  // captured variables
     bool isGenerator = false;  // true if function body contains yield
+    bool hasRest = false;      // true if function has ...rest parameter
 
     void trace(std::vector<GcObject*>& wl) override {
         // FunctionPrototype doesn't directly reference other GcObjects.
@@ -77,6 +78,10 @@ public:
     explicit Compiler(ErrorReporter& reporter) : errorReporter_(reporter) {}
 
     Chunk compile(const Program* program);
+
+    // When true, expression statements print their value (if non-null)
+    // instead of discarding it. Used by the REPL.
+    bool replMode = false;
 
     // True if any compilation error occurred (constant pool overflow, jump
     // offset overflow, etc.). The caller must check this before using the

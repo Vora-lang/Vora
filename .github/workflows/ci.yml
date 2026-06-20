@@ -104,6 +104,16 @@ jobs:
       - name: Set config name
         run: echo "cfg=${{ matrix.config == 'Debug' && 'debug' || 'release' }}" >> $env:GITHUB_ENV
 
+      # ── WiX v3 (for custom MSI with WixUI + PATH) ──────────────────
+      - name: Install WiX v3
+        if: matrix.config == 'Release' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          curl -L -o /tmp/wix314.zip "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip"
+          mkdir -p C:/WiXv3
+          unzip -o /tmp/wix314.zip -d C:/WiXv3
+          echo "C:/WiXv3" >> $GITHUB_PATH
+
       # ── Configure ──────────────────────────────────────────────────
       - name: Configure (CMake)
         run: cmake --preset "windows-${{ matrix.arch }}-${{ env.cfg }}"
@@ -122,9 +132,13 @@ jobs:
         run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ env.cfg }}" -C ${{ matrix.config }} -R "^unit-" --output-on-failure
 
       # ── Package (Release only) ─────────────────────────────────────
-      - name: Package (.zip / .msi)
+      - name: Package — CPack (.zip + .msi)
         if: matrix.config == 'Release'
         run: cmake --build "build/windows-${{ matrix.arch }}-${{ env.cfg }}" --target package --config ${{ matrix.config }}
+
+      - name: Package — Custom MSI (WixUI + PATH + std)
+        if: matrix.config == 'Release' && matrix.arch != 'x86'
+        run: cmake --build "build/windows-${{ matrix.arch }}-${{ env.cfg }}" --target msi --config ${{ matrix.config }}
 
       - name: Upload packages
         if: matrix.config == 'Release'

@@ -111,7 +111,7 @@ public:
     // Run a constructor chunk with a given instance and arguments.
     // Used by ClassConstructor to execute parent and own constructors
     // in a temporary VM. Resets internal state and runs to completion.
-    InterpretResult runConstructor(const Chunk& chunk,
+    InterpretResult runConstructor(const FunctionPrototype& proto,
                                    const Value& instance,
                                    const std::vector<Value>& args);
 

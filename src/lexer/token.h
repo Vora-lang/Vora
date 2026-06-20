@@ -53,6 +53,7 @@ namespace vora {
         // Punctuation
         COMMA, // ,
         DOT, // .
+        DOT_DOT_DOT, // ...
         COLON, // :
         QUESTION, // ?
         SEMICOLON, // ;

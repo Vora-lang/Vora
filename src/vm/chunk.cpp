@@ -22,6 +22,7 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_FALSE:          return "OP_FALSE";
         case OpCode::OP_POP:            return "OP_POP";
         case OpCode::OP_DUP:            return "OP_DUP";
+        case OpCode::OP_PRINT_POP:      return "OP_PRINT_POP";
         case OpCode::OP_POPN:           return "OP_POPN";
         case OpCode::OP_NEGATE:         return "OP_NEGATE";
         case OpCode::OP_NOT:            return "OP_NOT";

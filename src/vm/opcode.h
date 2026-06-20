@@ -15,6 +15,7 @@ enum class OpCode : uint8_t {
     // Stack
     OP_POP,         // pop top of stack
     OP_DUP,         // duplicate top of stack
+    OP_PRINT_POP,   // print top of stack (if non-null) and pop — used by REPL
 
     // Unary
     OP_NEGATE,      // negate top of stack (number)

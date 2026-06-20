@@ -258,7 +258,13 @@ namespace vora {
             break;
 
         case '.':
-            addToken(TokenType::DOT);
+            if (peek() == '.' && peekNext() == '.') {
+                advance();  // second dot
+                advance();  // third dot
+                addToken(TokenType::DOT_DOT_DOT);
+            } else {
+                addToken(TokenType::DOT);
+            }
             break;
 
         case ':':

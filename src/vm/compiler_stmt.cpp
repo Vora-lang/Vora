@@ -382,20 +382,31 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     // Function body starts a new scope with parameters as locals
     fnCompiler.beginScope();
 
-    // Count required params (without defaults)
+    // Detect rest parameter (always last if present)
+    bool hasRest = !stmt.params.empty() && stmt.params.back().isRest;
+
+    // Count required params (without defaults, excluding rest)
     int requiredArity = 0;
     for (const auto& param : stmt.params) {
+        if (param.isRest) break;
         if (!param.defaultValue) requiredArity++;
         else break;  // defaults must come after required params (parser enforces)
     }
-    int totalArity = static_cast<int>(stmt.params.size());
+    int totalArity = hasRest
+        ? static_cast<int>(stmt.params.size()) - 1
+        : static_cast<int>(stmt.params.size());
 
-    // Add parameters as locals (they'll be set by OP_CALL binding)
+    // Add fixed parameters as locals (they'll be bound by callVoraFunction)
     for (const auto& param : stmt.params) {
+        if (param.isRest) break;
         fnCompiler.addLocal(param.name);
     }
+    // Add rest parameter as a local (value set by callVoraFunction as array)
+    if (hasRest) {
+        fnCompiler.addLocal(stmt.params.back().name);
+    }
 
-    // Emit default-parameter preamble for params with defaults
+    // Emit default-parameter preamble for fixed params with defaults
     for (int i = requiredArity; i < totalArity; i++) {
         const auto& param = stmt.params[static_cast<size_t>(i)];
 
@@ -457,6 +468,7 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     proto.name = stmt.name;
     proto.arity = totalArity;
     proto.requiredArity = requiredArity;
+    proto.hasRest = hasRest;
     proto.upvalues = std::move(fnCompiler.upvalues);
     proto.chunk = std::move(fnCompiler.chunk);
     proto.isGenerator = fnCompiler.isGenerator;
@@ -510,20 +522,31 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
             methodCompiler.enclosing = this;
             methodCompiler.chunk.source = chunk.source;  // propagate source for error display
 
-            // Count required params for methods
+            // Detect rest parameter for methods
+            bool mHasRest = !funcStmt->params.empty() && funcStmt->params.back().isRest;
+
+            // Count required params for methods (excluding rest)
             int mRequiredArity = 0;
             for (const auto& mp : funcStmt->params) {
+                if (mp.isRest) break;
                 if (!mp.defaultValue) mRequiredArity++;
                 else break;
             }
-            int mTotalArity = static_cast<int>(funcStmt->params.size());
+            int mTotalArity = mHasRest
+                ? static_cast<int>(funcStmt->params.size()) - 1
+                : static_cast<int>(funcStmt->params.size());
 
             methodCompiler.beginScope();
             // Add 'this' as local at slot 0
             methodCompiler.addLocal("this");
-            // Add parameters (slots 1, 2, ...)
+            // Add fixed parameters (slots 1, 2, ...)
             for (const auto& param : funcStmt->params) {
+                if (param.isRest) break;
                 methodCompiler.addLocal(param.name);
+            }
+            // Add rest parameter as a local
+            if (mHasRest) {
+                methodCompiler.addLocal(funcStmt->params.back().name);
             }
 
             // Emit default-parameter preamble for method params with defaults
@@ -571,27 +594,40 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
             proto->name = funcStmt->name;
             proto->arity = mTotalArity;
             proto->requiredArity = mRequiredArity;
+            proto->hasRest = mHasRest;
             proto->chunk = std::move(methodCompiler.chunk);
             methodProtos.push_back(proto);
         }
     }
 
     // Compile constructor body
-    // Count required params
+    // Detect rest parameter for constructor
+    bool ctorHasRest = !stmt.params.empty() && stmt.params.back().isRest;
+
+    // Count required params (excluding rest)
     int ctorRequiredArity = 0;
     for (const auto& cp : stmt.params) {
+        if (cp.isRest) break;
         if (!cp.defaultValue) ctorRequiredArity++;
         else break;
     }
-    int ctorTotalArity = static_cast<int>(stmt.params.size());
+    int ctorTotalArity = ctorHasRest
+        ? static_cast<int>(stmt.params.size()) - 1
+        : static_cast<int>(stmt.params.size());
 
     Compiler ctorCompiler(errorReporter_);
     ctorCompiler.enclosing = this;
     ctorCompiler.chunk.source = chunk.source;  // propagate source for error display
     ctorCompiler.beginScope();
     ctorCompiler.addLocal("this");  // slot 0
+    // Add fixed parameters (slots 1, 2, ...)
     for (const auto& param : stmt.params) {
+        if (param.isRest) break;
         ctorCompiler.addLocal(param.name);
+    }
+    // Add rest parameter as a local
+    if (ctorHasRest) {
+        ctorCompiler.addLocal(stmt.params.back().name);
     }
 
     // Emit default-parameter preamble for constructor params with defaults
@@ -636,6 +672,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     ctorProto->name = stmt.name;
     ctorProto->arity = ctorTotalArity;
     ctorProto->requiredArity = ctorRequiredArity;
+    ctorProto->hasRest = ctorHasRest;
     ctorProto->chunk = std::move(ctorCompiler.chunk);
 
     // Extract param names for ClassDefinition

@@ -1,6 +1,6 @@
 # Vora 优化路线图
 
-> 最后更新：2026-06-15
+> 最后更新：2026-06-19
 > 基于对代码库的全面审计，按收益/成本比排序。
 
 ---
@@ -13,7 +13,6 @@
 4. [质量工程](#四质量工程)
 5. [时间线建议](#五时间线建议)
 6. [语言缺陷与限制](#六语言缺陷与限制)
-   - 6.8 [I/O 与输入缺陷](#68-io-与输入缺陷)
 
 ---
 
@@ -49,7 +48,6 @@
 |--------|--------|---------|
 | `OP_GET_LOCAL` + `OP_CALL` | `OP_CALL_LOCAL` | 极高（方法调用） |
 | `OP_GET_GLOBAL` + `OP_CALL` | `OP_CALL_GLOBAL` | 高（函数调用） |
-| `OP_CONSTANT` + `OP_GET_LOCAL` | — | 中 |
 | `OP_GET_LOCAL` + `OP_GET_PROPERTY` | `OP_GET_LOCAL_PROP` | 高（链式访问） |
 
 **收益**：解释循环 10-20% 加速。
@@ -103,47 +101,133 @@
 
 ## 二、语言特性
 
-### 2.1 标准库 ⭐⭐⭐
+### 2.1 剩余参数 (Rest Parameters) ✅ 已完成 (v0.22)
 
-当前 `std/` 目录为空。建议首批实现：
+```vora
+func foo(a, b, ...rest) { return rest }
+foo(1, 2, 3, 4)  // rest = [3, 4]
+```
 
-| 模块 | 内容 | 优先级 |
-|------|------|--------|
-| `std/math` | abs/min/max/floor/ceil/sqrt/sin/cos/random | 高 |
-| `std/fs` | readFile/writeFile/exists/listDir | 高 |
-| `std/json` | parse/stringify | 中 |
-| `std/os` | env/getcwd/exit/shell | 中 |
-| `std/regex` | match/replace | 低 |
+- `...name` 必须是最后一个参数
+- 每个函数最多一个 rest
+- rest 不能有默认值
+- 适用于 func、lambda、Obj 构造函数和方法
 
-**实现方式**：NativeFunction 注册，`import "std/math"` 语法糖。
-
-**预估工期**：2-3 周（含 import 语法）
+**实现**：无新 opcode — rest 数组在 `callVoraFunction` / bound method / `runConstructor` 三个调用路径中直接创建。
 
 ---
 
-### 2.2 模块/导入系统 ⭐⭐⭐
+### 2.2 调用端展开 (Spread at Call Site) ⭐⭐
 
 ```vora
-import "math"         // 导入全部
-import { sin, cos } from "math"  // 命名导入
+func add(a, b, c) { return a + b + c }
+let nums = [1, 2, 3]
+add(...nums)  // 等价 add(1, 2, 3)
+```
+
+- `...expr` 在调用参数列表中展开数组为多个参数
+- 可与普通参数混用：`add(0, ...nums, 4)`
+- 仅需修改 `CallExpr` 参数解析 + 编译器 `visitCallExpr`
+
+**收益**：与 2.1 对称，解锁函数式编程模式。
+
+**预估工期**：1-2 天
+
+---
+
+### 2.3 标准库 ⭐⭐⭐
+
+当前 `std/` 目录状态：
+
+| 模块 | 状态 | 内容 |
+|------|------|------|
+| `std/math` | ✅ 已完成 | abs/min/max/floor/ceil/sqrt/sin/cos/random |
+| `std/json` | ✅ 已完成 | parse/stringify |
+| `std/fs` | 🔴 待实现 | readFile/writeFile/exists/listDir |
+| `std/os` | 🔴 待实现 | env/getcwd/exit/shell |
+| `std/regex` | 🔴 待实现 | match/replace（集成 PCRE2 或 RE2） |
+
+**实现方式**：NativeFunction 注册，`import "std/fs"` 语法糖。
+
+**预估工期**：1-2 周（fs + os）；regex 额外 1 周
+
+---
+
+### 2.4 数据结构：Set + 非字符串 Map ⭐⭐⭐
+
+当前只有 `Array`（O(n) 查找）和 `Dict`（仅字符串 key）。补齐：
+
+```vora
+// Set — 去重、成员检测 O(1)
+let s = Set([1, 2, 3])
+s.has(2)       // true
+s.add(4)
+
+// Map — 任意类型 key
+let m = Map()
+m.set("key", 42)
+m.set(123, "value")
+m.set([1,2], "array key")
+```
+
+**实现**：给 `Value` 添加 `std::hash` 特化，`std::unordered_map<Value, Value>` + `std::unordered_set<Value>`。Array/Dict 作为 key 需内容哈希。
+
+**预估工期**：1 周
+
+---
+
+### 2.5 模块/导入系统 ✅ 已完成 (v0.21)
+
+```vora
+import "math"                        // 导入全部
+import { sin, cos } from "math"     // 命名导入
 ```
 
 - 解析 import → 定位文件 → 编译为独立 Chunk → 作为模块对象暴露
 - 循环依赖检测
 - 与标准库目录 `std/` 集成
 
-**预估工期**：2 周
+---
+
+### 2.6 异步/协程 ⭐⭐⭐
+
+当前 Vora 纯同步。generator（`yield`）已实现暂停/恢复，可作为协程基础：
+
+```vora
+// 基于 generator 的 async/await
+func fetchData(url) {
+    let resp = await http.get(url)  // 不阻塞 VM，挂起等待
+    return resp.body
+}
+
+// 并发执行
+let results = await Promise.all([
+    fetchData("/api/users"),
+    fetchData("/api/posts"),
+])
+```
+
+**方案**：
+1. 基于现有 generator 实现协程（generator 已支持 yield/暂停/恢复）
+2. 添加事件循环（timer、I/O 就绪回调）
+3. `async func` 语法糖 → 自动返回 `Promise`
+4. `await` 表达式 → 挂起当前协程直到 Promise resolve
+
+**收益**：服务端/网络编程核心竞争力。
+
+**预估工期**：2-3 周
 
 ---
 
-### 2.3 模式匹配 ⭐⭐
+### 2.7 模式匹配 ⭐⭐
 
 ```vora
 match value {
-    {type: "error", code} => handleError(code)
-    0 | null | false       => handleFalsy()
-    n if n > 0             => handlePositive(n)
-    else                   => handleDefault()
+    {status: "ok", data}  => process(data)
+    {status: "err", code} => handleError(code)
+    0 | null | false      => handleFalsy()
+    n if n > 0            => handlePositive(n)
+    else                  => handleDefault()
 }
 ```
 
@@ -155,32 +239,32 @@ match value {
 
 ---
 
-### 2.4 迭代器协议 ⭐⭐
+### 2.8 迭代器协议 ✅ 已完成 (v0.21)
 
 ```vora
-// 自定义可迭代对象
-Obj Range(start, end) {
-    func iter() {
-        // 返回迭代器对象，含 next() 方法
-    }
-}
-for (let x in Range(1, 10)) { print(x) }
+let gen = iter(countTo(3))
+print(next(gen))  // 1
+print(next(gen))  // 2
+print(next(gen))  // 3
+// next(gen) 抛出 StopIteration
 ```
 
-- 统一 `for-in` 背后的迭代协议
-- Array/Dict/String/Object 自动实现
-- 惰性求值（map/filter/zip 链）
-
-**预估工期**：1-2 周
+- `iter()` / `next()` 内建函数
+- `yield` 生成器（暂停/恢复状态）
+- Array/Dict/String 自动可迭代
+- `StopIteration` 异常可被 catch 捕获
 
 ---
 
-### 2.5 错误类型层级 ⭐
+### 2.9 错误类型层级 ⭐⭐
 
 ```vora
-Obj TypeError(msg) : Error
+Obj HttpError(code, message) : Error
 Obj RangeError(msg) : Error
-try { ... } catch (e if TypeError) { ... }
+
+try { ... }
+catch (e if HttpError) { print(e.code) }
+catch (e) { print("unknown") }
 ```
 
 - 内建 Error 类型 + 子类化
@@ -191,99 +275,76 @@ try { ... } catch (e if TypeError) { ... }
 
 ---
 
+### 2.10 C ABI / FFI ⭐⭐
+
+Vora 当前仅 C++ embedding API。需要 C ABI 以达到 Lua 级别的嵌入能力：
+
+```c
+// C ABI — 任何语言都能宿主
+VoraVM* vm = vora_create_vm();
+vora_eval(vm, "print('hello')");
+VoraValue result = vora_call(vm, "myFunc", 2, args);
+vora_destroy_vm(vm);
+```
+
+**方案**：
+1. 导出 `extern "C"` 薄封装层（`vora_c_api.h`）
+2. 后续扩展：FFI 调用外部 `.dll`/`.so` 中的任意 C 函数
+
+**收益**：嵌入到 C/Python/Rust/Go/Node.js 等任何支持 C ABI 的宿主。
+
+**预估工期**：1-2 周（C ABI 薄封装）；FFI 额外 2 周
+
+---
+
+### 2.11 解构赋值 ⭐
+
+```vora
+let [a, b] = [1, 2]          // 数组解构
+let {name, age} = person      // Dict 解构
+let [first, ...rest] = arr    // 解构 + 剩余
+func foo({x, y}) { ... }     // 参数解构
+```
+
+**预估工期**：1 周
+
+---
+
+### 2.12 列表/Dict 推导式 ⭐
+
+```vora
+let evens = [x for x in range(10) if x % 2 == 0]
+let squares = {x: x*x for x in [1,2,3]}  // {1:1, 2:4, 3:9}
+```
+
+**预估工期**：1 周（AST 展开为 for-in + if + push）
+
+---
+
 ## 三、工具链
 
-### 3.1 LSP 服务器 ⭐⭐⭐
+### 3.1 LSP 服务器 ✅ 已完成
 
-基于现有 lexer/parser/compiler，实现 Language Server Protocol：
+基于现有 lexer/parser/compiler，Vora-LSP 仓库（`D:\Vora-LSP`）提供：
 
-**目标功能**：
 - 诊断（编译错误实时提示）
 - 补全（变量/函数/方法/属性）
 - 跳转定义 / 查找引用
 - 悬停类型提示
-- 格式化（已有 formatter）
+- 格式化（已有 SourceFormatter）
+- VS Code 扩展
 
-**预估总工期**：6-8 周（含前置工作 3-5 周 + 协议实现 2-3 周）
-
-#### 3.1.1 前置工作（阻塞级 — 必须先行完成）
-
-##### #1 ErrorReporter 抽象（2-3 天）
-将分散在各组件中的 `printSourceLine(std::cerr, ...)` 调用统一为 `ErrorReporter` 接口：
-- 创建 `Severity` 枚举、`Diagnostic` 结构体、`ErrorReporter` 抽象基类
-- 提供 `StderrErrorReporter`（保持现有 CLI 行为）
-- Lexer、Parser、Compiler、VM 全部通过 `ErrorReporter&` 报告错误
-- 为 LSP 的 `textDocument/publishDiagnostics` 打下基础
-
-##### #2 错误容忍解析 + AST 保留（3-5 天）
-当前 Parser 在 `hadError` 时返回 `nullptr`，AST 全部丢弃。LSP 需要：
-- 引入 `ErrorExpr` / `ErrorStmt` 占位节点
-- 增强 `synchronize()` 恢复粒度
-- 即使有语法错误也保留尽可能多的 AST 节点
-- 支持补全、跳转等需要部分 AST 的场景
-
-##### #3 JSON-RPC 库引入（1 天）
-项目目前零 JSON 处理能力。LSP 基于 JSON-RPC 2.0：
-- 引入 nlohmann/json（header-only，MIT 协议）
-- 实现 stdio 传输层（Content-Length 头部解析）
-- 请求/响应/通知消息路由框架
-
-##### #4 独立语义分析 Pass（5-7 天）
-当前变量解析、作用域检查、const 检查全部夹杂在 Compiler 的字节码生成中。需要抽取：
-- `SemanticAnalyzer : ExprVisitor<void>, StmtVisitor<void>, ProgramVisitor<void>`
-- `SymbolTable`（作用域链：`{name → Definition}`）
-- 引用收集（每个符号的定义点 + 引用点列表）
-- 类型信息推断（从类型标注和使用模式）
-- 诊断产出（未定义变量、未使用变量、类型不匹配…）
-
-#### 3.1.2 重要前置（影响功能完整度）
-
-##### #5 UTF-16 位置映射（1-2 天）
-LSP 要求 UTF-16 码元偏移，Vora 内部使用 1-based line + column（UTF-8 字节）：
-- `TextPosition` 双向映射
-- 对 ASCII 源码恒等，非 ASCII 需处理
-
-##### #6 Per-Document 状态管理（2-3 天）
-- `DocumentState`：URI、源码、Token[]、AST、SymbolTable、Diagnostic[]
-- 增量更新支持（`textDocument/didChange`）
-- 常驻内存、响应增量变更
-
-##### #7 跨文件模块索引（3-4 天）
-- `ModuleIndex`：不执行代码解析 import 路径、提取导出符号
-- `resolveModulePath()` 复用
-- `workspaceSymbol` 查询基础
-
-#### 3.1.3 协议实现（前置完成后）
-
-| LSP 方法 | 依赖的前置工作 | 工作量 |
-|----------|--------------|--------|
-| `textDocument/publishDiagnostics` | #1, #4 | 2 天 |
-| `textDocument/completion` | #1, #2, #4 | 3 天 |
-| `textDocument/definition` | #1, #2, #4, #7 | 2 天 |
-| `textDocument/references` | #1, #2, #4, #7 | 2 天 |
-| `textDocument/hover` | #1, #2, #4 | 2 天 |
-| `textDocument/formatting` | 已有 formatter | 1 天 |
-| `textDocument/documentSymbol` | #2, #4 | 1 天 |
-| `workspace/symbol` | #4, #7 | 1 天 |
-| `initialize` / `shutdown` / 生命周期 | #3 | 2 天 |
-
-#### 3.1.4 实施路线
-
-```
-第 1 周：  #1 ErrorReporter 抽象 + #3 JSON-RPC 引入
-第 2 周：  #2 错误容忍解析 (前半)
-第 3 周：  #2 错误容忍解析 (后半) + #4 语义分析 (前半)
-第 4 周：  #4 语义分析 (后半) + #5 位置映射
-第 5 周：  #6 Document 状态管理 + #7 跨文件索引
-第 6-7 周：协议实现（diagnostics → completion → goto-def → hover）
-第 8 周：  测试、打磨、编辑器插件（VS Code extension）
-```
+前置工作（全部完成）：
+- ✅ ErrorReporter 抽象 + DiagnosticCollector（`src/common/`）
+- ✅ 错误容忍解析（ErrorExpr/ErrorStmt + synchronize() + 括号深度跟踪）
+- ✅ JSON-RPC 库（`src/json_rpc/`：parse/serialize + stdio transport + message router）
+- ✅ 语义分析 Pass
 
 ---
 
-### 3.2 调试器协议 ⭐⭐
+### 3.2 调试器协议 (DAP) ⭐⭐
 
-Debug Adapter Protocol (DAP) 实现：
+Debug Adapter Protocol 实现：
 
 - 断点（行断点、条件断点）
 - 单步（step in/out/over）
@@ -300,7 +361,7 @@ Debug Adapter Protocol (DAP) 实现：
 
 ```bash
 vora init          # 创建项目骨架
-vpm install json  # 安装依赖
+vpm install json   # 安装依赖
 vora build         # 构建项目
 vora run           # 运行主入口
 ```
@@ -352,7 +413,7 @@ cmake --preset windows-x64-release
 
 ### 4.3 测试覆盖率提升 ⭐
 
-- 当前 228 C++ 单元测试 + 23 语言测试 + 29 示例
+- 当前 303 C++ 单元测试（942 断言）+ 42 语言测试 + 39 示例
 - 缺少：边界值测试、并发/压力测试、回归套件自动化
 - 目标：行覆盖率 >85%
 
@@ -376,31 +437,35 @@ cmake --preset windows-x64-release
 ## 五、时间线建议
 
 ```
-2026 Q3 (7-9月)
-├── 2.1 标准库（math/fs/json）
-├── 2.2 模块/导入系统
-├── 4.1 性能基准套件
-├── 4.4 CI 矩阵扩展
-└── 1.2 Superinstruction 合并
+2026 Q3 (7-9月) — 补齐基础设施 ⭐
+├── 2.2 调用端展开 ...expr          ← 与 rest 对称，极低成本
+├── 2.3 标准库 std/fs + std/os      ← 文件 I/O + 系统调用
+├── 2.4 Set + Map 数据结构           ← 基础数据结构补全
+├── 2.9 错误类型层级                  ← Error 基类 + 按类型 catch
+├── 2.10 C ABI 导出                  ← Lua 级嵌入能力
+└── 4.1 性能基准套件
 
-2026 Q4 (10-12月)
-├── 1.1 NaN-boxing
-├── 2.4 迭代器协议
-├── 2.5 错误类型层级
-├── 3.4 文档生成器
-└── 4.3 测试覆盖率提升
+2026 Q4 (10-12月) — 语言竞争力 ⭐⭐
+├── 1.1 NaN-boxing                   ← 2-5× 数值性能
+├── 1.2 Superinstruction 合并        ← 10-20% 解释器加速
+├── 2.3 std/regex                    ← 正则表达式（PCRE2）
+├── 2.7 模式匹配                     ← 告别 if-else 链
+├── 2.11 解构赋值                    ← let [a,b]=arr
+└── 2.12 列表/Dict 推导式            ← [x for x in arr if ...]
 
-2027 Q1 (1-3月)
-├── 1.3 GC 分代回收
-├── 2.3 模式匹配
-├── 3.1 LSP 服务器
-└── 4.2 Fuzzer 增强
+2027 Q1 (1-3月) — 生产级能力 ⭐⭐⭐
+├── 2.6 异步/协程                    ← async/await + 事件循环
+├── 1.3 GC 分代回收                  ← 暂停时间 1/10
+├── 3.2 调试器 DAP                   ← 断点 + 单步 + 变量查看
+├── 4.2 Fuzzer 增强
+└── 4.4 CI 矩阵扩展
 
-2027 Q2+
+2027 Q2+ — 生态建设
 ├── 1.4 常量池共享 + 内联
-├── 3.2 调试器协议
+├── 1.5 JIT 编译（研究阶段）
 ├── 3.3 包管理器
-└── 1.5 JIT 编译（研究阶段）
+├── 3.4 文档生成器
+└── 4.3 测试覆盖率持续提升
 ```
 
 ---
@@ -413,72 +478,72 @@ cmake --preset windows-x64-release
 
 | 缺陷 | 严重度 | 说明 | 示例 |
 |------|--------|------|------|
-| **`return` 必须带值** | ~~🔴 高~~ ✅ 已修复 | ~~不支持 void return；空返回必须写 `return null`。~~ 现已支持 `return` / `return;` (void return) | `func f() { return }` ✅ / `func f() { return; }` ✅ |
-| **一元负号绑定强于下标** | ~~🔴 高~~ ✅ 已修复 | ~~`-a[i]` 被解析为 `(-a)[i]`（先对数组 a 取负，再下标），而非 `-(a[i])`。~~ 现已修复：`-a[i]` 正确解析为 `-(a[i])`，一元 `-` / `!` 的操作数改用 `call()` 解析，后置运算符绑定更紧 | `-nums[0]` ✅ → `-(nums[0])` |
-| **控制流关键字后不能有分号** | ~~🟡 中~~ ✅ 已修复 | ~~`break;` / `continue;` / `return;` (无值) 即报解析错误。~~ `break;` / `continue;` / `return;` 现已支持（分号可选） | `break;` ✅ / `break` ✅ |
-| **不支持 C 风格 `for` 循环** | ~~🟡 中~~ ✅ 已修复 | ~~必须用 `for i in range(...)` / `for v in arr` 替代。~~ 现已支持 `for (let i=0; i<n; i=i+1) { ... }`，与 for-in 并存，通过 `for (` vs `for IDENTIFIER` 区分 | `for (let i=0; i<5; i=i+1) {...}` ✅ |
-| **不支持匿名函数表达式** | ~~🟡 中~~ ✅ 已修复 | ~~所有函数必须有名字。~~ 现已支持 `func(x) { return x * 2 }` lambda 表达式，可用作值传递、赋值给变量、作为回调、支持闭包捕获 | `let f = func(x) { return x * 2 }` ✅ |
-| **类定义关键字为 `Obj`（非直觉）** | 🟢 低 | `class` / `obj` (小写) 均为未定义变量，只有 `Obj` (大写 O) 是关键字：特性 | `Obj Point(x, y) { ... }` |
+| **`return` 必须带值** | ✅ 已修复 | 现已支持 `return` / `return;` (void return) | `func f() { return }` ✅ |
+| **一元负号绑定强于下标** | ✅ 已修复 | `-a[i]` 正确解析为 `-(a[i])` | `-nums[0]` ✅ |
+| **控制流关键字后不能有分号** | ✅ 已修复 | `break;` / `continue;` / `return;` 现已支持 | `break;` ✅ |
+| **不支持 C 风格 `for` 循环** | ✅ 已修复 | 现已支持 `for (let i=0; i<n; i=i+1) {...}` | ✅ |
+| **不支持匿名函数表达式** | ✅ 已修复 | 现已支持 `func(x) { return x * 2 }` lambda | ✅ |
+| **类定义关键字为 `Obj`（非直觉）** | 🟢 低 | `class` / `obj` (小写) 均为未定义变量，只有 `Obj` (大写 O) 是关键字 | `Obj Point(x, y) { ... }` |
 
 ### 6.2 闭包与递归限制
 
 | 限制 | 严重度 | 说明 |
 |------|--------|------|
-| **闭包修改 + 局部递归 = VM 挂死** | ~~🔴 高~~ ✅ 已修复 | ~~同时在一个局部函数内修改捕获变量且递归调用自身，VM 进入无限循环。~~ Upvalue 间接引用（shared_ptr&lt;Upvalue&gt; 共享栈槽指针）修复了此问题。闭包修改和局部递归可安全组合使用 | `x = x + 1; return inner(n-1)` ✅ |
-| **局部函数自递归边缘情况** | ~~🟡 中~~ ✅ 已验证 | ~~函数名在编译函数体之前预分配为局部变量；边缘情况未充分测试。~~ 已添加 12 项边缘测试覆盖：嵌套递归、多 upvalue 捕获、闭包返回自递归、Ackermann、try/catch 内递归、深递归(50层)等 | `func f() { func fact(n) { ... fact(n-1) } }` ✅ |
-| **无尾调用优化 (TCO)** | ~~🟡 中~~ ✅ 已修复 | ~~深度递归必然栈溢出；CPS 转换风格不现实。~~ 现已实现 TCO：当 `return` 后直接跟函数调用且不在 try/finally 内时，编译器发射 `OP_TAIL_CALL` 复用当前调用帧。支持无限尾递归（已验证 10000 层），对非 Vora 函数优雅降级为常规调用 | `return f(args)` ✅ |
-| **局部函数互递归 (mutual recursion)** | 🟡 中 | 同一作用域内两个局部函数互相调用需要前向声明；全局函数互递归已支持。局部互递归需编译器两遍扫描（先收集函数名再编译体），当前单遍编译器不支撑 | `func a(){b()} func b(){a()}` ❌ (局部，需全局定义) |
-| **Upvalue 裸指针悬垂风险** | ~~🟡 中~~ ✅ 已修复 | ~~Upvalue 以原始 Value* 指向栈向量；若栈因 push_back 扩容重分配，指针全部作废。~~ 已改为基于索引的访问：Upvalue 存储 `std::vector&lt;Value&gt;*` + `size_t slotIndex` + `bool isClosed`，栈向量重分配不影响索引有效性 |
+| **闭包修改 + 局部递归 = VM 挂死** | ✅ 已修复 | Upvalue 间接引用（shared_ptr\<Upvalue\> 共享栈槽指针）修复 |
+| **局部函数自递归边缘情况** | ✅ 已验证 | 12 项边缘测试覆盖 |
+| **无尾调用优化 (TCO)** | ✅ 已修复 | `OP_TAIL_CALL` 复用当前帧，支持无限尾递归 |
+| **局部函数互递归 (mutual recursion)** | 🟡 中 | 同一作用域内两个局部函数互相调用需要前向声明；全局函数互递归已支持 |
+| **Upvalue 裸指针悬垂风险** | ✅ 已修复 | 基于索引的 Upvalue（vector\<Value\>* \+ slotIndex） |
 
 ### 6.3 类型系统缺陷
 
 | 缺陷 | 严重度 | 说明 |
 |------|--------|------|
-| **无 `const` / 不可变语义** | ~~🟡 中~~ ✅ 已修复 | ~~变量永远可变；无法表达"此值不应被修改"的意图。~~ 现已支持 `const` 关键字声明不可变绑定。编译期拒绝 `=`、`+=`、`++`/`--` 对 const 局部变量、全局变量、上值捕获变量的修改 | `const x = 5; x = 10;` ❌ 编译错误 |
-| **无类型标注** | 🟡 中 | 纯动态类型；参数类型错误只在运行时暴露；无编译期检查：特性 |
+| **无 `const` / 不可变语义** | ✅ 已修复 | 编译期拒绝 `=`、`+=`、`++`/`--` 对 const 变量的修改 |
+| **无类型标注** | 🟡 中 | 纯动态类型；参数类型错误只在运行时暴露 |
 | **无泛型** | 🟢 低 | 无法参数化类型：`func identity(x) { return x }` 已是极限 |
-| **`Value` 类型不可扩展** | 🟡 中 | `std::variant` 封闭了运行时类型集合；用户无法注册新类型（如 `Date`），只能通过 `Obj` 模拟：特性 |
+| **`Value` 类型不可扩展** | 🟡 中 | `std::variant` 封闭了运行时类型集合；用户无法注册新类型 |
 
 ### 6.4 数据结构缺口
 
 | 缺口 | 严重度 | 说明 |
 |------|--------|------|
-| **无 `Set` / `Map`** | 🔴 高 | 只有 `Array`（线形查找 O(n)）和 `Dict`（字符串 key）。整数 key 的 Map 和去重 Set 必须绕路手写 |
-| **`Dict` 为纯字符串键** | 🟡 中 | 无法用整数、对象等作为字典 key |
-| **无 `Array.sort` / 内建排序** | 🟡 中 | 每次排序必须手写冒泡/插入；`tests/ans/` 里大量算法题文件均自己排序 |
-| **字符串不可变且拼接低效** | 🟡 中 | 每次 `+` 都重新分配新 `GcString`；高频拼接生成大量 GC 垃圾 |
-| **无 `Array.indexOf` 返回 -1 的信号一致性检查** | 🟢 低 | 存在但无编译期提醒——多数算法题依赖此 API |
+| **无 `Set` / `Map`** | 🔴 高 | 只有 `Array`（O(n)）和 `Dict`（仅字符串 key）。→ 已列入 2.4 |
+| **`Dict` 为纯字符串键** | 🟡 中 | 无法用整数、对象等作为字典 key。→ 随 Map 一起解决 |
+| **无 `Array.sort` / 内建排序** | 🟡 中 | 每次排序必须手写 |
+| **字符串不可变且拼接低效** | 🟡 中 | 每次 `+` 都重新分配；高频拼接生成大量 GC 垃圾 |
+| **无 `Array.indexOf` 返回 -1 的信号一致性检查** | 🟢 低 | 存在但无编译期提醒 |
 
 ### 6.5 标准库空白
 
-| 缺口 | 说明 |
-|------|------|
-| **`std/` 目录为空** | 没有任何标准库模块 |
-| **文件 I/O** | 无法读/写文件 |
-| **JSON 解析/序列化** | 无，尽管 `Dict`/`Array` 语法天然贴合 JSON |
-| **数学函数** | 仅有内置 `+` `-` `*` `/` `%` `**`；无 `abs`/`min`/`max`/`sqrt`/`sin`/`cos`/`random` |
-| **正则表达式** | 无字符串模式匹配 |
-| **日期/时间** | 无时间戳或日期运算 |
-| **网络/HTTP** | 无 |
-| **`import` / 模块系统** | 不存在；所有代码必须放入单个 `.va` 文件 |
+| 缺口 | 状态 | 说明 |
+|------|------|------|
+| **`std/` 目录** | 🟡 部分完成 | `std/math.va` ✅、`std/json.va` ✅ |
+| **文件 I/O** | 🔴 待实现 | 无法读/写文件。→ 已列入 2.3 |
+| **JSON 解析/序列化** | ✅ 已完成 | `import "std/json"` |
+| **数学函数** | ✅ 已完成 | `import "std/math"` |
+| **正则表达式** | 🔴 待实现 | 无字符串模式匹配。→ 已列入 2.3 |
+| **日期/时间** | 🔴 待实现 | 无时间戳或日期运算 |
+| **网络/HTTP** | 🔴 待实现 | 无 |
+| **`import` / 模块系统** | ✅ 已完成 | `import "module"` + `import { a, b } from "module"` |
 
 ### 6.6 工具链缺失
 
-| 缺口 | 说明 |
-|------|------|
-| **无 LSP 服务器** | 编辑器无自动补全、跳转定义、实时错误诊断 |
-| **无调试器 (DAP)** | 无法设断点、单步执行、查看变量/调用栈 |
-| **无包管理器** | 无法安装/发布/版本化第三方库 |
-| **错误消息质量一般** | 仅行号 + 错误类型 + 原文；无"你是否想写 X？"类建议；多行错误位置偶尔漂移 |
-| **无 profiler / 性能剖析器** | 无法量化哪段代码消耗最多时间 |
+| 缺口 | 状态 | 说明 |
+|------|------|------|
+| **LSP 服务器** | ✅ 已完成 | Vora-LSP 仓库：诊断、补全、跳转、悬停、格式化 |
+| **调试器 (DAP)** | 🔴 待实现 | 无法设断点、单步执行。→ 已列入 3.2 |
+| **包管理器** | 🔴 待实现 | 无法安装/发布/版本化第三方库。→ 已列入 3.3 |
+| **错误消息质量** | 🟡 改善中 | 已支持源码行 + ^ 插入符位置标记 |
+| **profiler / 性能剖析器** | 🔴 待实现 | 无法量化哪段代码消耗最多时间 |
 
 ### 6.7 互操作性缺陷
 
-| 缺陷 | 说明 |
-|------|------|
-| **仅 C++ embedding API** | 无 C ABI 导出；嵌入方必须链接 C++；不支持其他语言宿主 |
-| **无 FFI** | 无法直接调用 C 动态库 (.dll/.so) 中的函数 |
-| **无跨进程序列化** | 无法将 `Value` 导出为二进制/字节码供其他进程消费 |
+| 缺陷 | 状态 | 说明 |
+|------|------|------|
+| **仅 C++ embedding API** | 🔴 待改进 | 无 C ABI 导出。→ 已列入 2.10 |
+| **无 FFI** | 🔴 待实现 | 无法直接调用 C 动态库。→ 已列入 2.10 |
+| **无跨进程序列化** | 🔴 待实现 | 无法将 `Value` 导出为二进制/字节码 |
 
 ### 6.8 I/O 与输入缺陷
 
@@ -486,38 +551,37 @@ cmake --preset windows-x64-release
 
 #### 6.8.1 `input()` 内置函数缺陷
 
-| 缺陷 | 严重度 | 说明 |
-|------|--------|------|
-| **EOF 无信号** | ~~🔴 高~~ ✅ 已修复 | ~~`std::getline` 到达 EOF 后静默返回空字符串，与纯回车无法区分。~~ 现已修复：EOF 或流错误时 `input()` 返回 `null`，正常空行返回 `""`，可明确区分 |
-| **prompt 未 flush** | ~~🟡 中~~ ✅ 已修复 | ~~`std::cout << valueToString(arguments[0])` 输出 prompt 后未 flush。~~ 已添加 `std::flush`，确保 prompt 在阻塞等待输入前立即可见 |
-| **无输入类型转换辅助** | 🟢 低 | `input()` 永远返回字符串，用户需手动 `int(input(...))`。缺少 `readInt()`、`readFloat()` 等便捷内置函数：特性 |
-| **无输入超时 / 非阻塞读** | 🟡 中 | `std::getline` 无限阻塞。无法实现"等待 N 秒后超时"或"有数据则读，无数据则返回 null"的非阻塞模式：特性 |
-| **错误时无区分** | 🟢 低 | `std::cin` 流错误（如二进制数据混入）与 EOF 均返回 `null`。已通过 `std::cin.clear()` 确保流错误后后续 `input()` 调用仍可用（REPL 中 Ctrl+Z 不会永久破坏 stdin）。流错误本身极为罕见（需底层设备故障），与 EOF 显式区分的实用价值极低 |
-| **仅读一行** | 🟢 低 | 无 `input()` 变体读取多行直到 EOF（`readAll()`）或读取固定字节数（`read(n)`）：特性 |
+| 缺陷 | 状态 | 说明 |
+|------|------|------|
+| **EOF 无信号** | ✅ 已修复 | EOF 或流错误时 `input()` 返回 `null`，正常空行返回 `""` |
+| **prompt 未 flush** | ✅ 已修复 | 已添加 `std::flush` |
+| **无输入类型转换辅助** | 🟢 低 | 缺少 `readInt()`、`readFloat()` 等便捷函数 |
+| **无输入超时 / 非阻塞读** | 🟡 中 | `std::getline` 无限阻塞 |
+| **仅读一行** | 🟢 低 | 无 `readAll()` 或 `read(n)` 变体 |
 
-#### 6.8.2 REPL 交互缺陷：除了“支持多行输入”，其他无用
+#### 6.8.2 REPL 交互缺陷
 
-| 缺陷 | 严重度 | 说明 |
-|------|--------|------|
-| **不支持多行输入** | ~~🔴 高~~ ✅ 已修复 | ~~REPL 逐行独立编译执行，函数/Obj/if/while/for 块必须写在同一行。~~ 现已支持多行输入：REPL 跟踪 `{` `}` 嵌套深度（忽略字符串和注释内的括号），深度 > 0 时切换为 `... ` 提示符并累积输入，平衡后整段编译执行。嵌套块同理 | `func f() {`↵`... return 1`↵`... }` ✅ |
-| **无行编辑 / 历史** | 🟡 中 | 原生 `std::getline` 无 readline/editline 支持。无命令历史（↑/↓ 回翻）、无 Tab 补全、无行编辑（Ctrl+A/E 跳转行首尾）、无语法高亮。可集成 GNU readline 或 Windows 等效库 |
-| **局部变量跨行丢失** | ~~🟡 中~~ ✅ 已修复 | ~~每行新建 `Compiler` + `Chunk`，局部变量作用域在行结束时销毁。~~ 现已修复：① `initGlobals` 从替换改为合并，已存在全局变量的值被保留；② REPL 编译前通过 `seedGlobals()` 将 VM 现有全局表预注入编译器，确保 slot 编号一致。top-level `let`/`const`/`func` 自动跨行持久化 | `let x = 5`↵`print(x)` → `5` ✅ |
-| **无法中断运行中的代码** | ~~🟢 低~~ ✅ 已修复 | ~~Ctrl+C 直接终止整个 REPL 进程。~~ 现已安装 `SIGINT` 处理器：VM 主循环在每个 opcode 前检查 `interruptFlag`（由信号处理器设置），检测到中断后打印 `Interrupted` 并返回 `RUNTIME_ERROR`；REPL 捕获后继续显示 `> ` 提示符 | Ctrl+C → `Interrupted`↵`> ` ✅ |
-| **无会话持久化** | 🟢 低 | 退出 REPL 后变量状态全部丢失，无 `.vora_history` 文件保存历史，无 session save/restore |
+| 缺陷 | 状态 | 说明 |
+|------|------|------|
+| **不支持多行输入** | ✅ 已修复 | 跟踪 `{}` 嵌套深度，`> ` → `... ` 提示符切换 |
+| **无行编辑 / 历史** | 🟡 中 | 无 readline/editline。可集成 GNU readline |
+| **局部变量跨行丢失** | ✅ 已修复 | `seedGlobals()` 合并 VM 现有全局表 |
+| **无法中断运行中的代码** | ✅ 已修复 | SIGINT → `Interrupted` → `> ` 继续 |
+| **无会话持久化** | 🟢 低 | 退出 REPL 后状态丢失 |
 
 #### 6.8.3 输入测试基础设施
 
-| 缺陷 | 严重度 | 说明 |
-|------|--------|------|
-| **`input()` 无自动化测试** | ~~🟡 中~~ ✅ 已修复 | ~~`run_tests.ps1` / `run_tests.sh` 无 stdin 管道机制，input 测试被注释掉。~~ 已添加 `tests/interpreter/test_input.va`（5 项测试：正常读取、空行、无换行符输入、EOF→null、prompt 输出）。测试框架已支持 stdin 管道：所有测试默认 `</dev/null` → EOF→null，`test_input.va` 通过 `printf` / `"data\n"` 管道获得真实测试数据 |
-| **REPL 无可测试性** | 🟢 低 | REPL 行为完全无自动化测试。可引入 expect-style 测试（如 `printf "1+2\n" | Vora.exe --repl`），验证输出含预期结果 |
+| 缺陷 | 状态 | 说明 |
+|------|------|------|
+| **`input()` 无自动化测试** | ✅ 已修复 | `test_input.va` + stdin 管道支持 |
+| **REPL 无可测试性** | 🟢 低 | 可引入 expect-style 测试 |
 
 #### 6.8.4 缺失的 I/O 功能
 
 | 缺失 | 严重度 | 说明 |
 |------|--------|------|
-| **语言内无文件读取 API** | 🟡 中 | 用户无法在 Vora 程序中读取文件——`input()` 仅读 stdin，无 `readFile(path)` 或 `open(path).read()` |
-| **无 `print` 重定向** | 🟢 低 | `print()` 始终写入 stdout；无法重定向到 stderr 或文件 |
+| **语言内无文件读取 API** | 🟡 中 | → 已列入 2.3 `std/fs` |
+| **无 `print` 重定向** | 🟢 低 | `print()` 始终写入 stdout |
 
 ---
 
@@ -528,5 +592,5 @@ cmake --preset windows-x64-release
 | `GcPtr` 无 null-check 语义 | 低 | 所有 `GcPtr` 解引用前应 assert non-null |
 | `valueToString` 递归深度无限制 | 中 | 深层嵌套 Array/Dict 可能栈溢出 |
 | `addValues` 字符串拼接每次分配 | 中 | 可引入 string builder 减少 GC 压力 |
-| `const` 语义（仅编译期） | 低 | ~~已实现编译期 `const` 不可变绑定~~ 运行期无 const 强制；`const` 变量通过 upvalue 被闭包捕获后，若闭包不尝试写入则安全。当前已覆盖所有编译期 mutation 路径 |
+| `const` 语义（仅编译期） | 低 | 运行期无 const 强制；闭包捕获后安全 |
 | Chunk 常量池线形去重 | 低 | O(n²) 查找，大程序编译变慢 |

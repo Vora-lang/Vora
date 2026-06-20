@@ -272,6 +272,7 @@ static void runREPL() {
 
         Compiler compiler(reporter);
         compiler.setSource(source);
+        compiler.replMode = true;  // print expression results in REPL
 
         // Seed the compiler with the VM's current global table so that
         // slot assignments match. Without this, a `let x = 5` line and
@@ -348,25 +349,27 @@ int main(
 
         if (arg == "-h" || arg == "--help") {
             std::cout
-                << "用法: vora [选项] [<文件>]\n"
-                << "        （执行脚本文件）\n"
-                << "  或  vora [选项]\n"
-                << "        （进入 REPL）\n"
-                << "  或  vora fmt [-w] <文件>\n"
-                << "        （格式化源文件）\n"
+                << "Vora " << VORA_VERSION << " — a dynamically typed scripting language\n"
+                << "      JavaScript-like syntax, Lua-level simplicity,\n"
+                << "      Wren-style object orientation.\n"
                 << "\n"
-                << " 其中，选项包括:\n"
+                << "用法:\n"
+                << "  vora                 进入 REPL 交互模式\n"
+                << "  vora <文件>          执行脚本文件\n"
+                << "  vora [选项] <文件>   带选项执行脚本\n"
+                << "  vora fmt [-w] <文件> 格式化源文件\n"
                 << "\n"
-                << "    --ast-printer      打印 AST 并退出\n"
-                << "    --tokens           打印词法单元与字节码并退出\n"
-                << "    --repl             显式进入 REPL 交互模式\n"
-                << "    -h, --help         输出此帮助信息并退出\n"
-                << "    --version          输出版本信息并退出\n";
+                << "选项:\n"
+                << "  --ast-printer        打印 AST 并退出\n"
+                << "  --tokens             打印词法单元与字节码并退出\n"
+                << "  --repl               显式进入 REPL\n"
+                << "  -v, -V, --version    输出版本信息并退出\n"
+                << "  -h, --help           输出此帮助信息并退出\n";
             return 0;
         }
 
-        if (arg == "--version") {
-            std::cout << "Vora 0.21.0\n";
+        if (arg == "-v" || arg == "-V" || arg == "--version") {
+            std::cout << "Vora " << VORA_VERSION << "\n";
             return 0;
         }
 

@@ -435,7 +435,7 @@ void VM::adoptGlobals(const std::vector<std::string>& names,
 // Constructor execution (used by ClassConstructor)
 // =========================================================================
 
-InterpretResult VM::runConstructor(const Chunk& chunk,
+InterpretResult VM::runConstructor(const FunctionPrototype& proto,
                                     const Value& instance,
                                     const std::vector<Value>& args) {
     resetStack();
@@ -443,12 +443,23 @@ InterpretResult VM::runConstructor(const Chunk& chunk,
     frames.clear();
     catchHandlers.clear();
     exceptionInFlight = false;
-    currentChunk = &chunk;
-    ip = chunk.code.data();
+    currentChunk = &proto.chunk;
+    ip = proto.chunk.code.data();
     push(instance);  // 'this' at slot 0
-    for (const auto& a : args) {
-        push(a);
+    // Push fixed params (up to arity), pad with null
+    for (size_t i = 0; i < static_cast<size_t>(proto.arity); i++) {
+        if (i < args.size()) push(args[i]);
+        else push(nullptr);
     }
+    // Push rest parameter if constructor has one
+    if (proto.hasRest) {
+        auto restArray = GcHeap::instance().alloc<Array>();
+        for (size_t i = proto.arity; i < args.size(); i++) {
+            restArray->elements.push_back(args[i]);
+        }
+        push(Value(GcPtr<Array>(restArray)));
+    }
+    currentArgCount = static_cast<uint8_t>(args.size());
     return run();
 }
 
@@ -486,10 +497,25 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
             // Save frame base BEFORE pushing — it must point at 'this'
             size_t newFrameBaseIndex = stackTopIndex;
 
-            // Push 'this' (bound instance) then method arguments as locals
+            // Push 'this' (bound instance)
             push(instance);
-            for (const auto& a : arguments) {
-                push(a);
+
+            // Push fixed method arguments (up to arity), pad with null
+            for (size_t i = 0; i < static_cast<size_t>(proto->arity); i++) {
+                if (i < arguments.size()) {
+                    push(arguments[i]);
+                } else {
+                    push(nullptr);
+                }
+            }
+
+            // Push rest parameter if method has one
+            if (proto->hasRest) {
+                auto restArray = GcHeap::instance().alloc<Array>();
+                for (size_t i = proto->arity; i < arguments.size(); i++) {
+                    restArray->elements.push_back(arguments[i]);
+                }
+                push(Value(GcPtr<Array>(restArray)));
             }
 
             // Set up call frame directly (inline callVoraFunction logic).
@@ -497,6 +523,7 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
             currentChunk = &proto->chunk;
             ip = currentChunk->code.data();
             frameBaseIndex = newFrameBaseIndex;  // points to instance at slot 0
+            currentArgCount = argCount;  // for OP_DEFAULT_PARAM in methods
             return true;
         }
 
@@ -570,18 +597,29 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
 InterpretResult VM::callVoraFunction(const GcPtr<VoraFunction>& func,
                                       const std::vector<Value>& args) {
     // Check arity — range check (must be between requiredArity and arity)
-    if (args.size() < static_cast<size_t>(func->requiredArity()) ||
-        args.size() > static_cast<size_t>(func->arity())) {
-        std::string expected;
-        if (func->requiredArity() == func->arity()) {
-            expected = std::to_string(func->arity());
-        } else {
-            expected = std::to_string(func->requiredArity()) + ".." +
-                       std::to_string(func->arity());
+    // When hasRest is true, there is no upper bound — excess args
+    // are collected into the rest array.
+    if (func->hasRest()) {
+        if (args.size() < static_cast<size_t>(func->requiredArity())) {
+            runtimeErrorOrThrow("Wrong arity: expected at least " +
+                std::to_string(func->requiredArity()) + " but got " +
+                std::to_string(args.size()));
+            return InterpretResult::RUNTIME_ERROR;
         }
-        runtimeErrorOrThrow("Wrong arity: expected " + expected +
-            " but got " + std::to_string(args.size()));
-        return InterpretResult::RUNTIME_ERROR;
+    } else {
+        if (args.size() < static_cast<size_t>(func->requiredArity()) ||
+            args.size() > static_cast<size_t>(func->arity())) {
+            std::string expected;
+            if (func->requiredArity() == func->arity()) {
+                expected = std::to_string(func->arity());
+            } else {
+                expected = std::to_string(func->requiredArity()) + ".." +
+                           std::to_string(func->arity());
+            }
+            runtimeErrorOrThrow("Wrong arity: expected " + expected +
+                " but got " + std::to_string(args.size()));
+            return InterpretResult::RUNTIME_ERROR;
+        }
     }
 
     // Get the function's compiled prototype
@@ -613,7 +651,7 @@ InterpretResult VM::callVoraFunction(const GcPtr<VoraFunction>& func,
     // Store actual arg count for OP_DEFAULT_PARAM
     currentArgCount = static_cast<uint8_t>(args.size());
 
-    // Bind parameters as locals at frameBase.
+    // Bind fixed parameters as locals at frameBase.
     // Pad with null up to total arity (default params will overwrite).
     for (size_t i = 0; i < static_cast<size_t>(func->arity()); i++) {
         if (i < args.size()) {
@@ -621,6 +659,15 @@ InterpretResult VM::callVoraFunction(const GcPtr<VoraFunction>& func,
         } else {
             push(nullptr);
         }
+    }
+
+    // Push rest parameter — collect excess args into an array
+    if (func->hasRest()) {
+        auto restArray = GcHeap::instance().alloc<Array>();
+        for (size_t i = func->arity(); i < args.size(); i++) {
+            restArray->elements.push_back(args[i]);
+        }
+        push(Value(GcPtr<Array>(restArray)));
     }
 
     return InterpretResult::OK;
@@ -776,6 +823,16 @@ InterpretResult VM::run() {
 
             // --- Stack ---
             case OpCode::OP_POP: pop(); break;
+            case OpCode::OP_PRINT_POP: {
+                // REPL mode: print top of stack (if non-null), then pop.
+                // Used by expression statements to echo results like Python.
+                Value v = pop();
+                if (!std::holds_alternative<std::nullptr_t>(v)) {
+                    printValue(v);
+                    std::cout << std::endl;
+                }
+                break;
+            }
             case OpCode::OP_POPN: {
                 uint8_t count = READ_BYTE();
                 if (stackTopIndex < count) {
@@ -1203,7 +1260,7 @@ InterpretResult VM::run() {
                 auto protoPtr = std::get<GcPtr<FunctionPrototype>>(protoVal);
                 auto function = GcHeap::instance().alloc<VoraFunction>(
                     protoPtr->name, protoPtr->arity,
-                    protoPtr->requiredArity, protoPtr.get());
+                    protoPtr->requiredArity, protoPtr->hasRest, protoPtr.get());
 
                 // Read upvalue descriptors and capture upvalues
                 uint8_t upvalueCount = READ_BYTE();
@@ -1786,7 +1843,8 @@ InterpretResult VM::run() {
                 for (const auto& methodProto : cd->methodProtos) {
                     auto methodFn = GcHeap::instance().alloc<VoraFunction>(
                         methodProto->name, methodProto->arity,
-                        methodProto->requiredArity, methodProto.get());
+                        methodProto->requiredArity, methodProto->hasRest,
+                        methodProto.get());
                     cd->methods[methodProto->name] = methodFn;
                 }
 
@@ -1799,7 +1857,8 @@ InterpretResult VM::run() {
                 // Create constructor VoraFunction
                 auto ctorFn = GcHeap::instance().alloc<VoraFunction>(
                     cd->ctorProto->name, cd->ctorProto->arity,
-                    cd->ctorProto->requiredArity, cd->ctorProto.get());
+                    cd->ctorProto->requiredArity, cd->ctorProto->hasRest,
+                    cd->ctorProto.get());
 
                 // Create ClassConstructor — the clean, dedicated constructor callable.
                 auto ctorCallable = GcHeap::instance().alloc<ClassConstructor>(

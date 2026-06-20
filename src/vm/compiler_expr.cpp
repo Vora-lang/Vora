@@ -727,20 +727,31 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
 
     fnCompiler.beginScope();
 
-    // Count required params
+    // Detect rest parameter (always last if present)
+    bool hasRest = !expr.params.empty() && expr.params.back().isRest;
+
+    // Count required params (excluding rest)
     int requiredArity = 0;
     for (const auto& param : expr.params) {
+        if (param.isRest) break;
         if (!param.defaultValue) requiredArity++;
         else break;
     }
-    int totalArity = static_cast<int>(expr.params.size());
+    int totalArity = hasRest
+        ? static_cast<int>(expr.params.size()) - 1
+        : static_cast<int>(expr.params.size());
 
-    // Add parameters as locals
+    // Add fixed parameters as locals
     for (const auto& param : expr.params) {
+        if (param.isRest) break;
         fnCompiler.addLocal(param.name);
     }
+    // Add rest parameter as a local
+    if (hasRest) {
+        fnCompiler.addLocal(expr.params.back().name);
+    }
 
-    // Emit default-parameter preamble
+    // Emit default-parameter preamble for fixed params with defaults
     for (int i = requiredArity; i < totalArity; i++) {
         const auto& param = expr.params[static_cast<size_t>(i)];
 
@@ -787,6 +798,7 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
     proto.name = "<lambda>";
     proto.arity = totalArity;
     proto.requiredArity = requiredArity;
+    proto.hasRest = hasRest;
     proto.upvalues = std::move(fnCompiler.upvalues);
     proto.chunk = std::move(fnCompiler.chunk);
     proto.isGenerator = fnCompiler.isGenerator;

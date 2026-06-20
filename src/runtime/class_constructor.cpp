@@ -36,14 +36,14 @@ Value ClassConstructor::call(const std::vector<Value>& args) {
     for (size_t idx = classDef_->mro.size(); idx > 1; idx--) {
         if (auto parentClass = classDef_->mro[idx - 1]) {
             if (parentClass->ctorProto) {
-                tempVm.runConstructor(parentClass->ctorProto->chunk, instance, args);
+                tempVm.runConstructor(*parentClass->ctorProto, instance, args);
             }
         }
     }
 
     // Run own constructor with all args
     if (ctorFn_->getPrototype()) {
-        tempVm.runConstructor(ctorFn_->getPrototype()->chunk, instance, args);
+        tempVm.runConstructor(*ctorFn_->getPrototype(), instance, args);
     }
 
     return instance;

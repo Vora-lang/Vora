@@ -539,6 +539,23 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
     if (!check(TokenType::RIGHT_PAREN)) {
 
         do {
+            // Check for rest parameter: ...name
+            bool isRest = match(TokenType::DOT_DOT_DOT);
+            if (isRest) {
+                if (!match(TokenType::IDENTIFIER)) {
+                    error("Expected parameter name after '...'");
+                    break;
+                }
+                std::string paramName = previous().lexeme;
+                if (match(TokenType::EQUAL)) {
+                    error("Rest parameter cannot have a default value");
+                }
+                if (check(TokenType::COMMA)) {
+                    error("Rest parameter must be the last parameter");
+                }
+                params.emplace_back(std::move(paramName), nullptr, true);
+                break;  // rest is always last — skip to ')'
+            }
 
             if (!match(TokenType::IDENTIFIER)) {
                 error("Expected parameter name");
@@ -619,6 +636,23 @@ std::unique_ptr<Expr> Parser::funcExpression() {
 
     if (!check(TokenType::RIGHT_PAREN)) {
         do {
+            // Check for rest parameter: ...name
+            bool isRest = match(TokenType::DOT_DOT_DOT);
+            if (isRest) {
+                if (!match(TokenType::IDENTIFIER)) {
+                    return errorExpr("Expected parameter name after '...'");
+                }
+                std::string paramName = previous().lexeme;
+                if (match(TokenType::EQUAL)) {
+                    return errorExpr("Rest parameter cannot have a default value");
+                }
+                if (check(TokenType::COMMA)) {
+                    return errorExpr("Rest parameter must be the last parameter");
+                }
+                params.emplace_back(std::move(paramName), nullptr, true);
+                break;  // rest is always last — skip to ')'
+            }
+
             if (!match(TokenType::IDENTIFIER)) {
                 return errorExpr("Expected parameter name");
             }
@@ -698,6 +732,23 @@ std::unique_ptr<Stmt> Parser::objStatement() {
     if (!check(TokenType::RIGHT_PAREN)) {
 
         do {
+            // Check for rest parameter: ...name
+            bool isRest = match(TokenType::DOT_DOT_DOT);
+            if (isRest) {
+                if (!match(TokenType::IDENTIFIER)) {
+                    error("Expected parameter name after '...'");
+                    break;
+                }
+                std::string paramName = previous().lexeme;
+                if (match(TokenType::EQUAL)) {
+                    error("Rest parameter cannot have a default value");
+                }
+                if (check(TokenType::COMMA)) {
+                    error("Rest parameter must be the last parameter");
+                }
+                params.emplace_back(std::move(paramName), nullptr, true);
+                break;  // rest is always last — skip to ')'
+            }
 
             if (!match(TokenType::IDENTIFIER)) {
                 error("Expected parameter name");

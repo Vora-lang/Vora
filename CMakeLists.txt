@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(Vora VERSION 0.17.0 DESCRIPTION "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.")
+project(Vora VERSION 0.22.0 DESCRIPTION "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -67,12 +67,33 @@ target_compile_features(vora_lib PRIVATE cxx_std_17)
 # Main executable
 # ──────────────────────────────────────────────────
 
+# Generate Windows resource file from template (version from project())
+configure_file(
+    "${CMAKE_SOURCE_DIR}/res/vora.rc.in"
+    "${CMAKE_BINARY_DIR}/vora.rc"
+    @ONLY
+)
+
+# Generate WiX PATH environment fragment (version from project())
+configure_file(
+    "${CMAKE_SOURCE_DIR}/res/path_env.wxs.in"
+    "${CMAKE_BINARY_DIR}/path_env.wxs"
+    @ONLY
+)
+
+# Generate full WiX source for MSI (version + paths from project())
+configure_file(
+    "${CMAKE_SOURCE_DIR}/res/vora.wxs.in"
+    "${CMAKE_BINARY_DIR}/vora.wxs"
+    @ONLY
+)
+
 add_executable(Vora
     src/main.cpp
     $<TARGET_OBJECTS:vora_lib>
 
     # Windows resource file (icon + version info) — ignored on non-MSVC
-    res/vora.rc
+    "${CMAKE_BINARY_DIR}/vora.rc"
 )
 
 target_include_directories(
@@ -81,6 +102,10 @@ target_include_directories(
 
 target_compile_features(
     Vora PRIVATE cxx_std_17
+)
+
+target_compile_definitions(
+    Vora PRIVATE VORA_VERSION="${PROJECT_VERSION}"
 )
 
 # ──────────────────────────────────────────────────
@@ -323,6 +348,8 @@ if(WIN32)
     # ICO is embedded in the .exe via vora.rc — nothing extra to install.
     # But copy the ICO alongside for CPack/NSIS reference.
     install(FILES res/vora.ico DESTINATION ${CMAKE_INSTALL_BINDIR})
+    # Lowercase launcher — lets users type "vora" instead of "Vora"
+    install(FILES res/vora.cmd DESTINATION ${CMAKE_INSTALL_BINDIR})
 elseif(APPLE)
     install(DIRECTORY res/vora.iconset DESTINATION share/vora/icons)
 else()
@@ -343,6 +370,7 @@ endif()
 
 set(CPACK_PACKAGE_NAME "vora")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "Vora")  # not "vora 0.21.0"
 set(CPACK_PACKAGE_VENDOR "Vora-lang")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation."
@@ -414,12 +442,25 @@ endif()
 if(WIN32)
     # Windows: prefer WIX (.msi) if available, fall back to NSIS + ZIP
     set(CPACK_GENERATOR "ZIP")
-    find_program(WIX_CANDLE_EXECUTABLE candle)
-    find_program(WIX_LIGHT_EXECUTABLE light)
+    # WiX v3/v4 (candle + light) — also check extracted v3 binaries
+    find_program(WIX_CANDLE_EXECUTABLE candle
+        HINTS "${WIX_ROOT}" "${WIX_ROOT}/bin"
+              "C:/WiXv3"
+              "C:/Program Files (x86)/WiX Toolset v3.14/bin")
+    find_program(WIX_LIGHT_EXECUTABLE light
+        HINTS "${WIX_ROOT}" "${WIX_ROOT}/bin"
+              "C:/WiXv3"
+              "C:/Program Files (x86)/WiX Toolset v3.14/bin")
     if(WIX_CANDLE_EXECUTABLE AND WIX_LIGHT_EXECUTABLE)
+        # CPack WiX is available but we use a custom WXS for full control
+        # (PATH env, registry, proper install dir). Keep WIX in CPack
+        # for the auto-generated MSI as a fallback.
         list(APPEND CPACK_GENERATOR "WIX")
         set(CPACK_WIX_UPGRADE_GUID "A9A1F393-D8B7-4CD2-9DC6-E2A8DE7EB7A2")
         set(CPACK_WIX_PRODUCT_ICON "${CMAKE_SOURCE_DIR}/res/vora.ico")
+        set(CPACK_WIX_CANDLE_EXECUTABLE "${WIX_CANDLE_EXECUTABLE}")
+        set(CPACK_WIX_LIGHT_EXECUTABLE "${WIX_LIGHT_EXECUTABLE}")
+        set(CPACK_WIX_CANDLE_EXTRA_FLAGS "-arch x64")
     else()
         message(STATUS "WiX Toolset not found — .msi disabled; will build .zip only")
         message(STATUS "  Install WiX: dotnet tool install -g wix")
@@ -460,3 +501,33 @@ endif()
 message(STATUS "CPack generators: ${CPACK_GENERATOR}")
 
 include(CPack)
+
+# ── Custom MSI target (full-featured: WixUI + PATH env + registry + bin/std) ─
+# Uses WiX v3 candle.exe + light.exe (from C:/WiXv3) to build from the
+# configured res/vora.wxs.in template. WiX v3 is used because WiX v7's
+# WixUI extension has breaking changes that make UIRef unusable.
+if(WIN32)
+    find_program(WIX_CANDLE candle HINTS "C:/WiXv3")
+    find_program(WIX_LIGHT light HINTS "C:/WiXv3")
+    if(WIX_CANDLE AND WIX_LIGHT)
+        # Determine the WiX tools directory for -ext argument
+        get_filename_component(WIX_TOOLS_DIR "${WIX_CANDLE}" DIRECTORY)
+
+        add_custom_target(msi
+            # Step 1: compile .wxs → .wixobj
+            COMMAND "${WIX_CANDLE}" -nologo -arch x64
+                -out "${CMAKE_BINARY_DIR}/vora.wixobj"
+                "${CMAKE_BINARY_DIR}/vora.wxs"
+            # Step 2: link .wixobj → .msi
+            COMMAND "${WIX_LIGHT}" -nologo
+                -ext "${WIX_TOOLS_DIR}/WixUIExtension.dll"
+                -out "${CMAKE_BINARY_DIR}/vora-${PROJECT_VERSION}-Windows-AMD64.msi"
+                "${CMAKE_BINARY_DIR}/vora.wixobj"
+            DEPENDS Vora vora-lsp "${CMAKE_BINARY_DIR}/vora.wxs"
+            COMMENT "Building MSI with WiX v3 + WixUI..."
+        )
+        message(STATUS "MSI target enabled (candle: ${WIX_CANDLE}, light: ${WIX_LIGHT})")
+    else()
+        message(STATUS "MSI target disabled (WiX v3 candle/light not found)")
+    endif()
+endif()

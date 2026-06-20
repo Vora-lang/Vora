@@ -9,11 +9,13 @@ VoraFunction::VoraFunction(
     std::string name,
     int arity,
     int requiredArity,
+    bool hasRest,
     const FunctionPrototype* prototype
 )
     : name_(std::move(name)),
       arity_(arity),
       requiredArity_(requiredArity),
+      hasRest_(hasRest),
       prototype_(prototype) {
 }
 

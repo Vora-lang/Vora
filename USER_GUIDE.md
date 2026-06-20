@@ -330,6 +330,39 @@ func addOne(a, b = a + 1) { return b }
 addOne(5)                   // 6
 ```
 
+### 剩余参数 (Rest Parameters)
+
+> 引入版本: v0.22
+
+用 `...name` 将多余的实参收集为一个数组，支持可变参数函数：
+
+```vora
+func sum(a, b, ...rest) {
+    return rest  // rest 是包含剩余实参的数组
+}
+sum(1, 2, 3, 4)   // [3, 4]
+sum(1, 2)         // []
+
+// 仅有剩余参数
+func collectAll(...items) {
+    return items
+}
+collectAll(1, "hi", true)  // [1, "hi", true]
+
+// 与默认参数组合
+func greet(greeting = "Hi", ...names) {
+    return [greeting, names]
+}
+greet()                     // ["Hi", []]
+greet("Hey", "A", "B")     // ["Hey", ["A", "B"]]
+```
+
+**规则：**
+- `...name` 必须是参数列表的**最后一个**
+- 每个函数**最多一个**剩余参数
+- 剩余参数**不能有默认值**
+- 适用于普通函数、匿名函数、对象构造函数和方法
+
 ### 尾调用优化 (TCO)
 
 > 引入版本: v0.20

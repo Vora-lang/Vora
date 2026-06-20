@@ -319,7 +319,12 @@ void Compiler::visitProgram(const Program& program) {
 
 void Compiler::visitExprStmt(const ExprStmt& stmt) {
     stmt.expression->accept(*this);
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    if (replMode) {
+        // In REPL mode, print the expression result (unless it's null)
+        emitByte(static_cast<uint8_t>(OpCode::OP_PRINT_POP));
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    }
 }
 
 void Compiler::visitBlockStmt(const BlockStmt& stmt) {

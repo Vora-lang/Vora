@@ -225,7 +225,9 @@ std::string ASTPrinter::visitFuncExpr(const FuncExpr& expr) {
     std::stringstream ss;
     ss << "(func";
     for (const auto& param : expr.params) {
-        if (param.defaultValue) {
+        if (param.isRest) {
+            ss << " ..." << param.name;
+        } else if (param.defaultValue) {
             ss << " (" << param.name << " " << print(param.defaultValue.get()) << ")";
         } else {
             ss << " " << param.name;
@@ -275,7 +277,9 @@ std::string ASTPrinter::visitFuncStmt(const FuncStmt& stmt) {
     ss << "(func " << stmt.name;
 
     for (const auto& param : stmt.params) {
-        if (param.defaultValue) {
+        if (param.isRest) {
+            ss << " ..." << param.name;
+        } else if (param.defaultValue) {
             ss << " (" << param.name << " " << print(param.defaultValue.get()) << ")";
         } else {
             ss << " " << param.name;
@@ -399,7 +403,9 @@ std::string ASTPrinter::visitObjStmt(const ObjStmt& stmt) {
     }
 
     for (const auto& param : stmt.params) {
-        if (param.defaultValue) {
+        if (param.isRest) {
+            ss << " ..." << param.name;
+        } else if (param.defaultValue) {
             ss << " (" << param.name << " " << print(param.defaultValue.get()) << ")";
         } else {
             ss << " " << param.name;
