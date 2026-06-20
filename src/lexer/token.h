@@ -101,6 +101,8 @@ struct Token {
     int line;
     int column;
 
+    Token() : type(TokenType::INVALID), lexeme(""), line(0), column(0) {}
+
     Token(TokenType type, std::string lexeme, int line, int column)
         : type(type),
           lexeme(std::move(lexeme)),

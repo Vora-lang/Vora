@@ -41,11 +41,13 @@ class LetStmt : public Stmt {
 public:
     LetStmt(
         std::string name,
+        Token nameToken,
         std::unique_ptr<Expr> initializer,
         std::string typeAnnotation = "",
         bool isConst = false
     )
         : name(std::move(name)),
+          nameToken(std::move(nameToken)),
           initializer(std::move(initializer)),
           typeAnnotation(std::move(typeAnnotation)),
           isConst(isConst) {
@@ -55,6 +57,8 @@ public:
     std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::string name;
+
+    Token nameToken;  // position of the variable name
 
     std::unique_ptr<Expr> initializer;
 
@@ -188,10 +192,12 @@ class FuncStmt : public Stmt {
 public:
     FuncStmt(
         std::string name,
+        Token nameToken,
         std::vector<ParamDecl> params,
         std::shared_ptr<BlockStmt> body
     )
         : name(std::move(name)),
+          nameToken(std::move(nameToken)),
           params(std::move(params)),
           body(std::move(body)) {
     }
@@ -200,6 +206,8 @@ public:
     std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::string name;
+
+    Token nameToken;  // position of the function name
 
     std::vector<ParamDecl> params;
 
@@ -210,12 +218,14 @@ class ObjStmt : public Stmt {
 public:
     ObjStmt(
         std::string name,
+        Token nameToken,
         std::vector<std::string> parentNames,
         std::vector<ParamDecl> params,
         std::vector<std::unique_ptr<Stmt>> methods,
         std::shared_ptr<BlockStmt> body
     )
         : name(std::move(name)),
+          nameToken(std::move(nameToken)),
           parentNames(std::move(parentNames)),
           params(std::move(params)),
           methods(std::move(methods)),
@@ -226,6 +236,8 @@ public:
     std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::string name;
+
+    Token nameToken;  // position of the class name
 
     std::vector<std::string> parentNames;  // empty = no inheritance
 

@@ -226,6 +226,7 @@ std::unique_ptr<Stmt> Parser::letStatement() {
     }
 
     std::string name = previous().lexeme;
+    Token nameToken = previous();  // save for LSP position info
 
     // Optional type annotation: let x:int = ...
     std::string typeAnnotation;
@@ -244,6 +245,7 @@ std::unique_ptr<Stmt> Parser::letStatement() {
         match(TokenType::SEMICOLON);
         return std::make_unique<LetStmt>(
             name,
+            nameToken,
             std::make_unique<ErrorExpr>("Missing initializer", previous()),
             typeAnnotation
         );
@@ -258,6 +260,7 @@ std::unique_ptr<Stmt> Parser::letStatement() {
 
     return std::make_unique<LetStmt>(
         name,
+        nameToken,
         std::move(initializer),
         typeAnnotation
     );
@@ -270,6 +273,7 @@ std::unique_ptr<Stmt> Parser::constStatement() {
     }
 
     std::string name = previous().lexeme;
+    Token nameToken = previous();  // save for LSP position info
 
     // Optional type annotation: const x:int = ...
     std::string typeAnnotation;
@@ -288,6 +292,7 @@ std::unique_ptr<Stmt> Parser::constStatement() {
         match(TokenType::SEMICOLON);
         return std::make_unique<LetStmt>(
             name,
+            nameToken,
             std::make_unique<ErrorExpr>("Missing initializer", previous()),
             typeAnnotation,
             true  // isConst
@@ -303,6 +308,7 @@ std::unique_ptr<Stmt> Parser::constStatement() {
 
     return std::make_unique<LetStmt>(
         name,
+        nameToken,
         std::move(initializer),
         typeAnnotation,
         true  // isConst
@@ -522,11 +528,14 @@ std::unique_ptr<Stmt> Parser::cForStatement(Token forToken) {
 std::unique_ptr<Stmt> Parser::funcStatement() {
 
     std::string name;
+    Token nameToken;  // saved for LSP position info
     if (!match(TokenType::IDENTIFIER)) {
         error("Expected function name");
         name = "?error?";
+        nameToken = previous();  // error token
     } else {
         name = previous().lexeme;
+        nameToken = previous();
     }
 
     if (!match(TokenType::LEFT_PAREN)) {
@@ -607,6 +616,7 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
 
     return std::make_unique<FuncStmt>(
         name,
+        nameToken,
         std::move(params),
         std::move(body)
     );
@@ -699,11 +709,14 @@ std::unique_ptr<Expr> Parser::funcExpression() {
 std::unique_ptr<Stmt> Parser::objStatement() {
 
     std::string name;
+    Token nameToken;  // saved for LSP position info
     if (!match(TokenType::IDENTIFIER)) {
         error("Expected object name");
         name = "?error?";
+        nameToken = previous();  // error token
     } else {
         name = previous().lexeme;
+        nameToken = previous();
     }
 
     // Optional inheritance: Obj Child : Parent1, Parent2, ... (params) { ... }
@@ -826,6 +839,7 @@ std::unique_ptr<Stmt> Parser::objStatement() {
         // so let's restructure the return.
         return std::make_unique<ObjStmt>(
             name,
+            nameToken,
             std::move(parentNames),
             std::move(params),
             std::move(methods),
@@ -836,6 +850,7 @@ std::unique_ptr<Stmt> Parser::objStatement() {
     // This path is taken when '{' was missing — no methods, empty body.
     return std::make_unique<ObjStmt>(
         name,
+        nameToken,
         std::move(parentNames),
         std::move(params),
         std::vector<std::unique_ptr<Stmt>>{},  // no methods

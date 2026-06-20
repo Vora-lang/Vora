@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WiX fragment — PATH environment variable component.
+  Included by vora.wxs.in via configure_file substitution (if needed)
+  or configured into path_env.wxs for standalone inclusion.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <ComponentGroup Id="PathEnvGroup">
+      <ComponentRef Id="PathEnv" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>
