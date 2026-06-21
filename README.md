@@ -55,7 +55,6 @@ for name in names {
 - [Platform Support / 平台支持](#platform-support--平台支持)
 - [Testing / 测试](#testing--测试)
 - [Roadmap / 路线图](#roadmap--路线图)
-- [Documentation / 文档](#documentation--文档)
 - [Acknowledgments / 致谢](#acknowledgments--致谢)
 - [License / 许可证](#license--许可证)
 
@@ -653,25 +652,6 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 | v0.23 | **Done / 已完成** | Set (hash set) + Map (hash map) data structures, O(1) `has`/`add`/`remove`, union/merge via `+`, for-in iteration |
 | v0.24 | **Done / 已完成** | `match` pattern matching — literal/wildcard/range patterns, `\|` multi-pattern, `=>` expression/block body, `..=`/`..` range syntax |
 | v0.25+ | Planned / 规划中 | Standard library (`std/fs`, `std/os`), call-site spread (`...expr`), async/await coroutines, guard conditions, exhaustiveness checking, JIT compilation |
-
----
-
-## Documentation / 文档
-
-| Document / 文档 | Content / 内容 |
-|----------|---------|
-| [`docs/00-roadmap.md`](docs/00-roadmap.md) | Optimization roadmap + known defects & limitations / 优化路线图 + 已知缺陷与限制 |
-| [`docs/01-技术栈概览.md`](docs/01-技术栈概览.md) | Tech stack, architecture, build commands / 技术栈、架构、构建命令 |
-| [`docs/02-项目结构.md`](docs/02-项目结构.md) | Directory tree, file descriptions / 目录树、文件说明 |
-| [`docs/03-词法分析器开发文档.md`](docs/03-词法分析器开发文档.md) | Lexer design / 词法分析器设计 |
-| [`docs/04-AST开发文档.md`](docs/04-AST开发文档.md) | AST node design + Visitor pattern / AST 节点设计 + Visitor 模式 |
-| [`docs/05-语法分析器开发文档.md`](docs/05-语法分析器开发文档.md) | Pratt Parser design / Pratt 解析器设计 |
-| [`docs/06-解释器开发文档.md`](docs/06-解释器开发文档.md) | Tree-walking Interpreter design (historical) / 树遍历解释器设计（历史） |
-| [`docs/07-运行时系统开发文档.md`](docs/07-运行时系统开发文档.md) | Value / Environment / Callable / GC / Upvalue |
-| [`docs/08-已实现功能总结.md`](docs/08-已实现功能总结.md) | Feature summary + version history / 功能总结 + 版本历程 |
-| [`docs/09-构建系统指南.md`](docs/09-构建系统指南.md) | Multi-architecture builds, cross-compilation, packaging / 多架构构建、交叉编译、打包 |
-| [`docs/10-后续优化建议.md`](docs/10-后续优化建议.md) | Future optimization suggestions / 后续优化建议 |
-| [`docs/11-深度分析与UX路线图.md`](docs/11-深度分析与UX路线图.md) | In-depth analysis + UX roadmap / 深度分析 + UX 路线图 |
 
 ---
 
