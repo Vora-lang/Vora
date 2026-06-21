@@ -1,12 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
-#include <map>
 
 #include "../gc/gc_object.h"
 #include "../gc/gc_ptr.h"
@@ -21,6 +23,8 @@ class NativeFunction;
 struct BlockStmt;
 struct FunctionPrototype;   // defined in compiler.h (needs Chunk)
 struct ClassDefinition;     // defined in compiler.h
+struct Set;                 // defined below (needs ValueHash/ValueEqual)
+struct Map;                 // defined below (needs ValueHash/ValueEqual)
 
 // =========================================================================
 // Value — the universal runtime value type
@@ -39,7 +43,9 @@ using Value = std::variant<
     GcPtr<FunctionPrototype>,
     GcPtr<ClassDefinition>,
     GcPtr<struct Iterator>,
-    GcPtr<struct Generator>
+    GcPtr<struct Generator>,
+    GcPtr<struct Set>,
+    GcPtr<struct Map>
 >;
 
 // =========================================================================
@@ -84,13 +90,19 @@ struct ObjectInstance : GcObject {
 // Iterator — created by iter(), advanced by next().
 // Holds a reference to the source collection and the current index.
 // Dict iterators snapshot keys at creation time for stable, O(1) advancement.
+// Set/Map iterators use valueKeys for the same purpose.
 struct Iterator : GcObject {
-    Value source;     // The collection (Array, GcString, Dict) — retains GC reference
+    Value source;     // The collection (Array, GcString, Dict, Set, Map) — retains GC reference
     size_t index = 0; // Current read position (0-based)
     std::vector<std::string> dictKeys; // Key snapshot for Dict iteration
+    std::vector<Value> valueKeys;      // Key/element snapshot for Set/Map iteration
 
     void trace(std::vector<GcObject*>& wl) override;
-    size_t gcSize() const override { return sizeof(Iterator) + dictKeys.capacity() * sizeof(std::string); }
+    size_t gcSize() const override {
+        return sizeof(Iterator)
+            + dictKeys.capacity() * sizeof(std::string)
+            + valueKeys.capacity() * sizeof(Value);
+    }
 };
 
 // Generator — created by calling a generator function, driven by next().
@@ -116,6 +128,43 @@ struct Generator : GcObject {
 
     void trace(std::vector<GcObject*>& wl) override;
     size_t gcSize() const override { return sizeof(Generator) + savedStack.capacity() * sizeof(Value) + args.capacity() * sizeof(Value); }
+};
+
+// =========================================================================
+// ValueHash & ValueEqual — hashing and deep equality for Value keys
+// (used by Set and Map internally; Set/Map are defined below)
+// =========================================================================
+
+struct ValueHash {
+    size_t operator()(const Value& v) const;
+};
+
+struct ValueEqual {
+    bool operator()(const Value& a, const Value& b) const;
+};
+
+// =========================================================================
+// Set — unordered collection of unique Values with O(1) membership
+// =========================================================================
+
+struct Set : GcObject {
+    std::unordered_set<Value, ValueHash, ValueEqual> elements;
+    void trace(std::vector<GcObject*>& wl) override;
+    size_t gcSize() const override {
+        return sizeof(Set) + elements.bucket_count() * (sizeof(void*) * 2 + sizeof(Value));
+    }
+};
+
+// =========================================================================
+// Map — unordered key-value mapping with arbitrary Value keys
+// =========================================================================
+
+struct Map : GcObject {
+    std::unordered_map<Value, Value, ValueHash, ValueEqual> pairs;
+    void trace(std::vector<GcObject*>& wl) override;
+    size_t gcSize() const override {
+        return sizeof(Map) + pairs.bucket_count() * (sizeof(void*) * 2 + sizeof(Value) * 2);
+    }
 };
 
 // =========================================================================

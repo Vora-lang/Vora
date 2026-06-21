@@ -100,6 +100,12 @@ static std::string constantToString(const Value& value) {
     if (std::holds_alternative<GcPtr<Array>>(value)) {
         return "[array]";
     }
+    if (std::holds_alternative<GcPtr<Set>>(value)) {
+        return "[set]";
+    }
+    if (std::holds_alternative<GcPtr<Map>>(value)) {
+        return "[map]";
+    }
     if (std::holds_alternative<GcPtr<Callable>>(value)) {
         return "<callable>";
     }

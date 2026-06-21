@@ -408,6 +408,94 @@ print(c)  // 2
 - 对象解构支持简写 `{x}`（等同于 `{x: x}`）和重命名 `{x: a}`
 - 对象 rest（`{x, ...rest}`）暂未支持（计划于 v0.23）
 
+### Set 与 Map 数据结构
+
+> 引入版本: v0.23
+
+Vora 提供 `Set`（去重集合）和 `Map`（任意类型键的映射）两种内置数据结构。
+
+**Set — 无序、不重复的值集合：**
+
+```vora
+let s = Set([1, 2, 3])
+s.has(2)       // true
+s.add(4)       // 添加元素
+s.remove(1)    // 删除元素
+s.size         // 3
+s.clear()      // 清空
+
+// 创建空 Set
+let empty = Set()
+
+// 从字符串创建（每个字符作为元素）
+let chars = Set("abc")  // {'a', 'b', 'c'}
+
+// 遍历 Set
+for x in s {
+    print(x)
+}
+```
+
+**Set 方法：**
+
+| 方法 | 参数 | 行为 |
+|------|------|------|
+| `add(value)` | 1 | 添加元素 |
+| `has(value)` | 1 | 检查是否存在，返回 bool |
+| `remove(value)` | 1 | 删除元素 |
+| `clear()` | 0 | 清空所有元素 |
+| `values()` | 0 | 返回所有元素的 Array |
+| `size` / `length` | 属性 | 元素数量 |
+
+**Set 支持 `+` 并集运算：** `Set([1,2]) + Set([2,3])` → `{1, 2, 3}`
+
+**Map — 任意类型键的映射表：**
+
+```vora
+let m = Map()
+m.set("key", 42)         // 设置键值
+m.set(123, "integer key") // 整数 key
+m.set(true, "bool key")   // 布尔 key
+
+m.get("key")      // 42
+m.has("key")      // true
+m.remove("key")   // 删除键，返回被删值
+m.size            // 2
+
+// 索引语法（语法糖）
+m["key"] = 42
+print(m["key"])   // 42
+
+// 遍历 Map（遍历所有 key）
+for k in m {
+    print(k)
+    print(m[k])
+}
+```
+
+**Map 方法：**
+
+| 方法 | 参数 | 行为 |
+|------|------|------|
+| `set(key, value)` | 2 | 设置键值对 |
+| `get(key)` | 1 | 获取值，不存在返回 null |
+| `has(key)` | 1 | 检查键是否存在，返回 bool |
+| `remove(key)` | 1 | 删除键，返回被删值或 null |
+| `keys()` | 0 | 返回所有 key 的 Array |
+| `values()` | 0 | 返回所有 value 的 Array |
+| `clear()` | 0 | 清空所有键值对 |
+| `size` / `length` | 属性 | 键值对数量 |
+
+**Map 支持 `+` 合并运算：** 右侧 Map 的键值会覆盖左侧同名的键。
+
+**规则：**
+- 空 Set / 空 Map 为 **falsy**（在条件中视为 false）
+- 非空 Set / 非空 Map 为 **truthy**
+- `type(Set())` 返回 `"set"`，`type(Map())` 返回 `"map"`
+- `len(s)` 返回 Set/Map 的元素数量
+- Set 元素和 Map key 支持所有 Value 类型，包括 Array、Dict、甚至 Set/Map 本身
+- `jsonStringify` 将 Set 序列化为 JSON array，Map 序列化为 `[[key, value], ...]` 对
+
 ### 尾调用优化 (TCO)
 
 > 引入版本: v0.20

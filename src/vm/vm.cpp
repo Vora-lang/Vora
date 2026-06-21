@@ -417,6 +417,14 @@ void VM::initGlobals(const std::vector<std::string>& names) {
                 return static_cast<double>(
                     std::get<GcPtr<Dict>>(arg)->pairs.size());
             }
+            if (std::holds_alternative<GcPtr<Set>>(arg)) {
+                return static_cast<double>(
+                    std::get<GcPtr<Set>>(arg)->elements.size());
+            }
+            if (std::holds_alternative<GcPtr<Map>>(arg)) {
+                return static_cast<double>(
+                    std::get<GcPtr<Map>>(arg)->pairs.size());
+            }
             return 0.0;
         });
 }
@@ -1563,6 +1571,53 @@ InterpretResult VM::run() {
                     break;
                 }
 
+                // Map: key lookup by Value (arbitrary-type keys)
+                if (std::holds_alternative<GcPtr<Map>>(target)) {
+                    const auto& mpairs = std::get<GcPtr<Map>>(target)->pairs;
+                    if (isNumeric(indexVal)) {
+                        double raw = toDouble(indexVal);
+                        // If it's a clean non-negative integer, treat as positional
+                        // Nth key access for for-in compatibility
+                        if (raw >= 0 && std::floor(raw) == raw) {
+                            size_t idx = static_cast<size_t>(raw);
+                            if (idx >= mpairs.size()) {
+                                RUNTIME_ERROR_OR_THROW("Index out of bounds");
+                            }
+                            auto it = mpairs.begin();
+                            std::advance(it, idx);
+                            push(it->first);
+                            break;
+                        }
+                    }
+                    // General key lookup
+                    auto it = mpairs.find(indexVal);
+                    if (it == mpairs.end()) {
+                        RUNTIME_ERROR_OR_THROW("Key not found");
+                    }
+                    push(it->second);
+                    break;
+                }
+
+                // Set: numeric index for for-in iteration (positional access)
+                if (std::holds_alternative<GcPtr<Set>>(target)) {
+                    if (!isNumeric(indexVal)) {
+                        RUNTIME_ERROR_OR_THROW("Set index must be a number");
+                    }
+                    double rawIndex = toDouble(indexVal);
+                    if (rawIndex < 0 || std::floor(rawIndex) != rawIndex) {
+                        RUNTIME_ERROR_OR_THROW("Index must be a non-negative integer");
+                    }
+                    const auto& selements = std::get<GcPtr<Set>>(target)->elements;
+                    size_t idx = static_cast<size_t>(rawIndex);
+                    if (idx >= selements.size()) {
+                        RUNTIME_ERROR_OR_THROW("Index out of bounds");
+                    }
+                    auto it = selements.begin();
+                    std::advance(it, idx);
+                    push(*it);
+                    break;
+                }
+
                 if (!isNumeric(indexVal)) {
                     RUNTIME_ERROR_OR_THROW("Index must be a number");
                 }
@@ -1610,6 +1665,13 @@ InterpretResult VM::run() {
                 if (std::holds_alternative<GcPtr<Dict>>(target)) {
                     std::string key = valueToString(indexVal);
                     std::get<GcPtr<Dict>>(target)->pairs[key] = value;
+                    push(value);
+                    break;
+                }
+
+                // Map: arbitrary-key assignment
+                if (std::holds_alternative<GcPtr<Map>>(target)) {
+                    std::get<GcPtr<Map>>(target)->pairs[indexVal] = value;
                     push(value);
                     break;
                 }
@@ -1687,6 +1749,30 @@ InterpretResult VM::run() {
                         break;
                     }
                     RUNTIME_ERROR_OR_THROW("Unknown dict key or method: " + propName);
+                }
+
+                // Set built-in methods & properties
+                if (std::holds_alternative<GcPtr<Set>>(obj)) {
+                    auto set = std::get<GcPtr<Set>>(obj);
+                    if (propName == "length" || propName == "size") {
+                        push(static_cast<int64_t>(set->elements.size()));
+                        break;
+                    }
+                    auto method = getSetMethod(propName, set);
+                    if (method) { push(method); break; }
+                    RUNTIME_ERROR_OR_THROW("Unknown set method: " + propName);
+                }
+
+                // Map built-in methods & properties
+                if (std::holds_alternative<GcPtr<Map>>(obj)) {
+                    auto map = std::get<GcPtr<Map>>(obj);
+                    if (propName == "length" || propName == "size") {
+                        push(static_cast<int64_t>(map->pairs.size()));
+                        break;
+                    }
+                    auto method = getMapMethod(propName, map);
+                    if (method) { push(method); break; }
+                    RUNTIME_ERROR_OR_THROW("Unknown map method: " + propName);
                 }
 
                 if (std::holds_alternative<GcPtr<ObjectInstance>>(obj)) {

@@ -1,0 +1,281 @@
+// runtime/test_set_map.va — Set and Map data structure tests
+// Run: vora tests/runtime/test_set_map.va
+
+print("=== Runtime: Set & Map Tests ===")
+
+// ============================================================================
+// Set tests
+// ============================================================================
+
+// ── Set creation ───────────────────────────────────
+let s = Set([1, 2, 3])
+assert(s.has(1), "set.has(1)")
+assert(s.has(2), "set.has(2)")
+assert(s.has(3), "set.has(3)")
+assert(!s.has(4), "set.has(4) → false")
+
+// ── Set add ────────────────────────────────────────
+func testSetAdd() {
+    let s = Set()
+    s.add(10)
+    s.add(20)
+    assert(s.has(10), "s.has(10)")
+    assert(s.has(20), "s.has(20)")
+    assert(!s.has(30), "s.has(30) → false")
+}
+testSetAdd()
+
+// ── Set remove ─────────────────────────────────────
+func testSetRemove() {
+    let s = Set([1, 2, 3])
+    s.remove(2)
+    assert(s.has(1), "remove: has(1)")
+    assert(!s.has(2), "remove: !has(2)")
+    assert(s.has(3), "remove: has(3)")
+}
+testSetRemove()
+
+// ── Set size/length ────────────────────────────────
+func testSetSize() {
+    let s = Set([1, 2, 3])
+    assert(s.size == 3, "set size")
+    assert(s.length == 3, "set length")
+
+    let empty = Set()
+    assert(empty.size == 0, "empty set size")
+}
+testSetSize()
+
+// ── Set clear ──────────────────────────────────────
+func testSetClear() {
+    let s = Set([1, 2, 3])
+    s.clear()
+    assert(s.size == 0, "clear: size")
+    assert(!s.has(1), "clear: !has(1)")
+}
+testSetClear()
+
+// ── Set values ─────────────────────────────────────
+func testSetValues() {
+    let s = Set([10, 20, 30])
+    let v = s.values()
+    // The returned array should have exactly 3 elements
+    assert(len(v) == 3, "values: length")
+}
+testSetValues()
+
+// ── Set from string ────────────────────────────────
+func testSetFromString() {
+    let s = Set("abc")
+    assert(s.has("a"), "str set: a")
+    assert(s.has("b"), "str set: b")
+    assert(s.has("c"), "str set: c")
+    assert(!s.has("d"), "str set: !d")
+}
+testSetFromString()
+
+// ── Set deduplication ──────────────────────────────
+func testSetDedup() {
+    let s = Set([1, 1, 2, 2, 3])
+    assert(s.size == 3, "dedup: size 3")
+    s.add(1)  // should be no-op
+    assert(s.size == 3, "dedup: still 3 after re-add")
+}
+testSetDedup()
+
+// ── Set len() builtin ──────────────────────────────
+let s2 = Set([1, 2, 3, 4, 5])
+assert(len(s2) == 5, "len(Set)")
+
+// ── Set type() builtin ─────────────────────────────
+assert(type(Set()) == "set", "type(Set) == set")
+
+// ── Set truthy/falsy ───────────────────────────────
+func testSetFalsy() {
+    if (Set()) {
+        assert(false, "empty Set should be falsy")
+    } else {
+        assert(true, "empty Set is falsy")
+    }
+}
+testSetFalsy()
+func testSetTruthy() {
+    let s = Set([1])
+    if (s) {
+        assert(true, "non-empty Set is truthy")
+    } else {
+        assert(false, "non-empty Set should be truthy")
+    }
+}
+testSetTruthy()
+
+// ── Set iteration ──────────────────────────────────
+func testSetIteration() {
+    let s = Set([10, 20, 30])
+    let sum = 0
+    for x in s {
+        sum = sum + x
+    }
+    assert(sum == 60, "Set iteration sum: " + toString(sum))
+}
+testSetIteration()
+
+// ============================================================================
+// Map tests
+// ============================================================================
+
+// ── Map creation ───────────────────────────────────
+let m = Map()
+assert(m.size == 0, "empty map size")
+
+// ── Map set/get ────────────────────────────────────
+func testMapSetGet() {
+    let m = Map()
+    m.set("key", 42)
+    assert(m.get("key") == 42, "map.get('key')")
+    assert(m.get("nonexistent") == null, "map.get(nonexistent) → null")
+}
+testMapSetGet()
+
+// ── Map has ────────────────────────────────────────
+func testMapHas() {
+    let m = Map()
+    m.set("a", 1)
+    assert(m.has("a"), "map.has('a')")
+    assert(!m.has("b"), "map.!has('b')")
+}
+testMapHas()
+
+// ── Map remove ─────────────────────────────────────
+func testMapRemove() {
+    let m = Map()
+    m.set("x", 100)
+    m.set("y", 200)
+    let removed = m.remove("x")
+    assert(removed == 100, "remove: returns value")
+    assert(!m.has("x"), "remove: key gone")
+    assert(m.has("y"), "remove: other key still there")
+}
+testMapRemove()
+
+// ── Map size/length ────────────────────────────────
+func testMapSize() {
+    let m = Map()
+    m.set("a", 1)
+    m.set("b", 2)
+    assert(m.size == 2, "map size")
+    assert(m.length == 2, "map length")
+}
+testMapSize()
+
+// ── Map keys/values ────────────────────────────────
+func testMapKeysValues() {
+    let m = Map()
+    m.set("a", 1)
+    m.set("b", 2)
+    let k = m.keys()
+    let v = m.values()
+    assert(len(k) == 2, "keys: length")
+    assert(len(v) == 2, "values: length")
+}
+testMapKeysValues()
+
+// ── Map clear ──────────────────────────────────────
+func testMapClear() {
+    let m = Map()
+    m.set("a", 1)
+    m.clear()
+    assert(m.size == 0, "clear: size")
+    assert(!m.has("a"), "clear: !has")
+}
+testMapClear()
+
+// ── Map index syntax m[key] / m[key] = v ───────────
+func testMapIndex() {
+    let m = Map()
+    m["key"] = 42        // set via index
+    assert(m["key"] == 42, "map index get")
+
+    m["key"] = 99        // overwrite
+    assert(m["key"] == 99, "map index overwrite")
+}
+testMapIndex()
+
+// ── Map with non-string keys ───────────────────────
+func testMapNonStringKeys() {
+    let m = Map()
+    m.set(123, "integer key")
+    m.set(true, "boolean key")
+
+    assert(m.get(123) == "integer key", "map int key")
+    assert(m.get(true) == "boolean key", "map bool key")
+}
+testMapNonStringKeys()
+
+// ── Map len()/type() builtins ──────────────────────
+assert(len(Map()) == 0, "empty map len")
+assert(type(Map()) == "map", "type(Map) == map")
+
+// ── Map truthy/falsy ───────────────────────────────
+func testMapFalsy() {
+    if (Map()) {
+        assert(false, "empty Map should be falsy")
+    } else {
+        assert(true, "empty Map is falsy")
+    }
+}
+testMapFalsy()
+func testMapTruthy() {
+    let m = Map()
+    m.set(1, 2)
+    if (m) {
+        assert(true, "non-empty Map is truthy")
+    } else {
+        assert(false, "non-empty Map should be truthy")
+    }
+}
+testMapTruthy()
+
+// ── Map iteration (over keys) ──────────────────────
+func testMapIteration() {
+    let m = Map()
+    m.set("a", 1)
+    m.set("b", 2)
+    let keys = []
+    for k in m {
+        keys.add(k)
+    }
+    assert(len(keys) == 2, "Map iteration: 2 keys")
+}
+testMapIteration()
+
+// ── Set+Set union via + ────────────────────────────
+func testSetUnion() {
+    let a = Set([1, 2, 3])
+    let b = Set([3, 4, 5])
+    let u = a + b
+    assert(u.has(1), "union: has 1")
+    assert(u.has(5), "union: has 5")
+    assert(u.size == 5, "union: 5 elements (1,2,3,4,5)")
+}
+testSetUnion()
+
+// ── Map+Map merge via + ────────────────────────────
+func testMapMerge() {
+    let a = Map()
+    a.set("x", 1)
+    a.set("y", 2)
+
+    let b = Map()
+    b.set("y", 99)  // overwrite
+    b.set("z", 3)
+
+    let m = a + b
+    assert(m.get("x") == 1, "merge: x")
+    assert(m.get("y") == 99, "merge: y overwritten")
+    assert(m.get("z") == 3, "merge: z")
+    assert(m.size == 3, "merge: 3 entries")
+}
+testMapMerge()
+
+print("Runtime Set & Map tests: PASS")

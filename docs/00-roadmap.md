@@ -1,6 +1,6 @@
 # Vora 优化路线图
 
-> 最后更新：2026-06-21
+> 最后更新：2026-06-21 (Set/Map via v0.23)
 > 基于对代码库的全面审计，按收益/成本比排序。
 
 ---
@@ -153,9 +153,9 @@ add(...nums)  // 等价 add(1, 2, 3)
 
 ---
 
-### 2.4 数据结构：Set + 非字符串 Map ⭐⭐⭐
+### 2.4 数据结构：Set + Map ✅ 已完成 (v0.23)
 
-当前只有 `Array`（O(n) 查找）和 `Dict`（仅字符串 key）。补齐：
+Set（`std::unordered_set<Value>`）和 Map（`std::unordered_map<Value, Value>`），支持任意类型 key 的 O(1) 操作。
 
 ```vora
 // Set — 去重、成员检测 O(1)
@@ -163,16 +163,26 @@ let s = Set([1, 2, 3])
 s.has(2)       // true
 s.add(4)
 
-// Map — 任意类型 key
+// Map — 任意类型 key + 索引语法
 let m = Map()
-m.set("key", 42)
+m["key"] = 42
+m["key"]       // 42
 m.set(123, "value")
-m.set([1,2], "array key")
+m.keys()       // 所有 key 的 Array
+
+// 支持 + 运算：Set+Set 并集，Map+Map 合并
+// 支持 for-in 遍历：Set 返回元素，Map 返回 key
 ```
 
-**实现**：给 `Value` 添加 `std::hash` 特化，`std::unordered_map<Value, Value>` + `std::unordered_set<Value>`。Array/Dict 作为 key 需内容哈希。
+**实现**：
+- `ValueHash` + `ValueEqual` functor — 内容哈希（容器递归）+ 指针身份（函数/对象）
+- `Set` / `Map` 结构体为 `GcObject`，GC 自动追踪 key 和 value 引用
+- `Set()` 构造函数接受 Array/String/Set/Dict 作为可迭代参数
+- 方法通过 `OP_GET_PROPERTY` 分发（`add`/`has`/`remove`/`clear`/`values`/`set`/`get`/`keys`）
+- Map 支持 `m[key]` / `m[key] = val` 索引语法（`OP_INDEX`/`OP_SET_INDEX`）
+- 迭代通过 `iter()`/`next()` 内置函数 + `Iterator::valueKeys` 快照
 
-**预估工期**：1 周
+**预估工期**：1 周 ✅ 已完成
 
 ---
 
@@ -423,7 +433,7 @@ cmake --preset windows-x64-release
 
 ### 4.3 测试覆盖率提升 ⭐
 
-- 当前 303 C++ 单元测试（942 断言）+ 44 语言测试 + 41 示例
+- 当前 303 C++ 单元测试（942 断言）+ 45 语言测试 + 41 示例
 - 缺少：边界值测试、并发/压力测试、回归套件自动化
 - 目标：行覆盖率 >85%
 
@@ -450,7 +460,7 @@ cmake --preset windows-x64-release
 2026 Q3 (7-9月) — 补齐基础设施 ⭐
 ├── 2.2 调用端展开 ...expr          ← 与 rest 对称，极低成本
 ├── 2.3 标准库 std/fs + std/os      ← 文件 I/O + 系统调用
-├── 2.4 Set + Map 数据结构           ← 基础数据结构补全
+├── 2.4 Set + Map 数据结构           ← ✅ 已完成 (v0.23)
 ├── 2.9 错误类型层级                  ← Error 基类 + 按类型 catch
 ├── 2.10 C ABI 导出                  ← Lua 级嵌入能力
 ├── 2.11 解构赋值                    ← ✅ 已完成 (v0.22)

@@ -17,6 +17,8 @@ namespace vora {
 class VM;
 struct Array;
 struct Dict;
+struct Set;
+struct Map;
 class NativeFunction;
 
 // Register all user-facing built-in native functions on a VM.
@@ -49,5 +51,19 @@ GcPtr<NativeFunction> getStringMethod(
 GcPtr<NativeFunction> getDictMethod(
     const std::string& name,
     GcPtr<Dict> dict);
+
+// Set method factory — returns a bound method for the given set.
+// Used by OP_GET_PROPERTY dispatch in the VM.
+// Returns nullptr if the method name is unknown.
+GcPtr<NativeFunction> getSetMethod(
+    const std::string& name,
+    GcPtr<Set> set);
+
+// Map method factory — returns a bound method for the given map.
+// Used by OP_GET_PROPERTY dispatch in the VM.
+// Returns nullptr if the method name is unknown.
+GcPtr<NativeFunction> getMapMethod(
+    const std::string& name,
+    GcPtr<Map> map);
 
 } // namespace vora

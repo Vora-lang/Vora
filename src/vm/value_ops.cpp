@@ -25,6 +25,8 @@ bool isTruthy(const Value& value) {
     if (std::holds_alternative<GcPtr<GcString>>(value)) return !std::get<GcPtr<GcString>>(value)->value.empty();
     if (std::holds_alternative<GcPtr<Array>>(value)) return !std::get<GcPtr<Array>>(value)->elements.empty();
     if (std::holds_alternative<GcPtr<Dict>>(value)) return !std::get<GcPtr<Dict>>(value)->pairs.empty();
+    if (std::holds_alternative<GcPtr<Set>>(value)) return !std::get<GcPtr<Set>>(value)->elements.empty();
+    if (std::holds_alternative<GcPtr<Map>>(value)) return !std::get<GcPtr<Map>>(value)->pairs.empty();
     return true;
 }
 
@@ -59,6 +61,10 @@ bool valuesEqual(const Value& a, const Value& b) {
         return std::get<GcPtr<Iterator>>(a) == std::get<GcPtr<Iterator>>(b);
     if (std::holds_alternative<GcPtr<Generator>>(a))
         return std::get<GcPtr<Generator>>(a) == std::get<GcPtr<Generator>>(b);
+    if (std::holds_alternative<GcPtr<Set>>(a))
+        return std::get<GcPtr<Set>>(a) == std::get<GcPtr<Set>>(b);
+    if (std::holds_alternative<GcPtr<Map>>(a))
+        return std::get<GcPtr<Map>>(a) == std::get<GcPtr<Map>>(b);
 
     return false;
 }
@@ -139,6 +145,24 @@ Value addValues(const Value& a, const Value& b, bool& error) {
         const auto& rightDict = std::get<GcPtr<Dict>>(b)->pairs;
         result->pairs = leftDict;
         for (const auto& [k, v] : rightDict) {
+            result->pairs[k] = v;  // right overwrites left
+        }
+        return result;
+    }
+
+    if (std::holds_alternative<GcPtr<Set>>(a) && std::holds_alternative<GcPtr<Set>>(b)) {
+        auto result = GcHeap::instance().alloc<Set>();
+        result->elements = std::get<GcPtr<Set>>(a)->elements;
+        for (const auto& e : std::get<GcPtr<Set>>(b)->elements) {
+            result->elements.insert(e);
+        }
+        return result;
+    }
+
+    if (std::holds_alternative<GcPtr<Map>>(a) && std::holds_alternative<GcPtr<Map>>(b)) {
+        auto result = GcHeap::instance().alloc<Map>();
+        result->pairs = std::get<GcPtr<Map>>(a)->pairs;
+        for (const auto& [k, v] : std::get<GcPtr<Map>>(b)->pairs) {
             result->pairs[k] = v;  // right overwrites left
         }
         return result;

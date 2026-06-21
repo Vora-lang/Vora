@@ -52,6 +52,8 @@ void registerBuiltins(VM& vm) {
                 else if constexpr (std::is_same_v<T, GcPtr<GcString>>) return GcHeap::instance().alloc<GcString>("string");
                 else if constexpr (std::is_same_v<T, GcPtr<Array>>) return GcHeap::instance().alloc<GcString>("array");
                 else if constexpr (std::is_same_v<T, GcPtr<Dict>>) return GcHeap::instance().alloc<GcString>("dict");
+                else if constexpr (std::is_same_v<T, GcPtr<Set>>) return GcHeap::instance().alloc<GcString>("set");
+                else if constexpr (std::is_same_v<T, GcPtr<Map>>) return GcHeap::instance().alloc<GcString>("map");
                 else if constexpr (std::is_same_v<T, GcPtr<Callable>>) return GcHeap::instance().alloc<GcString>("function");
                 else if constexpr (std::is_same_v<T, GcPtr<ObjectInstance>>) return GcHeap::instance().alloc<GcString>("object");
                 else if constexpr (std::is_same_v<T, GcPtr<FunctionPrototype>>) return GcHeap::instance().alloc<GcString>("function");
@@ -69,6 +71,10 @@ void registerBuiltins(VM& vm) {
                 return static_cast<int64_t>(std::get<GcPtr<GcString>>(v)->value.size());
             if (std::holds_alternative<GcPtr<Dict>>(v))
                 return static_cast<int64_t>(std::get<GcPtr<Dict>>(v)->pairs.size());
+            if (std::holds_alternative<GcPtr<Set>>(v))
+                return static_cast<int64_t>(std::get<GcPtr<Set>>(v)->elements.size());
+            if (std::holds_alternative<GcPtr<Map>>(v))
+                return static_cast<int64_t>(std::get<GcPtr<Map>>(v)->pairs.size());
             return nullptr;  // will be caught by runtime
         });
 
@@ -263,6 +269,18 @@ void registerBuiltins(VM& vm) {
                 for (const auto& [k, v] : (*d)->pairs) {
                     it->dictKeys.push_back(k);
                 }
+            } else if (auto* s = std::get_if<GcPtr<Set>>(&arg)) {
+                // Snapshot set elements for stable iteration
+                it->valueKeys.reserve((*s)->elements.size());
+                for (const auto& e : (*s)->elements) {
+                    it->valueKeys.push_back(e);
+                }
+            } else if (auto* m = std::get_if<GcPtr<Map>>(&arg)) {
+                // Snapshot map keys for stable iteration
+                it->valueKeys.reserve((*m)->pairs.size());
+                for (const auto& [k, v] : (*m)->pairs) {
+                    it->valueKeys.push_back(k);
+                }
             } else if (!std::holds_alternative<GcPtr<Array>>(arg) &&
                        !std::holds_alternative<GcPtr<GcString>>(arg)) {
                 // iter() on non-iterable → null (caller can check)
@@ -358,10 +376,64 @@ void registerBuiltins(VM& vm) {
                 return GcHeap::instance().alloc<GcString>(it->dictKeys[idx]);
             }
 
+            // Set iteration — iterates over elements
+            if (std::holds_alternative<GcPtr<Set>>(source)) {
+                if (idx >= it->valueKeys.size()) {
+                    vm.nativeError = true;
+                    vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
+                    return nullptr;
+                }
+                it->index = idx + 1;
+                return it->valueKeys[idx];
+            }
+
+            // Map iteration — iterates over keys
+            if (std::holds_alternative<GcPtr<Map>>(source)) {
+                if (idx >= it->valueKeys.size()) {
+                    vm.nativeError = true;
+                    vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
+                    return nullptr;
+                }
+                it->index = idx + 1;
+                return it->valueKeys[idx];
+            }
+
             // Exhausted or non-iterable source
             vm.nativeError = true;
             vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
             return nullptr;
+        });
+
+    // --- Set(iterable?) — create a Set ---
+    vm.defineNative("Set", -1,
+        [](const std::vector<Value>& arguments) -> Value {
+            auto set = GcHeap::instance().alloc<Set>();
+            if (!arguments.empty()) {
+                const auto& arg = arguments[0];
+                if (std::holds_alternative<GcPtr<Array>>(arg)) {
+                    for (const auto& e : std::get<GcPtr<Array>>(arg)->elements) {
+                        set->elements.insert(e);
+                    }
+                } else if (std::holds_alternative<GcPtr<GcString>>(arg)) {
+                    for (char c : std::get<GcPtr<GcString>>(arg)->value) {
+                        set->elements.insert(GcHeap::instance().alloc<GcString>(std::string(1, c)));
+                    }
+                } else if (std::holds_alternative<GcPtr<Set>>(arg)) {
+                    set->elements = std::get<GcPtr<Set>>(arg)->elements;
+                } else if (std::holds_alternative<GcPtr<Dict>>(arg)) {
+                    for (const auto& [k, v] : std::get<GcPtr<Dict>>(arg)->pairs) {
+                        set->elements.insert(GcHeap::instance().alloc<GcString>(k));
+                    }
+                }
+                // Other types: ignore, return empty set
+            }
+            return set;
+        });
+
+    // --- Map() — create an empty Map ---
+    vm.defineNative("Map", 0,
+        [](const std::vector<Value>&) -> Value {
+            return GcHeap::instance().alloc<Map>();
         });
 
     // Register math builtins
@@ -497,6 +569,126 @@ GcPtr<NativeFunction> getDictMethod(
                 Value v = it->second;
                 dict->pairs.erase(it);
                 return v;
+            });
+    }
+    return nullptr;
+}
+
+// ============================================================================
+// Set built-in methods
+// ============================================================================
+
+GcPtr<NativeFunction> getSetMethod(
+    const std::string& name,
+    GcPtr<Set> set
+) {
+    if (name == "add") {
+        return GcHeap::instance().alloc<NativeFunction>("add", 1,
+            [set](const std::vector<Value>& args) -> Value {
+                set->elements.insert(args[0]);
+                return nullptr;
+            });
+    }
+    if (name == "has") {
+        return GcHeap::instance().alloc<NativeFunction>("has", 1,
+            [set](const std::vector<Value>& args) -> Value {
+                return set->elements.find(args[0]) != set->elements.end();
+            });
+    }
+    if (name == "remove") {
+        return GcHeap::instance().alloc<NativeFunction>("remove", 1,
+            [set](const std::vector<Value>& args) -> Value {
+                set->elements.erase(args[0]);
+                return nullptr;
+            });
+    }
+    if (name == "clear") {
+        return GcHeap::instance().alloc<NativeFunction>("clear", 0,
+            [set](const std::vector<Value>&) -> Value {
+                set->elements.clear();
+                return nullptr;
+            });
+    }
+    if (name == "values") {
+        return GcHeap::instance().alloc<NativeFunction>("values", 0,
+            [set](const std::vector<Value>&) -> Value {
+                auto arr = GcHeap::instance().alloc<Array>();
+                arr->elements.reserve(set->elements.size());
+                for (const auto& e : set->elements) {
+                    arr->elements.push_back(e);
+                }
+                return arr;
+            });
+    }
+    return nullptr;
+}
+
+// ============================================================================
+// Map built-in methods
+// ============================================================================
+
+GcPtr<NativeFunction> getMapMethod(
+    const std::string& name,
+    GcPtr<Map> map
+) {
+    if (name == "set") {
+        return GcHeap::instance().alloc<NativeFunction>("set", 2,
+            [map](const std::vector<Value>& args) -> Value {
+                map->pairs[args[0]] = args[1];
+                return nullptr;
+            });
+    }
+    if (name == "get") {
+        return GcHeap::instance().alloc<NativeFunction>("get", 1,
+            [map](const std::vector<Value>& args) -> Value {
+                auto it = map->pairs.find(args[0]);
+                if (it == map->pairs.end()) return nullptr;
+                return it->second;
+            });
+    }
+    if (name == "has") {
+        return GcHeap::instance().alloc<NativeFunction>("has", 1,
+            [map](const std::vector<Value>& args) -> Value {
+                return map->pairs.find(args[0]) != map->pairs.end();
+            });
+    }
+    if (name == "remove") {
+        return GcHeap::instance().alloc<NativeFunction>("remove", 1,
+            [map](const std::vector<Value>& args) -> Value {
+                auto it = map->pairs.find(args[0]);
+                if (it == map->pairs.end()) return nullptr;
+                Value v = it->second;
+                map->pairs.erase(it);
+                return v;
+            });
+    }
+    if (name == "keys") {
+        return GcHeap::instance().alloc<NativeFunction>("keys", 0,
+            [map](const std::vector<Value>&) -> Value {
+                auto arr = GcHeap::instance().alloc<Array>();
+                arr->elements.reserve(map->pairs.size());
+                for (const auto& [k, v] : map->pairs) {
+                    arr->elements.push_back(k);
+                }
+                return arr;
+            });
+    }
+    if (name == "values") {
+        return GcHeap::instance().alloc<NativeFunction>("values", 0,
+            [map](const std::vector<Value>&) -> Value {
+                auto arr = GcHeap::instance().alloc<Array>();
+                arr->elements.reserve(map->pairs.size());
+                for (const auto& [k, v] : map->pairs) {
+                    arr->elements.push_back(v);
+                }
+                return arr;
+            });
+    }
+    if (name == "clear") {
+        return GcHeap::instance().alloc<NativeFunction>("clear", 0,
+            [map](const std::vector<Value>&) -> Value {
+                map->pairs.clear();
+                return nullptr;
             });
     }
     return nullptr;
@@ -889,6 +1081,21 @@ nlohmann::json valueToJson(const Value& val) {
             for (const auto& [k, v] : arg->pairs)
                 obj[k] = valueToJson(v);
             return obj;
+        } else if constexpr (std::is_same_v<T, GcPtr<Set>>) {
+            nlohmann::json arr = nlohmann::json::array();
+            for (const auto& e : arg->elements)
+                arr.push_back(valueToJson(e));
+            return arr;
+        } else if constexpr (std::is_same_v<T, GcPtr<Map>>) {
+            // Serialize as array of [key, value] pairs (lossless for non-string keys)
+            nlohmann::json arr = nlohmann::json::array();
+            for (const auto& [k, v] : arg->pairs) {
+                nlohmann::json pair = nlohmann::json::array();
+                pair.push_back(valueToJson(k));
+                pair.push_back(valueToJson(v));
+                arr.push_back(std::move(pair));
+            }
+            return arr;
         } else {
             // Functions, objects, classes, generators, etc. → JSON null
             return nullptr;
