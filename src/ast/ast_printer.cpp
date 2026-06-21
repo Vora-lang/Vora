@@ -248,6 +248,10 @@ std::string ASTPrinter::visitYieldExpr(const YieldExpr& expr) {
     return "(yield)";
 }
 
+std::string ASTPrinter::visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) {
+    return "(destructure-assign " + expr.value->accept(*this) + ")";
+}
+
 std::string ASTPrinter::visitErrorExpr(const ErrorExpr& expr) {
     return "(error \"" + expr.message + "\")";
 }
@@ -261,7 +265,21 @@ std::string ASTPrinter::visitExprStmt(const ExprStmt& stmt) {
 }
 
 std::string ASTPrinter::visitLetStmt(const LetStmt& stmt) {
-    std::string label = (stmt.isConst ? "const " : "let ") + stmt.name;
+    std::string bindLabel;
+    if (stmt.binding) {
+        // Collect bound names for debug output
+        auto names = stmt.binding->getBoundNames();
+        bindLabel = "[";
+        for (size_t i = 0; i < names.size(); i++) {
+            if (i > 0) bindLabel += " ";
+            bindLabel += names[i];
+        }
+        bindLabel += "]";
+    } else {
+        bindLabel = stmt.name;
+    }
+
+    std::string label = (stmt.isConst ? "const " : "let ") + bindLabel;
     if (!stmt.typeAnnotation.empty()) {
         label += ":" + stmt.typeAnnotation;
     }

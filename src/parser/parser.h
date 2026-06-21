@@ -7,6 +7,7 @@
 #include "../ast/expr.h"
 #include "../ast/stmt.h"
 #include "../ast/program.h"
+#include "../ast/binding_pattern.h"
 #include "../common/error_reporter.h"
 
 namespace vora {
@@ -61,6 +62,17 @@ private:
 
     std::unique_ptr<Stmt> letStatement();
     std::unique_ptr<Stmt> constStatement();
+
+    // Destructuring support
+    std::unique_ptr<Stmt> bindingDeclaration(bool isConst);
+    std::unique_ptr<BindingPattern> parseBindingPattern();
+    std::unique_ptr<BindingPattern> parseArrayBinding();
+    std::unique_ptr<BindingPattern> parseObjectBinding();
+
+    // Convert already-parsed expressions to binding patterns (for bare
+    // destructuring assignment: [a,b] = arr or {x,y} = obj).
+    std::unique_ptr<BindingPattern> convertArrayExprToBinding(const ArrayExpr& expr);
+    std::unique_ptr<BindingPattern> convertDictExprToBinding(const DictExpr& expr);
 
     std::unique_ptr<BlockStmt> blockStatement();
 

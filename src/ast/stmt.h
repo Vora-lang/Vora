@@ -6,6 +6,7 @@
 
 #include "expr.h"
 #include "param_decl.h"
+#include "binding_pattern.h"
 
 namespace vora {
 
@@ -44,13 +45,15 @@ public:
         Token nameToken,
         std::unique_ptr<Expr> initializer,
         std::string typeAnnotation = "",
-        bool isConst = false
+        bool isConst = false,
+        std::unique_ptr<BindingPattern> binding = nullptr
     )
         : name(std::move(name)),
           nameToken(std::move(nameToken)),
           initializer(std::move(initializer)),
           typeAnnotation(std::move(typeAnnotation)),
-          isConst(isConst) {
+          isConst(isConst),
+          binding(std::move(binding)) {
     }
 
     void        accept(StmtVisitor<void>& visitor)        const override;
@@ -65,6 +68,11 @@ public:
     std::string typeAnnotation;  // empty = no annotation
 
     bool isConst = false;  // true if declared with 'const' keyword
+
+    // Destructuring binding pattern (null for simple let x = y).
+    // When non-null, name is empty and the binding describes the
+    // array/object destructuring pattern.
+    std::unique_ptr<BindingPattern> binding;
 };
 
 class BlockStmt : public Stmt {

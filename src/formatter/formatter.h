@@ -70,6 +70,9 @@ private:
     // Format a function-like parameter list: "(p1, p2, ...)".
     std::string formatParams(const std::vector<ParamDecl>& params);
 
+    // Format a destructuring binding pattern: [a, b] or {x, y}.
+    std::string formatBindingPattern(const BindingPattern& pattern);
+
     // =====================================================================
     // ExprVisitor<std::string> overrides
     // =====================================================================
@@ -94,6 +97,7 @@ private:
     std::string visitTernaryExpr(const TernaryExpr& expr) override;
     std::string visitFuncExpr(const FuncExpr& expr) override;
     std::string visitYieldExpr(const YieldExpr& expr) override;
+    std::string visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) override;
     std::string visitErrorExpr(const ErrorExpr& expr) override;
 
     // =====================================================================

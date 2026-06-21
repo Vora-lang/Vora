@@ -241,6 +241,7 @@ public:
     void visitTernaryExpr(const TernaryExpr& expr) override;
     void visitFuncExpr(const FuncExpr& expr) override;
     void visitYieldExpr(const YieldExpr& expr) override;
+    void visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) override;
     void visitErrorExpr(const ErrorExpr& expr) override;
 
 private:

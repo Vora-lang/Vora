@@ -29,6 +29,7 @@ add_library(vora_lib OBJECT
 
     src/ast/ast_printer.cpp
     src/ast/param_decl.cpp
+    src/ast/binding_pattern.cpp
     src/ast/program.cpp
     src/ast/expr.cpp
     src/ast/stmt.cpp

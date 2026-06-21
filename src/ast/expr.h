@@ -7,6 +7,7 @@
 #include "../lexer/token.h"
 #include "../runtime/value.h"
 #include "param_decl.h"
+#include "binding_pattern.h"
 
 namespace vora {
 
@@ -444,6 +445,28 @@ public:
 
     std::unique_ptr<Expr> value;  // nullptr = yield with no value (yields null)
     Token keyword;
+};
+
+// DestructureAssignmentExpr — bare destructuring assignment (without let/const).
+// [a, b] = arr   or   {x, y} = obj
+// Pushes the assigned value onto the stack (assignment is an expression in Vora).
+class DestructureAssignmentExpr : public Expr {
+public:
+    DestructureAssignmentExpr(
+        std::unique_ptr<BindingPattern> binding,
+        std::unique_ptr<Expr> value
+    )
+        : binding(std::move(binding)),
+          value(std::move(value)) {
+    }
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::unique_ptr<BindingPattern> binding;
+    std::unique_ptr<Expr> value;
 };
 
 // ErrorExpr — placeholder for a parse error in expression context.

@@ -489,10 +489,63 @@ std::string SourceFormatter::visitYieldExpr(const YieldExpr& expr) {
     return "yield";
 }
 
+std::string SourceFormatter::visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) {
+    std::string result = formatBindingPattern(*expr.binding);
+    result += " = ";
+    result += formatExpr(*expr.value, PREC_ASSIGNMENT);
+    return result;
+}
+
 std::string SourceFormatter::visitErrorExpr(const ErrorExpr& expr) {
     // Emit a placeholder that is valid Vora syntax (null) so formatted
     // output remains syntactically valid even for partial/error ASTs.
     return "null /* ERROR: " + expr.message + " */";
+}
+
+std::string SourceFormatter::formatBindingPattern(const BindingPattern& pattern) {
+    switch (pattern.kind()) {
+        case BindingKind::Identifier: {
+            const auto& id = static_cast<const IdentifierBinding&>(pattern);
+            if (id.defaultValue) {
+                return id.name + " = " + formatExpr(*id.defaultValue, PREC_ASSIGNMENT);
+            }
+            return id.name;
+        }
+        case BindingKind::Array: {
+            const auto& arr = static_cast<const ArrayBinding&>(pattern);
+            std::string result = "[";
+            for (size_t i = 0; i < arr.elements.size(); i++) {
+                if (i > 0) result += ", ";
+                result += formatBindingPattern(*arr.elements[i]);
+            }
+            if (arr.rest) {
+                if (!arr.elements.empty()) result += ", ";
+                result += "..." + formatBindingPattern(*arr.rest);
+            }
+            result += "]";
+            return result;
+        }
+        case BindingKind::Object: {
+            const auto& obj = static_cast<const ObjectBinding&>(pattern);
+            std::string result = "{";
+            for (size_t i = 0; i < obj.properties.size(); i++) {
+                if (i > 0) result += ", ";
+                const auto& prop = obj.properties[i];
+                if (prop.isShorthand) {
+                    result += prop.key;
+                } else {
+                    result += prop.key + ": " + formatBindingPattern(*prop.pattern);
+                }
+            }
+            if (obj.rest) {
+                if (!obj.properties.empty()) result += ", ";
+                result += "..." + formatBindingPattern(*obj.rest);
+            }
+            result += "}";
+            return result;
+        }
+    }
+    return "?pattern?";
 }
 
 // =====================================================================
@@ -505,7 +558,13 @@ std::string SourceFormatter::visitExprStmt(const ExprStmt& stmt) {
 
 std::string SourceFormatter::visitLetStmt(const LetStmt& stmt) {
     std::stringstream ss;
-    ss << (stmt.isConst ? "const " : "let ") << stmt.name;
+    ss << (stmt.isConst ? "const " : "let ");
+
+    if (stmt.binding) {
+        ss << formatBindingPattern(*stmt.binding);
+    } else {
+        ss << stmt.name;
+    }
 
     if (!stmt.typeAnnotation.empty()) {
         ss << ": " << stmt.typeAnnotation;

@@ -447,6 +447,30 @@ std::unique_ptr<Expr> YieldExpr::clone() const {
 }
 
 // =========================================================================
+// DestructureAssignmentExpr
+// =========================================================================
+
+Value DestructureAssignmentExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitDestructureAssignmentExpr(*this);
+}
+
+void DestructureAssignmentExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitDestructureAssignmentExpr(*this);
+}
+
+std::string DestructureAssignmentExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitDestructureAssignmentExpr(*this);
+}
+
+std::unique_ptr<Expr> DestructureAssignmentExpr::clone() const {
+    // BindingPattern has no clone; we simply pass nullptr since cloning
+    // DestructureAssignmentExpr is not used in practice (no deep-copy needed).
+    return std::make_unique<DestructureAssignmentExpr>(
+        nullptr, value->clone()
+    );
+}
+
+// =========================================================================
 // ErrorExpr
 // =========================================================================
 

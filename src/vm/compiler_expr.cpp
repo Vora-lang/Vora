@@ -717,6 +717,17 @@ void Compiler::visitYieldExpr(const YieldExpr& expr) {
     emitByte(static_cast<uint8_t>(OpCode::OP_YIELD));
 }
 
+void Compiler::visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) {
+    // Bare destructuring assignment: [a, b] = arr  or  {x, y} = obj
+    // TODO: Implement full destructured assignment compilation.
+    // For now, compile value and leave on stack.
+    if (expr.value) {
+        expr.value->accept(*this);
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+    }
+}
+
 void Compiler::visitFuncExpr(const FuncExpr& expr) {
     // Compile an anonymous function expression: func(x) { body }
     // Creates a VoraFunction closure and pushes it on the stack.

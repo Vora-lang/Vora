@@ -112,6 +112,13 @@ public:
     void visitTernaryExpr(const TernaryExpr& expr) override;
     void visitFuncExpr(const FuncExpr& expr) override;
     void visitYieldExpr(const YieldExpr& expr) override;
+    void visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) override;
+
+    // Destructuring compilation helpers
+    void compileDestructuredBinding(const BindingPattern& pattern,
+                                    const Expr* initializer, bool isConst);
+    void compileBindPattern(const BindingPattern& pattern,
+                            int sourceSlot, bool isConst);
     void visitErrorExpr(const ErrorExpr& expr) override;
 
     // --- StmtVisitor ---
@@ -199,6 +206,8 @@ private:
     std::vector<Local> locals;
     int scopeDepth = 0;
     std::vector<int> scopeLocalCounts;  // #locals added per scope (parallel to scopes)
+
+    int destructureTempCounter = 0;  // counter for unique temp names in destructuring
 
     void beginScope();
     void endScope();

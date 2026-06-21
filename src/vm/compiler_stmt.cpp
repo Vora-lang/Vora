@@ -14,6 +14,12 @@ namespace vora {
 // =========================================================================
 
 void Compiler::visitLetStmt(const LetStmt& stmt) {
+    // Destructured binding: let [a, b] = expr  or  let {x, y} = expr
+    if (stmt.binding) {
+        compileDestructuredBinding(*stmt.binding, stmt.initializer.get(), stmt.isConst);
+        return;
+    }
+
     // Compile initializer (or null if none)
     if (stmt.initializer) {
         stmt.initializer->accept(*this);
@@ -43,6 +49,213 @@ void Compiler::visitLetStmt(const LetStmt& stmt) {
         addLocal(stmt.name, stmt.isConst);
         // The value is already on the stack at the local slot position.
         // No OP_SET_LOCAL needed — the initializer result IS the local.
+    }
+}
+
+// =========================================================================
+// Destructuring compilation helpers
+// =========================================================================
+
+void Compiler::compileDestructuredBinding(const BindingPattern& pattern,
+                                          const Expr* initializer, bool isConst) {
+    // Compile the RHS value (the source array/object to destructure).
+    if (initializer) {
+        initializer->accept(*this);
+    } else {
+        if (isConst) {
+            error("const destructuring requires an initializer");
+            return;
+        }
+        emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+    }
+
+    // For global scope, we pop values via OP_DEFINE_GLOBAL.
+    // For local scope, they stay on the stack as locals.
+    // The pattern compilation handles both cases.
+    compileBindPattern(pattern, scopeDepth == 0 ? -1 : -1, isConst);
+}
+
+void Compiler::compileBindPattern(const BindingPattern& pattern,
+                                  int sourceSlot, bool isConst) {
+    switch (pattern.kind()) {
+
+    case BindingKind::Identifier: {
+        const auto& id = static_cast<const IdentifierBinding&>(pattern);
+        // The value to bind is already on top of stack.
+        if (scopeDepth == 0) {
+            int slot;
+            if (isConst) {
+                slot = defineGlobalConst(id.name);
+            } else {
+                slot = defineGlobal(id.name);
+            }
+            if (hadError) return;
+            emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
+                      static_cast<uint8_t>(slot));
+        } else {
+            addLocal(id.name, isConst);
+        }
+        break;
+    }
+
+    case BindingKind::Array: {
+        const auto& arr = static_cast<const ArrayBinding&>(pattern);
+        // Source array is on top of stack. Save it in a temp local so we
+        // can access it repeatedly while processing elements.
+        bool hasRest = arr.rest != nullptr;
+        bool isGlobal = (scopeDepth == 0);
+        int tempId = destructureTempCounter++;
+        int srcSlot = -1;
+
+        if (isGlobal) {
+            // Global scope: use OP_DUP to keep array accessible.
+            // OP_DEFINE_GLOBAL pops the bound value, leaving the DUP'd array.
+        } else {
+            // Local scope: save array in a temp local so we can reload it.
+            // We can't DUP because addLocal doesn't pop — the local value
+            // would stay on stack and the next DUP would dup it, not the array.
+            std::string srcName = "_ds" + std::to_string(tempId) + "_src";
+            addLocal(srcName);
+            srcSlot = resolveLocal(srcName);
+        }
+
+        for (size_t i = 0; i < arr.elements.size(); i++) {
+            if (isGlobal) {
+                emitByte(static_cast<uint8_t>(OpCode::OP_DUP));  // dup array
+            } else {
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(srcSlot));         // load array
+            }
+            emitConstant(static_cast<double>(i));             // push index
+            emitByte(static_cast<uint8_t>(OpCode::OP_INDEX)); // array[i]
+            compileBindPattern(*arr.elements[i], -1, isConst);
+        }
+
+        // Rest element: ...rest
+        if (hasRest) {
+            if (scopeDepth == 0) {
+                error("Rest element in destructuring is only supported inside functions");
+                emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+                compileBindPattern(*arr.rest, -1, isConst);
+            } else {
+                int restStartIdx = static_cast<int>(arr.elements.size());
+
+                // Create empty rest array
+                std::string arrName = "_ds" + std::to_string(tempId) + "_arr";
+                emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 0);
+                addLocal(arrName);
+                int arrSlot = resolveLocal(arrName);
+
+                // Loop counter: _rest_i = restStartIdx
+                std::string iName = "_ds" + std::to_string(tempId) + "_i";
+                emitConstant(static_cast<double>(restStartIdx));
+                addLocal(iName);
+                int iSlot = resolveLocal(iName);
+
+                // Get array length: _rest_len = _vora_len(_arr_src)
+                std::string lenName = "_ds" + std::to_string(tempId) + "_len";
+                int lenBuiltinSlot = resolveGlobal("_vora_len");
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL),
+                          static_cast<uint8_t>(lenBuiltinSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(srcSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                addLocal(lenName);
+                int lenSlot = resolveLocal(lenName);
+
+                // While loop: _rest_i < _rest_len
+                size_t loopStart = chunk.code.size();
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(lenSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN));
+                size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+
+                // Body: _rest_arr = _rest_arr + [arr[i]]
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(arrSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(srcSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 1);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                          static_cast<uint8_t>(arrSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                // i = i + 1
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitConstant(1.0);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                emitLoop(loopStart);
+                patchJump(exitJump);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                // Push rest array and bind
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(arrSlot));
+                compileBindPattern(*arr.rest, -1, isConst);
+            }
+        }
+
+        // Pop the source array temp (no longer needed)
+        // Actually, the temp will be cleaned up by endScope.
+        // For global scope, pop the original array.
+        if (scopeDepth == 0) {
+            emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+        }
+        break;
+    }
+
+    case BindingKind::Object: {
+        const auto& obj = static_cast<const ObjectBinding&>(pattern);
+        // Source object is on top of stack. Save in temp local.
+        int tempId = destructureTempCounter++;
+        bool isGlobal = (scopeDepth == 0);
+        int srcSlot = -1;
+
+        if (isGlobal) {
+            // Global scope: OP_DUP works because OP_DEFINE_GLOBAL pops.
+        } else {
+            std::string srcName = "_ds" + std::to_string(tempId) + "_obj";
+            addLocal(srcName);
+            srcSlot = resolveLocal(srcName);
+        }
+
+        for (size_t i = 0; i < obj.properties.size(); i++) {
+            const auto& prop = obj.properties[i];
+            if (isGlobal) {
+                emitByte(static_cast<uint8_t>(OpCode::OP_DUP));  // dup object
+            } else {
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(srcSlot));         // load object
+            }
+            uint8_t keyIndex = identifierConstant(prop.key);
+            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), keyIndex);
+            compileBindPattern(*prop.pattern, -1, isConst);
+        }
+
+        // Rest for object: not implemented in v1
+        if (obj.rest) {
+            emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+            compileBindPattern(*obj.rest, -1, isConst);
+        }
+
+        // Pop source object at global scope
+        if (scopeDepth == 0) {
+            emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+        }
+        break;
+    }
     }
 }
 

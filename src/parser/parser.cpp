@@ -221,6 +221,11 @@ std::unique_ptr<Stmt> Parser::statement() {
 
 std::unique_ptr<Stmt> Parser::letStatement() {
 
+    // Destructuring: let [a, b] = ...  or  let {x, y} = ...
+    if (check(TokenType::LEFT_BRACKET) || check(TokenType::LEFT_BRACE)) {
+        return bindingDeclaration(/*isConst=*/false);
+    }
+
     if (!match(TokenType::IDENTIFIER)) {
         return errorStmt("Expected variable name");
     }
@@ -268,6 +273,11 @@ std::unique_ptr<Stmt> Parser::letStatement() {
 
 std::unique_ptr<Stmt> Parser::constStatement() {
 
+    // Destructuring: const [a, b] = ...  or  const {x, y} = ...
+    if (check(TokenType::LEFT_BRACKET) || check(TokenType::LEFT_BRACE)) {
+        return bindingDeclaration(/*isConst=*/true);
+    }
+
     if (!match(TokenType::IDENTIFIER)) {
         return errorStmt("Expected variable name");
     }
@@ -313,6 +323,205 @@ std::unique_ptr<Stmt> Parser::constStatement() {
         typeAnnotation,
         true  // isConst
     );
+}
+
+// =========================================================================
+// Destructuring support
+// =========================================================================
+
+// bindingDeclaration — parse `let/const <pattern> = <expr>`
+std::unique_ptr<Stmt> Parser::bindingDeclaration(bool isConst) {
+    auto binding = parseBindingPattern();
+
+    // Optional type annotation
+    std::string typeAnnotation;
+    if (match(TokenType::COLON)) {
+        if (match(TokenType::IDENTIFIER)) {
+            typeAnnotation = previous().lexeme;
+        } else {
+            error("Expected type name after ':'");
+        }
+    }
+
+    if (!match(TokenType::EQUAL)) {
+        error("Expected '=' in destructuring declaration");
+        match(TokenType::SEMICOLON);
+        return std::make_unique<LetStmt>(
+            "", binding->startToken,
+            std::make_unique<ErrorExpr>("Missing initializer", peek()),
+            typeAnnotation, isConst, std::move(binding));
+    }
+
+    auto initializer = expression();
+    if (!initializer) {
+        initializer = std::make_unique<ErrorExpr>("Expected initializer expression", peek());
+    }
+
+    match(TokenType::SEMICOLON);
+
+    return std::make_unique<LetStmt>(
+        "", binding->startToken,
+        std::move(initializer),
+        typeAnnotation, isConst, std::move(binding));
+}
+
+// parseBindingPattern — dispatch on first token: [ → array, { → object, else identifier
+std::unique_ptr<BindingPattern> Parser::parseBindingPattern() {
+    if (match(TokenType::LEFT_BRACKET)) {
+        return parseArrayBinding();
+    }
+    if (match(TokenType::LEFT_BRACE)) {
+        return parseObjectBinding();
+    }
+    // Fallback: simple identifier (used for nested patterns and rest args)
+    if (match(TokenType::IDENTIFIER)) {
+        std::string name = previous().lexeme;
+        Token nameToken = previous();
+        std::unique_ptr<Expr> defaultValue;
+        if (match(TokenType::EQUAL)) {
+            defaultValue = expression();
+        }
+        return std::make_unique<IdentifierBinding>(
+            std::move(name), std::move(nameToken), std::move(defaultValue));
+    }
+    error("Expected binding pattern");
+    return std::make_unique<IdentifierBinding>("?error?", peek());
+}
+
+// parseArrayBinding — parse `[elem1, elem2, ...rest]`
+std::unique_ptr<BindingPattern> Parser::parseArrayBinding() {
+    Token leftBracket = previous();
+    std::vector<std::unique_ptr<BindingPattern>> elements;
+    std::unique_ptr<BindingPattern> rest;
+
+    if (!check(TokenType::RIGHT_BRACKET)) {
+        do {
+            if (match(TokenType::DOT_DOT_DOT)) {
+                rest = parseBindingPattern();
+                break;  // rest is always last
+            }
+            auto elem = parseBindingPattern();
+            elements.push_back(std::move(elem));
+        } while (match(TokenType::COMMA));
+    }
+
+    if (!match(TokenType::RIGHT_BRACKET)) {
+        error("Expected ']' after binding pattern");
+    }
+
+    return std::make_unique<ArrayBinding>(
+        std::move(elements), std::move(rest), std::move(leftBracket));
+}
+
+// parseObjectBinding — parse `{key1: pat1, shorth, ...rest}`
+std::unique_ptr<BindingPattern> Parser::parseObjectBinding() {
+    Token leftBrace = previous();
+    std::vector<ObjectBinding::Property> properties;
+    std::unique_ptr<BindingPattern> rest;
+
+    if (!check(TokenType::RIGHT_BRACE)) {
+        do {
+            if (match(TokenType::DOT_DOT_DOT)) {
+                rest = parseBindingPattern();
+                break;  // rest is always last
+            }
+
+            if (!match(TokenType::IDENTIFIER)) {
+                error("Expected property name in destructuring pattern");
+                break;
+            }
+            std::string propName = previous().lexeme;
+
+            if (match(TokenType::COLON)) {
+                // Named: {key: binding} — binding can be another pattern
+                auto nestedBinding = parseBindingPattern();
+                properties.push_back({std::move(propName), std::move(nestedBinding), false});
+            } else {
+                // Shorthand: {x} means {x: x}
+                Token nameToken = previous();
+                std::unique_ptr<Expr> defaultValue;
+                if (match(TokenType::EQUAL)) {
+                    defaultValue = expression();
+                }
+                auto idBinding = std::make_unique<IdentifierBinding>(
+                    propName, std::move(nameToken), std::move(defaultValue));
+                properties.push_back({std::move(propName), std::move(idBinding), true});
+            }
+        } while (match(TokenType::COMMA));
+    }
+
+    if (!match(TokenType::RIGHT_BRACE)) {
+        error("Expected '}' after binding pattern");
+    }
+
+    return std::make_unique<ObjectBinding>(
+        std::move(properties), std::move(rest), std::move(leftBrace));
+}
+
+// convertArrayExprToBinding — walk ArrayExpr AST, extract binding names
+std::unique_ptr<BindingPattern> Parser::convertArrayExprToBinding(const ArrayExpr& expr) {
+    std::vector<std::unique_ptr<BindingPattern>> elements;
+    std::unique_ptr<BindingPattern> rest;
+
+    for (size_t i = 0; i < expr.elements.size(); i++) {
+        const auto& elem = expr.elements[i];
+
+        // Check for spread operator in the converted expression
+        // (the original [a, ...rest] was parsed as array literal elements
+        //  but the parser's primary() would parse ... as an error — so for now
+        //  we only handle simple conversions)
+
+        if (auto* var = dynamic_cast<const VariableExpr*>(elem.get())) {
+            elements.push_back(std::make_unique<IdentifierBinding>(
+                var->name, var->nameToken));
+        } else if (auto* arr = dynamic_cast<const ArrayExpr*>(elem.get())) {
+            elements.push_back(convertArrayExprToBinding(*arr));
+        } else if (auto* dict = dynamic_cast<const DictExpr*>(elem.get())) {
+            elements.push_back(convertDictExprToBinding(*dict));
+        } else if (auto* error = dynamic_cast<const ErrorExpr*>(elem.get())) {
+            // Skip error elements — they're placeholders from error-tolerant parsing
+        } else {
+            // Invalid: non-variable expression in destructuring pattern
+            return nullptr;
+        }
+    }
+
+    return std::make_unique<ArrayBinding>(
+        std::move(elements), std::move(rest), expr.leftBracket);
+}
+
+// convertDictExprToBinding — walk DictExpr AST, extract binding names
+std::unique_ptr<BindingPattern> Parser::convertDictExprToBinding(const DictExpr& expr) {
+    std::vector<ObjectBinding::Property> properties;
+
+    for (const auto& [key, value] : expr.pairs) {
+        // The key should be a string literal (auto-converted from identifier in dict parsing)
+        std::string propName;
+        if (auto* lit = dynamic_cast<const LiteralExpr*>(key.get())) {
+            if (std::holds_alternative<GcPtr<GcString>>(lit->value)) {
+                propName = std::get<GcPtr<GcString>>(lit->value)->value;
+            } else {
+                return nullptr;  // non-string key in pattern — invalid
+            }
+        } else {
+            return nullptr;  // computed key in pattern — invalid
+        }
+
+        if (auto* var = dynamic_cast<const VariableExpr*>(value.get())) {
+            // Shorthand-like: {key: var} — bind to var
+            properties.push_back({std::move(propName),
+                std::make_unique<IdentifierBinding>(var->name, var->nameToken), false});
+        } else if (auto* arr = dynamic_cast<const ArrayExpr*>(value.get())) {
+            properties.push_back({std::move(propName), convertArrayExprToBinding(*arr), false});
+        } else if (auto* dict = dynamic_cast<const DictExpr*>(value.get())) {
+            properties.push_back({std::move(propName), convertDictExprToBinding(*dict), false});
+        } else {
+            return nullptr;  // invalid value in destructuring pattern
+        }
+    }
+
+    return std::make_unique<ObjectBinding>(
+        std::move(properties), nullptr, expr.leftBrace);
 }
 
 std::unique_ptr<BlockStmt> Parser::blockStatement() {
@@ -1442,6 +1651,29 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
                     std::move(right),
                     indexExpr->bracket
                 );
+            }
+
+            // Destructuring assignment: [a, b] = arr  or  {x, y} = obj
+            auto arrayLhs = dynamic_cast<ArrayExpr*>(left.get());
+            if (arrayLhs) {
+                auto binding = convertArrayExprToBinding(*arrayLhs);
+                if (!binding) {
+                    error("Invalid destructuring pattern — expected variable names");
+                    return right;
+                }
+                return std::make_unique<DestructureAssignmentExpr>(
+                    std::move(binding), std::move(right));
+            }
+
+            auto dictLhs = dynamic_cast<DictExpr*>(left.get());
+            if (dictLhs) {
+                auto binding = convertDictExprToBinding(*dictLhs);
+                if (!binding) {
+                    error("Invalid destructuring pattern — expected variable names");
+                    return right;
+                }
+                return std::make_unique<DestructureAssignmentExpr>(
+                    std::move(binding), std::move(right));
             }
 
             // Invalid assignment target — report error but return the

@@ -1,0 +1,108 @@
+// runtime/test_destructure.va — Destructuring assignment tests
+// Run: vora tests/runtime/test_destructure.va
+
+print("=== Runtime: Destructuring Assignment Tests ===")
+
+// ── Basic array destructuring ────────────────────
+let [a, b] = [1, 2]
+assert(a == 1, "basic array: a")
+assert(b == 2, "basic array: b")
+
+// ── Array destructuring inside function ──────────
+func testArrayInsideFunc() {
+    let [x, y] = [10, 20]
+    assert(x == 10, "func array: x")
+    assert(y == 20, "func array: y")
+}
+testArrayInsideFunc()
+
+// ── Array destructuring with rest ────────────────
+func testRest() {
+    let [x, ...rest] = [10, 20, 30]
+    assert(x == 10, "rest: first element")
+    assert(len(rest) == 2, "rest: length")
+    assert(rest[0] == 20, "rest: rest[0]")
+    assert(rest[1] == 30, "rest: rest[1]")
+}
+testRest()
+
+// ── Rest with only one extra ─────────────────────
+func testRestSingle() {
+    let [a, ...r] = [1, 2]
+    assert(a == 1, "rest single: a")
+    assert(len(r) == 1, "rest single: len")
+    assert(r[0] == 2, "rest single: r[0]")
+}
+testRestSingle()
+
+// ── Rest with no extras → empty array ────────────
+func testRestEmpty() {
+    let [a, ...r] = [1]
+    assert(a == 1, "rest empty: a")
+    assert(len(r) == 0, "rest empty: len")
+}
+testRestEmpty()
+
+// ── Nested array destructuring ───────────────────
+func testNested() {
+    let [a, [b, c]] = [1, [2, 3]]
+    assert(a == 1, "nested: a")
+    assert(b == 2, "nested: b")
+    assert(c == 3, "nested: c")
+}
+testNested()
+
+// ── Object destructuring (shorthand) ─────────────
+func testObjShorthand() {
+    let {name, age} = {name: "Alice", age: 30}
+    assert(name == "Alice", "obj: name")
+    assert(age == 30, "obj: age")
+}
+testObjShorthand()
+
+// ── Object destructuring (renaming) ──────────────
+func testObjRenamed() {
+    let {x: a, y: b} = {x: 10, y: 20}
+    assert(a == 10, "obj renamed: a")
+    assert(b == 20, "obj renamed: b")
+}
+testObjRenamed()
+
+// ── Nested object destructuring ──────────────────
+func testNestedObj() {
+    let {a, b: {c}} = {a: 1, b: {c: 2}}
+    assert(a == 1, "nested obj: a")
+    assert(c == 2, "nested obj: c")
+}
+testNestedObj()
+
+// ── Mixed: array inside object ───────────────────
+func testMixed() {
+    let {name, items: [x, y]} = {name: "test", items: [100, 200]}
+    assert(name == "test", "mixed: name")
+    assert(x == 100, "mixed: x")
+    assert(y == 200, "mixed: y")
+}
+testMixed()
+
+// ── Single-element array destructuring ───────────
+let [v] = [42]
+assert(v == 42, "single element array")
+
+// ── const destructuring ──────────────────────────
+func testConst() {
+    const [a, b] = [1, 2]
+    assert(a == 1, "const: a")
+    assert(b == 2, "const: b")
+}
+testConst()
+
+// ── Underscore-prefixed names (valid identifier) ──
+func testUnderscore() {
+    let [_x, _y] = [1, 2]
+    assert(_x == 1, "underscore: _x")
+    assert(_y == 2, "underscore: _y")
+}
+testUnderscore()
+
+print("Runtime destructuring tests: PASS")

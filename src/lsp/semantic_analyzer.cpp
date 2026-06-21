@@ -291,13 +291,27 @@ void SemanticAnalyzer::visitExprStmt(const ExprStmt& stmt) {
 }
 
 void SemanticAnalyzer::visitLetStmt(const LetStmt& stmt) {
-    SymbolInfo sym;
-    sym.name = stmt.name;
-    sym.kind = stmt.isConst ? SymbolKind::Constant : SymbolKind::Variable;
-    sym.declToken = stmt.nameToken;
-    sym.typeHint = stmt.typeAnnotation;
-    sym.isExported = false;  // ExportStmt sets this via visitExportStmt
-    addDecl(sym);
+    if (stmt.binding) {
+        // Destructured binding — register symbols for all bound names.
+        auto names = stmt.binding->getBoundNames();
+        for (const auto& name : names) {
+            SymbolInfo sym;
+            sym.name = name;
+            sym.kind = stmt.isConst ? SymbolKind::Constant : SymbolKind::Variable;
+            sym.declToken = stmt.binding->startToken;
+            sym.typeHint = stmt.typeAnnotation;
+            sym.isExported = false;
+            addDecl(sym);
+        }
+    } else {
+        SymbolInfo sym;
+        sym.name = stmt.name;
+        sym.kind = stmt.isConst ? SymbolKind::Constant : SymbolKind::Variable;
+        sym.declToken = stmt.nameToken;
+        sym.typeHint = stmt.typeAnnotation;
+        sym.isExported = false;  // ExportStmt sets this via visitExportStmt
+        addDecl(sym);
+    }
 
     if (stmt.initializer) {
         visitExpr(*stmt.initializer);
@@ -602,22 +616,29 @@ void SemanticAnalyzer::visitExportStmt(const ExportStmt& stmt) {
             // Mark all symbols added by this export's declaration.
             // The simplest heuristic: mark the symbol with the matching name
             // from the wrapped declaration.
-            std::string exportedName;
+            // For destructured bindings, collect all bound names.
+            std::vector<std::string> exportedNames;
             if (auto* func = dynamic_cast<const FuncStmt*>(stmt.declaration.get())) {
-                exportedName = func->name;
+                exportedNames.push_back(func->name);
             } else if (auto* let = dynamic_cast<const LetStmt*>(stmt.declaration.get())) {
-                exportedName = let->name;
+                if (let->binding) {
+                    exportedNames = let->binding->getBoundNames();
+                } else {
+                    exportedNames.push_back(let->name);
+                }
             } else if (auto* obj = dynamic_cast<const ObjStmt*>(stmt.declaration.get())) {
-                exportedName = obj->name;
+                exportedNames.push_back(obj->name);
             }
 
-            if (!exportedName.empty()) {
-                for (int idx : currentScopeSymbols) {
-                    auto& s = const_cast<SymbolInfo&>(allSyms[idx]);
-                    if (s.name == exportedName && !s.isExported) {
-                        s.isExported = true;
-                        exportedSymbols_.push_back(&s);
-                        break;
+            for (const auto& exportedName : exportedNames) {
+                if (!exportedName.empty()) {
+                    for (int idx : currentScopeSymbols) {
+                        auto& s = const_cast<SymbolInfo&>(allSyms[idx]);
+                        if (s.name == exportedName && !s.isExported) {
+                            s.isExported = true;
+                            exportedSymbols_.push_back(&s);
+                            break;
+                        }
                     }
                 }
             }
@@ -772,6 +793,18 @@ void SemanticAnalyzer::visitYieldExpr(const YieldExpr& expr) {
         visitExpr(*expr.value);
     }
     // yield doesn't terminate reachability (generator can resume).
+}
+
+void SemanticAnalyzer::visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) {
+    // Register write references for each bound name.
+    auto names = expr.binding->getBoundNames();
+    for (const auto& name : names) {
+        addReference(name, expr.binding->startToken, /*isWrite=*/true);
+        markReferenced(name);
+    }
+    if (expr.value) {
+        visitExpr(*expr.value);
+    }
 }
 
 void SemanticAnalyzer::visitErrorExpr(const ErrorExpr& /*expr*/) {

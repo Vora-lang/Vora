@@ -46,6 +46,7 @@ private:
     std::string visitTernaryExpr(const TernaryExpr& expr) override;
     std::string visitFuncExpr(const FuncExpr& expr) override;
     std::string visitYieldExpr(const YieldExpr& expr) override;
+    std::string visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) override;
     std::string visitErrorExpr(const ErrorExpr& expr) override;
 
     // --- StmtVisitor<std::string> overrides ---
