@@ -1,0 +1,132 @@
+// === Vora 剩余参数 (Rest Parameters) 完整教程 ===
+// 像 JavaScript 的 ...args 和 Python 的 *args —
+// 用 ...name 把多余的实参收进一个数组。
+
+print("╔══════════════════════════════════╗")
+print("║  Vora 剩余参数 — 完整教程        ║")
+print("╚══════════════════════════════════╝")
+print("")
+
+// ── 1. 基本用法 ──────────────────────────────────
+print("【1. 基本用法】")
+print("---")
+
+func add(a, b, ...rest) {
+    // a, b 是固定参数
+    // rest 是数组，装下所有多余的实参
+    print("a =", a, " b =", b, " rest =", rest)
+}
+
+add(1, 2)           // rest = []
+add(1, 2, 3)        // rest = [3]
+add(1, 2, 3, 4, 5)  // rest = [3, 4, 5]
+
+// ── 2. 只有剩余参数 ──────────────────────────────
+print("")
+print("【2. 只有 ...name — 收集一切】")
+print("---")
+
+func collectAll(...items) {
+    print("收到", len(items), "个参数:", items)
+}
+
+collectAll()                  // 0 个
+collectAll(42)                // 1 个
+collectAll("a", true, null)   // 3 个，类型随便混
+
+// ── 3. 搭配默认参数 ──────────────────────────────
+print("")
+print("【3. 默认参数 + 剩余参数】")
+print("---")
+
+func greet(greeting, ...names) {
+    // greeting 必传
+    // names 收走剩下的（可能为空）
+    print("greeting =", greeting, " names =", names)
+}
+
+greet("Hi")                    // Hi, []
+greet("Hey", "Alice", "Bob")   // Hey, ["Alice", "Bob"]
+
+// ── 4. 实用案例：可变参数求和 ────────────────────
+print("")
+print("【4. 实战：求和 / 求积】")
+print("---")
+
+func sum(...nums) {
+    let total = 0
+    let i = 0
+    while (i < len(nums)) {
+        total = total + nums[i]
+        i = i + 1
+    }
+    return total
+}
+
+func product(...nums) {
+    let result = 1
+    let i = 0
+    while (i < len(nums)) {
+        result = result * nums[i]
+        i = i + 1
+    }
+    return result
+}
+
+print("sum() =", sum())              // 0
+print("sum(1,2,3,4,5) =", sum(1,2,3,4,5)) // 15
+print("product(2,3,4) =", product(2,3,4))  // 24
+
+// ── 5. Lambda 匿名函数 ────────────────────────────
+print("")
+print("【5. Lambda 也支持】")
+print("---")
+
+let f = func(first, ...rest) {
+    print("first =", first, " rest =", rest)
+}
+f(1)
+f(1, 2, 3)
+
+// ── 6. 闭包捕获剩余参数 ──────────────────────────
+print("")
+print("【6. 闭包中使用】")
+print("---")
+
+func logger(level, ...messages) {
+    // 闭包捕获 level 和 messages
+    return func() {
+        print("[" + level + "]", messages)
+    }
+}
+
+let info = logger("INFO", "server started", "port 8080")
+let warn = logger("WARN", "disk full")
+info()
+warn()
+
+// ── 7. rest 作为数组可以索引、取长度 ──────────────
+print("")
+print("【7. rest 就是普通数组】")
+print("---")
+
+func demo(...args) {
+    print("长度:", len(args))
+    if (len(args) > 0) {
+        print("第一个:", args[0])
+        print("最后一个:", args[len(args) - 1])
+    }
+}
+demo()
+demo(10, 20, 30)
+
+// ── 8. 规则总结 ──────────────────────────────────
+print("")
+print("【规则总结】")
+print("  ✅ ...name 必须是最后一个参数")
+print("  ✅ 每个函数最多一个 rest")
+print("  ✅ rest 不能有默认值（默认为空数组）")
+print("  ✅ 适用于 func、lambda、Obj 构造函数")
+print("  ✅ rest 永远是数组 — 无多余参数时为空数组 []")
+print("")
+print("全部示例运行完毕 ✅")

@@ -1,0 +1,110 @@
+// runtime/test_rest_params.va — Rest parameter tests
+// Run: vora tests/runtime/test_rest_params.va
+
+print("=== Runtime: Rest Parameter Tests ===")
+
+// Basic rest — collecting remaining args
+func sum(a, b, ...rest) {
+    return rest
+}
+assert(len(sum(1, 2)) == 0, "rest empty when exact args")
+assert(len(sum(1, 2, 3, 4)) == 2, "rest with extra args")
+assert(sum(1, 2, 3, 4)[0] == 3, "rest first element")
+assert(sum(1, 2, 3, 4)[1] == 4, "rest second element")
+
+// Only rest parameter — collect all args
+func collectAll(...items) {
+    return items
+}
+assert(len(collectAll()) == 0, "only rest — no args")
+assert(len(collectAll(1, 2, 3)) == 3, "only rest — three args")
+assert(collectAll(1, 2, 3)[0] == 1, "only rest — first element")
+assert(collectAll(1, 2, 3)[2] == 3, "only rest — last element")
+
+// Rest with default parameters
+func greet(greeting = "Hi", ...names) {
+    return [greeting, names]
+}
+let r1 = greet()
+assert(r1[0] == "Hi", "rest + default: greeting")
+assert(len(r1[1]) == 0, "rest + default: empty names")
+
+let r2 = greet("Hey", "Alice", "Bob")
+assert(r2[0] == "Hey", "rest + default: overridden greeting")
+assert(len(r2[1]) == 2, "rest + default: two names")
+assert(r2[1][0] == "Alice", "rest + default: first name")
+
+// Rest with multiple defaults
+func multi(a, b = 2, c = 3, ...rest) {
+    return [a, b, c, rest]
+}
+let m1 = multi(1)
+assert(m1[0] == 1, "multi: a")
+assert(m1[1] == 2, "multi: b default")
+assert(m1[2] == 3, "multi: c default")
+assert(len(m1[3]) == 0, "multi: rest empty")
+
+let m2 = multi(1, 10, 20, 30, 40)
+assert(m2[0] == 1, "multi: a")
+assert(m2[1] == 10, "multi: b override")
+assert(m2[2] == 20, "multi: c override")
+assert(len(m2[3]) == 2, "multi: rest with extras")
+
+// Lambda with rest
+let f = func(a, ...r) {
+    return [a, r]
+}
+let lr = f(1, 2, 3)
+assert(lr[0] == 1, "lambda: fixed arg")
+assert(len(lr[1]) == 2, "lambda: rest len")
+assert(lr[1][0] == 2, "lambda: rest[0]")
+
+// Closure capturing rest parameter
+func makeCollector(...captured) {
+    return func(x) {
+        return len(captured) + x
+    }
+}
+let c1 = makeCollector(1, 2, 3)
+assert(c1(0) == 3, "closure rest: captured len")
+assert(c1(5) == 8, "closure rest: captured len + 5")
+
+let c2 = makeCollector()
+assert(c2(10) == 10, "closure rest: empty captured")
+
+// Rest with various types
+func mixed(...args) {
+    return args
+}
+let mixedResult = mixed(42, "hello", true, null)
+assert(mixedResult[0] == 42, "mixed: number")
+assert(mixedResult[1] == "hello", "mixed: string")
+assert(mixedResult[2] == true, "mixed: boolean")
+assert(mixedResult[3] == null, "mixed: null")
+
+// Use rest array in operations
+func sumAll(initial, ...nums) {
+    let total = initial
+    let i = 0
+    while (i < len(nums)) {
+        total = total + nums[i]
+        i = i + 1
+    }
+    return total
+}
+assert(sumAll(0) == 0, "sumAll: empty")
+assert(sumAll(0, 1, 2, 3) == 6, "sumAll: 1+2+3")
+assert(sumAll(10, 5, -3, 8) == 20, "sumAll: 10+5-3+8")
+
+// Nested function using parent's rest
+func outer(a, ...rest) {
+    func inner() {
+        return rest
+    }
+    return inner()
+}
+let nr = outer(1, 2, 3)
+assert(len(nr) == 2, "nested: rest from outer")
+assert(nr[0] == 2, "nested: rest[0]")
+
+print("Runtime rest parameter tests: PASS")
