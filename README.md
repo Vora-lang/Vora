@@ -26,9 +26,9 @@ for name in names {
 }
 ```
 
-~17,600 lines of C++17. Zero external dependencies. **Bytecode compiler + stack-based VM** as the sole execution backend. Cross-platform with native packaging.
+~18,100 lines of C++17. Zero external dependencies. **Bytecode compiler + stack-based VM** as the sole execution backend. Cross-platform with native packaging.
 
-~17,600 行 C++17，零外部依赖。**字节码编译器 + 栈式虚拟机**为唯一执行后端。跨平台，原生打包。
+~18,100 行 C++17，零外部依赖。**字节码编译器 + 栈式虚拟机**为唯一执行后端。跨平台，原生打包。
 
 ---
 
@@ -43,6 +43,7 @@ for name in names {
   - [Control Flow / 控制流](#control-flow--控制流)
   - [Functions & Closures / 函数与闭包](#functions--closures--函数与闭包)
   - [Objects & Inheritance / 对象与继承](#objects--inheritance--对象与继承)
+  - [Module System / 模块系统](#module-system--模块系统-v021)
   - [Dict / 字典](#dict--字典)
   - [Set & Map / 集合与映射表](#set--map--集合与映射表-v023)
   - [Exception Handling / 异常处理](#exception-handling--异常处理)
@@ -160,6 +161,7 @@ let nothing = null
 | Arithmetic / 算术 | `+` `-` `*` `/` `%` `**` |
 | Comparison / 比较 | `<` `<=` `>` `>=` `==` `!=` |
 | Logical / 逻辑 | `&&` `||` `!` (short-circuit / 短路求值) |
+| Logical aliases / 逻辑别名 | `and` `or` (equivalent to `&&` `||` / 等价于 `&&` `||`) |
 | Ternary / 三元 | `cond ? a : b` |
 | Increment/Decrement / 自增自减 | `++` `--` |
 | Compound Assignment / 复合赋值 | `+=` `-=` `*=` `/=` `%=` |
@@ -178,6 +180,17 @@ x = 20                  // Assignment / 赋值（沿词法作用域链查找）
 
 - `const` reassignment protection covers locals, globals, and closure-captured upvalues (compile-time checks on `=`, `+=`, `++`, `--`).
 - `const` 赋值保护覆盖局部变量、全局变量、闭包上值捕获变量（编译期检查 `=`、`+=`、`++`、`--`）。
+
+**Destructuring / 解构赋值:**
+
+```vora
+let [x, y] = [1, 2]           // x=1, y=2
+let [a, ...rest] = [10, 20, 30]  // a=10, rest=[20, 30]
+```
+
+- Array destructuring with `let [pattern] = array`.
+- Rest element `...name` captures remaining elements into a new array.
+- 数组解构赋值：`let [模式] = 数组`。剩余元素 `...name` 收集到新数组。
 
 ### Control Flow / 控制流
 
@@ -203,11 +216,13 @@ for (let i = 0; i < 5; i = i + 1) {
 let k = 0
 for (; k < 3; k = k + 1) { print(k) }
 
-// for-in (arrays, strings, ranges, dicts, objects / 数组、字符串、range、字典、对象)
-for item in [1, 2, 3] { print(item) }
+// for-in (arrays, strings, ranges, dicts, sets, maps, objects)
+for item in [1, 2, 3] { print(item) } // 数组、字符串、range、字典、集合、映射表、对象
 for ch in "Vora"       { print(ch) }
 for i in range(5)      { print(i) }   // 0..4
 for k in {a: 1, b: 2} { print(k) }   // keys "a", "b"
+for elem in Set([1,2]) { print(elem) } // Set 元素
+for k in Map()         { print(k) }   // Map 键
 for key in obj         { print(key) } // 对象属性键
 ```
 
@@ -231,6 +246,20 @@ func greet(name, greeting = "Hello") {
 }
 greet("World")        // → "Hello, World"
 greet("Vora", "Hi")   // → "Hi, Vora"
+
+// Rest parameters / 剩余参数 (v0.22)
+func sum(...nums) {
+    let total = 0
+    let i = 0
+    while (i < len(nums)) { total = total + nums[i]; i = i + 1 }
+    return total
+}
+sum(1, 2, 3)  // → 6
+
+func log(level, ...messages) {
+    print("[" + level + "]", messages)
+}
+log("INFO", "started", "port 8080")  // [INFO] ["started", "port 8080"]
 
 // Anonymous functions (lambda) / 匿名函数（Lambda）
 let square = func(x) { return x * x }
@@ -273,6 +302,7 @@ tcoFact(10000, 1)  // ✅ 不栈溢出 / no stack overflow
 
 - `return` without value is equivalent to `return null`. / 无值 `return` 等价于 `return null`。
 - Lambda syntax: `func(params) { body }` — supports closures, default params, and IIFE patterns. / Lambda 语法：`func(params) { body }` — 支持闭包、默认参数、IIFE。
+- Rest parameters: `...name` must be the last parameter, at most one per function, cannot have a default value. / 剩余参数：`...name` 必须是最后一个参数，每个函数最多一个，不能有默认值。
 - TCO: `return f(args)` reuses the current frame when not inside try/finally. Non-Vora functions gracefully fall back to regular calls. / TCO：当不在 try/finally 内时，`return f(args)` 复用当前帧。非 Vora 函数优雅降级为常规调用。
 
 ### Objects & Inheritance / 对象与继承
@@ -313,6 +343,29 @@ Obj Puppy : Dog (name, breed, toy) {
 let p = Puppy("Max", "Lab", "ball")
 p.speak()  // → "... woof! yip!"
 ```
+
+### Module System / 模块系统 (v0.21)
+
+```vora
+// Import entire module / 导入整个模块
+import "math"
+print(math.PI)         // → 3.14159...
+print(math.sin(1.0))
+
+// Named import / 命名导入
+import { sin, cos } from "math"
+print(sin(0.5))
+
+// Relative import / 相对导入
+import "./helpers"     // imports ./helpers.va
+
+// Export / 导出
+export func hello(name) { return "Hello, " + name }
+export let VERSION = "1.0"
+```
+
+- `import "module"` loads and caches a module; subsequent imports return the cached instance. / `import "module"` 加载并缓存模块，后续导入返回缓存实例。
+- Modules from `std/` directory are built-in; relative imports (`"./..."`) resolve relative to the importing file. / `std/` 目录中的模块为内置模块；相对导入相对于导入文件解析。
 
 ### Dict / 字典
 
@@ -528,13 +581,13 @@ match flag { 1 => { doSomething(); }, _ => {} }
 
 | Module / 模块 | Lines / 行数 | Description / 说明 |
 |--------|-------|-------------|
-| `lexer/` | ~600 | Hand-written scanner, 23 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b / 手写扫描器，23 个关键字 |
-| `parser/` | ~1,030 | Pratt (precedence climbing), 7-level precedence table, panic-mode error recovery / Pratt 解析器，7 级优先级表 |
-| `ast/` | ~1,450 | 30 node types (16 exprs + 14 stmts), templated Visitor pattern / 30 种节点类型，模板化 Visitor 模式 |
-| `vm/` | ~4,200 | Bytecode compiler + stack-based VM, 58 opcodes (incl. OP_TAIL_CALL), constant folding, fast numeric ops / 字节码编译器 + 栈式 VM，58 条操作码 |
-| `runtime/` | ~1,200 | `Value` (std::variant, 11 types), `Environment` (lexical scope chain), `Callable` hierarchy, `builtins` module, `Upvalue` (index-based) |
-| `gc/` | ~300 | Mark-sweep garbage collector, `GcPtr<T>`, `GcHeap` singleton / 标记-清除 GC |
-| `formatter/` | ~630 | AST-based source code formatter (`vora fmt`) / AST 驱动的代码格式化器 |
+| `lexer/` | ~770 | Hand-written scanner, 23 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b / 手写扫描器，23 个关键字 |
+| `parser/` | ~2,200 | Pratt (precedence climbing), 7-level precedence table, panic-mode error recovery / Pratt 解析器，7 级优先级表 |
+| `ast/` | ~2,630 | 38 node types (22 exprs + 16 stmts), templated Visitor pattern / 38 种节点类型，模板化 Visitor 模式 |
+| `vm/` | ~6,260 | Bytecode compiler + stack-based VM, 58 opcodes (incl. OP_TAIL_CALL), constant folding, fast numeric ops / 字节码编译器 + 栈式 VM，58 条操作码 |
+| `runtime/` | ~2,380 | `Value` (std::variant, 11 types), `Environment` (lexical scope chain), `Callable` hierarchy, `builtins` module, `Upvalue` (index-based) |
+| `gc/` | ~280 | Mark-sweep garbage collector, `GcPtr<T>`, `GcHeap` singleton / 标记-清除 GC |
+| `formatter/` | ~1,000 | AST-based source code formatter (`vora fmt`) / AST 驱动的代码格式化器 |
 
 **Design highlights / 设计亮点:**
 
@@ -575,7 +628,7 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 
 | Suite / 套件 | Count / 数量 | Status / 状态 |
 |---------|--------|--------|
-| C++ unit tests / C++ 单元测试 | 52 test cases, 330 assertions | ✅ 全通过 |
+| C++ unit tests / C++ 单元测试 | 52 test cases, ~800 assertions | ✅ 全通过 |
 | Script tests / 脚本测试 | 124 files | ✅ 全通过 |
 | Examples / 示例 | 44 files | ✅ 全通过 |
 | LeetCode integration / LeetCode 集成 | 66 solutions | ✅ 全通过 |

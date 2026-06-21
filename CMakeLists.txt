@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(Vora VERSION 0.22.0 DESCRIPTION "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.")
+project(Vora VERSION 0.24.0 DESCRIPTION "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
