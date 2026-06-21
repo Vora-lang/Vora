@@ -9,7 +9,7 @@
 [![CI](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml/badge.svg)](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
-[![Version](https://img.shields.io/badge/version-0.20-orange.svg)](#changelog)
+[![Version](https://img.shields.io/badge/version-0.24-orange.svg)](#changelog)
 
 </div>
 
@@ -26,9 +26,9 @@ for name in names {
 }
 ```
 
-~10,000 lines of C++17. Zero external dependencies. **Bytecode compiler + stack-based VM** as the sole execution backend. Cross-platform with native packaging.
+~17,600 lines of C++17. Zero external dependencies. **Bytecode compiler + stack-based VM** as the sole execution backend. Cross-platform with native packaging.
 
-~10,000 行 C++17，零外部依赖。**字节码编译器 + 栈式虚拟机**为唯一执行后端。跨平台，原生打包。
+~17,600 行 C++17，零外部依赖。**字节码编译器 + 栈式虚拟机**为唯一执行后端。跨平台，原生打包。
 
 ---
 
@@ -43,9 +43,13 @@ for name in names {
   - [Control Flow / 控制流](#control-flow--控制流)
   - [Functions & Closures / 函数与闭包](#functions--closures--函数与闭包)
   - [Objects & Inheritance / 对象与继承](#objects--inheritance--对象与继承)
+  - [Dict / 字典](#dict--字典)
+  - [Set & Map / 集合与映射表](#set--map--集合与映射表-v023)
   - [Exception Handling / 异常处理](#exception-handling--异常处理)
+  - [String Interpolation / 字符串插值](#string-interpolation--字符串插值)
+  - [Pattern Matching / 模式匹配](#pattern-matching--模式匹配-v024)
 - [Built-in Functions / 内建函数](#built-in-functions--内建函数)
-- [String, Array & Dict Methods / 字符串·数组·字典方法](#string-array--dict-methods--字符串数组字典方法)
+- [String, Array, Dict, Set & Map Methods / 方法参考](#string-array-dict-set--map-methods--方法参考)
 - [Project Architecture / 项目架构](#project-architecture--项目架构)
 - [Platform Support / 平台支持](#platform-support--平台支持)
 - [Testing / 测试](#testing--测试)
@@ -69,6 +73,8 @@ for name in names {
 | const bindings / 不可变绑定 | ✔ | | | **✔** |
 | Zero dependencies / 零依赖 | | ✔ | ✔ | **✔** |
 | Native cross-platform builds / 原生跨平台构建 | | | | **✔** |
+| Dict / Set / Map built-in / 内建数据结构 | ✔ | | | **✔** |
+| Pattern matching / 模式匹配 | | | | **✔** |
 
 Vora occupies a practical middle ground: readable syntax for scripting, fast execution via bytecode VM, and a tiny C++ runtime that embeds into any host application.
 
@@ -331,6 +337,39 @@ d.remove("year")      // → 2026
 for k in {a: 1, b: 2} { print(k) }  // "a", "b"
 ```
 
+### Set & Map / 集合与映射表 (v0.23)
+
+```vora
+// Set — deduplication, O(1) membership / 去重、成员检测
+let s = Set([1, 2, 3])
+s.add(4)
+s.has(2)          // → true
+s.size            // → 3
+s.values()        // → list of elements / 元素列表
+
+let a = Set([1, 2])
+let b = Set([2, 3])
+let u = a + b     // → Set([1, 2, 3]) — union / 并集
+let chars = Set("hello")  // → Set(['h', 'e', 'l', 'o'])
+
+// Map — arbitrary key types, index syntax / 任意类型 key + 索引语法
+let m = Map()
+m.set("name", "Vora")
+m.set(123, "integer key")
+m["year"] = 2026     // index syntax / 索引语法
+m["name"]            // → "Vora"
+m.has("name")        // → true
+m.keys()             // → list of keys / 键列表
+m.values()           // → list of values / 值列表
+
+// Map + Map merge (right side wins / 右侧覆盖)
+let merged = mapA + mapB
+
+// for-in: Set iterates elements, Map iterates keys
+for item in s     { print(item) }
+for key in m      { print(key, m[key]) }
+```
+
 ### Exception Handling / 异常处理
 
 ```vora
@@ -354,6 +393,44 @@ let name = "World"
 print("Hello ${name}!")   // "Hello World!"
 ```
 
+### Pattern Matching / 模式匹配 (v0.24)
+
+```vora
+// match as expression / match 作为表达式
+let result = match n {
+    1 => "one",
+    2 => "two",
+    _ => "other"
+}
+
+// Multiple patterns, range inclusive / 多模式、含等范围
+let grade = match score {
+    90..=100 => "A",
+    80..=89  => "B",
+    70..=79  => "C",
+    _ => "F"
+}
+
+// Range exclusive / 不含等范围
+let r = match x { 1..5 => "low", _ => "high" }
+
+// Block body / 块体（多行逻辑）
+let msg = match val {
+    42 => {
+        let doubled = val * 2
+        doubled
+    },
+    _ => -1
+}
+
+// Nested match, boolean/null patterns, string patterns, standalone statement
+let nested = match a {
+    1 => match b { 2 => "ok", _ => "no" },
+    _ => "nope"
+}
+match flag { 1 => { doSomething(); }, _ => {} }
+```
+
 ---
 
 ## Built-in Functions / 内建函数
@@ -365,15 +442,19 @@ print("Hello ${name}!")   // "Hello World!"
 | `input(prompt?)` | Read a line from stdin / 从标准输入读取一行 |
 | `int(value)` | Convert to int64 (truncate) / 转换为 int64（截断小数） |
 | `float(value)` | Convert to float64 / 转换为 float64 |
-| `len(value)` | Array/string/dict length (int64) / 数组/字符串/字典长度 |
-| `type(value)` | Type name: `"int"` `"float"` `"string"` `"array"` `"dict"` `"boolean"` `"null"` `"function"` `"object"` |
+| `len(value)` | Array/string/dict/set/map length (int64) / 数组/字符串/字典/集合/映射表长度 |
+| `type(value)` | Type name: `"int"` `"float"` `"string"` `"array"` `"dict"` `"set"` `"map"` `"boolean"` `"null"` `"function"` `"object"` |
 | `range(stop)` / `range(start, stop, step?)` | Generate number array / 生成数字数组 |
 | `assert(cond, msg?)` | Assertion with optional message / 断言，可选消息 |
 | `bin(num)` / `oct(num)` / `hex(num)` | Number → `"0b..."` / `"0o..."` / `"0x..."` |
+| `Set(iterable?)` | Create a Set (hash set) from optional iterable / 创建集合 |
+| `Map()` | Create a Map (hash map) / 创建映射表 |
+| `iter(value)` | Create an iterator from an iterable / 从可迭代对象创建迭代器 |
+| `next(iterator)` | Advance iterator, return next value / 推进迭代器，返回下一个值 |
 
 ---
 
-## String, Array & Dict Methods / 字符串·数组·字典方法
+## String, Array, Dict, Set & Map Methods / 方法参考
 
 ### String / 字符串
 
@@ -410,6 +491,30 @@ print("Hello ${name}!")   // "Hello World!"
 | `.has(key)` | Check if key exists / 检查键是否存在 |
 | `.remove(key)` | Remove and return value / 删除并返回对应值 |
 
+### Set / 集合
+
+| Method / 方法 | Description / 说明 |
+|--------|-------------|
+| `.size` | Element count / 元素个数 |
+| `.add(item)` | Add element / 添加元素 |
+| `.has(item)` | Check if element exists / 检查元素是否存在 |
+| `.remove(item)` | Remove element / 删除元素 |
+| `.clear()` | Remove all elements / 清空全部元素 |
+| `.values()` | Return array of all elements / 返回全部元素的数组 |
+
+### Map / 映射表
+
+| Method / 方法 | Description / 说明 |
+|--------|-------------|
+| `.size` | Key-value pair count / 键值对数量 |
+| `.set(key, value)` | Set key-value pair / 设置键值对 |
+| `.get(key)` | Get value by key / 按键取值 |
+| `.has(key)` | Check if key exists / 检查键是否存在 |
+| `.remove(key)` | Remove and return value / 删除并返回对应值 |
+| `.clear()` | Remove all entries / 清空全部条目 |
+| `.keys()` | Return array of keys / 返回键数组 |
+| `.values()` | Return array of values / 返回值数组 |
+
 ---
 
 ## Project Architecture / 项目架构
@@ -423,10 +528,10 @@ print("Hello ${name}!")   // "Hello World!"
 
 | Module / 模块 | Lines / 行数 | Description / 说明 |
 |--------|-------|-------------|
-| `lexer/` | ~600 | Hand-written scanner, 22 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b / 手写扫描器，22 个关键字 |
+| `lexer/` | ~600 | Hand-written scanner, 23 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b / 手写扫描器，23 个关键字 |
 | `parser/` | ~1,030 | Pratt (precedence climbing), 7-level precedence table, panic-mode error recovery / Pratt 解析器，7 级优先级表 |
 | `ast/` | ~1,450 | 30 node types (16 exprs + 14 stmts), templated Visitor pattern / 30 种节点类型，模板化 Visitor 模式 |
-| `vm/` | ~4,200 | Bytecode compiler + stack-based VM, 51 opcodes (incl. OP_TAIL_CALL), constant folding, fast numeric ops / 字节码编译器 + 栈式 VM，51 条操作码 |
+| `vm/` | ~4,200 | Bytecode compiler + stack-based VM, 58 opcodes (incl. OP_TAIL_CALL), constant folding, fast numeric ops / 字节码编译器 + 栈式 VM，58 条操作码 |
 | `runtime/` | ~1,200 | `Value` (std::variant, 11 types), `Environment` (lexical scope chain), `Callable` hierarchy, `builtins` module, `Upvalue` (index-based) |
 | `gc/` | ~300 | Mark-sweep garbage collector, `GcPtr<T>`, `GcHeap` singleton / 标记-清除 GC |
 | `formatter/` | ~630 | AST-based source code formatter (`vora fmt`) / AST 驱动的代码格式化器 |
@@ -470,9 +575,9 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 
 | Suite / 套件 | Count / 数量 | Status / 状态 |
 |---------|--------|--------|
-| C++ unit tests / C++ 单元测试 | 228 cases, 735 assertions | ✅ 全通过 |
-| Script tests / 脚本测试 | 101 files | ✅ 全通过 |
-| Examples / 示例 | 36 files | ✅ 全通过 |
+| C++ unit tests / C++ 单元测试 | 52 test cases, 330 assertions | ✅ 全通过 |
+| Script tests / 脚本测试 | 124 files | ✅ 全通过 |
+| Examples / 示例 | 44 files | ✅ 全通过 |
 | LeetCode integration / LeetCode 集成 | 66 solutions | ✅ 全通过 |
 
 ---
@@ -490,7 +595,11 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 | v0.18 | **Done / 已完成** | Architecture refactor (Callable hierarchy split, unified ClassDefinition), mark-sweep GC, `vora fmt` formatter, LeetCode tests |
 | v0.19 | **Done / 已完成** | C-style for loops, anonymous functions (lambdas), syntax fixes (void return, unary-minus precedence, break/continue semicolons), upvalue indirection (shared mutation + local recursion) |
 | v0.20 | **Done / 已完成** | Tail Call Optimization (TCO), `const` immutable bindings (compile-time enforcement on locals/globals/upvalues), index-based Upvalue safety |
-| v0.21+ | Planned / 规划中 | Module system (`import`/`export`), standard library, pattern matching, iterator protocol, LSP server |
+| v0.21 | **Done / 已完成** | Module system (`import`/`export`), iterator protocol (`iter`/`next`), `yield` generators, `StopIteration` exception |
+| v0.22 | **Done / 已完成** | Rest parameters (`...name`), LSP server infrastructure, AST node position (nameToken), `json_rpc` refactor |
+| v0.23 | **Done / 已完成** | Set (hash set) + Map (hash map) data structures, O(1) `has`/`add`/`remove`, union/merge via `+`, for-in iteration |
+| v0.24 | **Done / 已完成** | `match` pattern matching — literal/wildcard/range patterns, `\|` multi-pattern, `=>` expression/block body, `..=`/`..` range syntax |
+| v0.25+ | Planned / 规划中 | Standard library (`std/fs`, `std/os`), call-site spread (`...expr`), async/await coroutines, guard conditions, exhaustiveness checking, JIT compilation |
 
 ---
 
