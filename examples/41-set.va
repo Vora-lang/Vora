@@ -1,0 +1,62 @@
+print("=== 1. Set creation ===")
+let s = Set([1, 2, 3])
+print("Set([1,2,3]):", s)
+
+let empty = Set()
+print("empty Set:", empty)
+
+print("\n=== 2. Set add ===")
+s.add(4)
+s.add(5)
+print("after add 4,5:", s)
+
+print("\n=== 3. Set has ===")
+print("has 2:", s.has(2))
+print("has 99:", s.has(99))
+
+print("\n=== 4. Set remove ===")
+s.remove(3)
+print("after remove 3:", s)
+print("has 3:", s.has(3))
+
+print("\n=== 5. Set size/length ===")
+print("size:", s.size)
+print("len:", len(s))
+
+print("\n=== 6. Set values ===")
+let v = s.values()
+print("values:", v)
+
+print("\n=== 7. Set from string ===")
+let chars = Set("abc")
+print("Set('abc'):", chars)
+print("has 'a':", chars.has("a"))
+
+print("\n=== 8. Set deduplication ===")
+let dup = Set([1, 1, 2, 2, 3])
+print("Set([1,1,2,2,3]) size:", dup.size)
+
+print("\n=== 9. Set + Set (union) ===")
+let a = Set([1, 2, 3])
+let b = Set([3, 4, 5])
+let u = a + b
+print("union:", u)
+print("union size:", u.size)
+
+print("\n=== 10. Set clear ===")
+let sc = Set([1, 2, 3])
+sc.clear()
+print("after clear size:", sc.size)
+
+print("\n=== 11. Set iteration ===")
+let nums = Set([10, 20, 30])
+let sum = 0
+for x in nums {
+    sum = sum + x
+}
+print("sum of elements:", sum)
+
+print("\n=== 12. type/truthy ===")
+print("type:", type(Set()))
+let sTruthy = Set([1])
+print("non-empty is truthy:", sTruthy ? true : false)

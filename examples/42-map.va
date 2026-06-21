@@ -1,0 +1,75 @@
+print("=== 1. Map creation ===")
+let m = Map()
+print("empty Map:", m)
+
+print("\n=== 2. Map set/get ===")
+m.set("name", "Vora")
+m.set("version", 1)
+m.set("active", true)
+print("get 'name':", m.get("name"))
+print("get 'version':", m.get("version"))
+print("get missing:", m.get("missing"))
+
+print("\n=== 3. Map index syntax ===")
+m["year"] = 2026
+print("m['year']:", m["year"])
+m["version"] = 2
+print("m['version'] after overwrite:", m["version"])
+
+print("\n=== 4. Map has ===")
+print("has 'name':", m.has("name"))
+print("has 'nope':", m.has("nope"))
+
+print("\n=== 5. Map remove ===")
+let removed = m.remove("active")
+print("removed 'active':", removed)
+print("has 'active' after:", m.has("active"))
+
+print("\n=== 6. Map size/length ===")
+print("size:", m.size)
+print("len:", len(m))
+
+print("\n=== 7. Map keys/values ===")
+print("keys:", m.keys())
+print("values:", m.values())
+
+print("\n=== 8. Map non-string keys ===")
+let mx = Map()
+mx.set(123, "integer key")
+mx.set(true, "boolean key")
+print("int key 123:", mx.get(123))
+print("bool key true:", mx.get(true))
+
+print("\n=== 9. Map + Map (merge) ===")
+let a = Map()
+a.set("x", 1)
+a.set("y", 2)
+let b = Map()
+b.set("y", 99)
+b.set("z", 3)
+let merged = a + b
+print("merged x:", merged.get("x"))
+print("merged y (overwritten):", merged.get("y"))
+print("merged z:", merged.get("z"))
+
+print("\n=== 10. Map clear ===")
+let mc = Map()
+mc.set("a", 1)
+mc.clear()
+print("after clear size:", mc.size)
+
+print("\n=== 11. Map iteration ===")
+let menu = Map()
+menu.set("coffee", 3)
+menu.set("tea", 2)
+let items = ""
+for k in menu {
+    items = items + k + ":" + menu[k] + " "
+}
+print("menu:", items)
+
+print("\n=== 12. type/truthy ===")
+print("type:", type(Map()))
+let mTruthy = Map()
+mTruthy.set("k", "v")
+print("non-empty is truthy:", mTruthy ? true : false)
