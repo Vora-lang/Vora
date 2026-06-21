@@ -33,6 +33,8 @@ add_library(vora_lib OBJECT
     src/ast/expr.cpp
     src/ast/stmt.cpp
 
+    src/lsp/semantic_analyzer.cpp
+
     src/formatter/formatter.cpp
 
     src/gc/gc_heap.cpp
@@ -249,6 +251,7 @@ add_executable(Vora_tests
     tests/unit/test_compiler.cpp
     tests/unit/test_vm.cpp
     tests/unit/test_formatter.cpp
+    tests/unit/test_semantic_analyzer.cpp
     tests/unit/test_json_rpc.cpp
 )
 
@@ -285,6 +288,7 @@ vora_unit_test(tests/unit/test_parser.cpp   "parser")
 vora_unit_test(tests/unit/test_compiler.cpp "compiler")
 vora_unit_test(tests/unit/test_vm.cpp       "vm")
 vora_unit_test(tests/unit/test_formatter.cpp "fmt")
+vora_unit_test(tests/unit/test_semantic_analyzer.cpp "semantic")
 vora_unit_test(tests/unit/test_json_rpc.cpp "jsonrpc|lsp")
 
 
