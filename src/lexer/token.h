@@ -87,8 +87,12 @@ namespace vora {
         AS, // as
         FROM, // from
         YIELD, // yield
+        MATCH, // match
 
         // Special
+        FAT_ARROW, // =>
+        DOT_DOT, // ..
+        DOT_DOT_EQUAL, // ..=
         END_OF_FILE, //
         INVALID //
     };

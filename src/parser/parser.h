@@ -54,6 +54,9 @@ private:
 
     std::unique_ptr<Expr> yieldExpression();
 
+    std::unique_ptr<Expr> matchExpression();
+    MatchPattern parseMatchPattern();
+
     std::unique_ptr<Expr> finishCall(
         std::unique_ptr<Expr> callee
     );

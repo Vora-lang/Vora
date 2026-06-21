@@ -239,6 +239,7 @@ public:
     void visitSuperExpr(const SuperExpr& expr) override;
     void visitIncDecExpr(const IncDecExpr& expr) override;
     void visitTernaryExpr(const TernaryExpr& expr) override;
+    void visitMatchExpr(const MatchExpr& expr) override;
     void visitFuncExpr(const FuncExpr& expr) override;
     void visitYieldExpr(const YieldExpr& expr) override;
     void visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) override;

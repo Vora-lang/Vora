@@ -767,6 +767,14 @@ void SemanticAnalyzer::visitTernaryExpr(const TernaryExpr& expr) {
     if (expr.elseBranch) visitExpr(*expr.elseBranch);
 }
 
+void SemanticAnalyzer::visitMatchExpr(const MatchExpr& expr) {
+    if (expr.scrutinee) visitExpr(*expr.scrutinee);
+    for (const auto& c : expr.cases) {
+        if (c.body) visitExpr(*c.body);
+        if (c.blockBody) c.blockBody->accept(*this);
+    }
+}
+
 void SemanticAnalyzer::visitFuncExpr(const FuncExpr& expr) {
     // Anonymous function (lambda) — create a scope for its body.
     pushScope();

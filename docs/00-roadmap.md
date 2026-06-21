@@ -229,23 +229,33 @@ let results = await Promise.all([
 
 ---
 
-### 2.7 模式匹配 ⭐⭐
+### 2.7 模式匹配 ✅ 已完成 (v0.24) — v1
 
 ```vora
-match value {
-    {status: "ok", data}  => process(data)
-    {status: "err", code} => handleError(code)
-    0 | null | false      => handleFalsy()
-    n if n > 0            => handlePositive(n)
-    else                  => handleDefault()
+let x = match n {
+    1 => "one",
+    2 | 3 => "small",
+    1..=5 => "low",
+    _ => "default"
 }
 ```
 
-- 结构化匹配（Dict/Array/Object 解构）
-- 守卫条件 (if 子句)
-- 穷尽性检查
+**v1 已实现：**
+- 字面量模式（数字、字符串、布尔、null）
+- 通配符 `_`
+- 多模式 `|`（解析器支持，编译器通过多模式 OR 组合实现）
+- 范围模式 `..=`（含等）和 `..`（不含等）
+- 表达式体和块体 `{ stmts; lastExpr }`
+- match 可作为表达式或语句使用
 
-**预估工期**：2 周
+**实现细节：**
+- 脱糖为 if-else 链 + 跳转回填，无新 opcode 需求
+- 使用编译器内部全局临时变量存储 scrutinee（静态计数器保证跨嵌套编译器唯一性）
+- 块体返回最后一条表达式语句的值（自动跳过 OP_POP）
+
+**延后 (v1.1+)：** 解构模式、守卫条件 (`if cond`)、穷尽性检查
+
+**预估工期**：2 周 ✅ 已完成
 
 ---
 
@@ -433,7 +443,7 @@ cmake --preset windows-x64-release
 
 ### 4.3 测试覆盖率提升 ⭐
 
-- 当前 303 C++ 单元测试（942 断言）+ 45 语言测试 + 41 示例
+- 当前 303 C++ 单元测试（942 断言）+ 46 语言测试 + 41 示例
 - 缺少：边界值测试、并发/压力测试、回归套件自动化
 - 目标：行覆盖率 >85%
 
@@ -470,7 +480,7 @@ cmake --preset windows-x64-release
 ├── 1.1 NaN-boxing                   ← 2-5× 数值性能
 ├── 1.2 Superinstruction 合并        ← 10-20% 解释器加速
 ├── 2.3 std/regex                    ← 正则表达式（PCRE2）
-├── 2.7 模式匹配                     ← 告别 if-else 链
+├── 2.7 模式匹配                     ← ✅ 已完成 (v0.24)
 ├── 2.12 列表/Dict 推导式            ← [x for x in arr if ...]
 └── 2.11 解构赋值完善 (参数解构)       ← func f({x,y})
 

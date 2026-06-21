@@ -693,6 +693,130 @@ void Compiler::visitTernaryExpr(const TernaryExpr& expr) {
     patchJump(elseJump);
 }
 
+// =========================================================================
+// visitMatchExpr — desugar match to if-else chain
+// =========================================================================
+// Strategy:
+//   1. Compile scrutinee → store in temp local _mN
+//   2. For each non-wildcard case: compile condition, JUMP_IF_FALSE to next,
+//      compile body, JUMP to end
+//   3. Last case (or wildcard): compile body directly
+//   4. End: clean up temp local
+// =========================================================================
+
+void Compiler::visitMatchExpr(const MatchExpr& expr) {
+    // 1. Compile scrutinee → value on TOS
+    expr.scrutinee->accept(*this);
+
+    // Use unique global temp for scrutinee at any scope level.
+    // Static counter ensures uniqueness across all nested compilers.
+    static int globalMatchCounter = 0;
+    std::string tempName = "__m" + std::to_string(globalMatchCounter++);
+    int tempSlot = defineGlobal(tempName);
+    emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL), static_cast<uint8_t>(tempSlot));
+
+    std::vector<size_t> endJumps;
+
+    for (size_t ci = 0; ci < expr.cases.size(); ci++) {
+        const auto& case_ = expr.cases[ci];
+        bool isLast = (ci == expr.cases.size() - 1);
+        bool hasWildcard = false;
+        for (const auto& p : case_.patterns) {
+            if (p.kind == PatternKind::Wildcard) { hasWildcard = true; break; }
+        }
+
+        if (hasWildcard) {
+            // Wildcard: always matches.
+            compileMatchCaseBody(case_);
+            if (!isLast) {
+                endJumps.push_back(emitJump(OpCode::OP_JUMP));
+            }
+            break;
+        }
+
+        // Push scrutinee for comparison (stored in global temp)
+        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL), static_cast<uint8_t>(tempSlot));
+
+        if (case_.patterns[0].kind == PatternKind::Literal) {
+            emitConstant(case_.patterns[0].literal);
+            emitByte(static_cast<uint8_t>(OpCode::OP_EQUAL));
+        } else if (case_.patterns[0].kind == PatternKind::Range) {
+            const auto& pat = case_.patterns[0];
+            emitConstant(pat.rangeLow);
+            emitByte(static_cast<uint8_t>(OpCode::OP_GREATER_EQ_NN));
+            size_t rangeLowFail = emitJump(OpCode::OP_JUMP_IF_FALSE);
+            emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL), static_cast<uint8_t>(tempSlot));
+            emitConstant(pat.rangeHigh);
+            if (pat.rangeInclusive) {
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_EQ_NN));
+            } else {
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN));
+            }
+            size_t rangeDone = emitJump(OpCode::OP_JUMP);
+            patchJump(rangeLowFail);
+            emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+            emitByte(static_cast<uint8_t>(OpCode::OP_FALSE));
+            patchJump(rangeDone);
+        } else {
+            emitByte(static_cast<uint8_t>(OpCode::OP_TRUE));
+        }
+
+        // TOS = bool condition
+        size_t caseFailJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+        compileMatchCaseBody(case_);
+        endJumps.push_back(emitJump(OpCode::OP_JUMP));
+
+        // Not matched
+        patchJump(caseFailJump);
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+        if (isLast && !hasWildcard) {
+            emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+        }
+    }
+
+    for (auto j : endJumps) {
+        patchJump(j);
+    }
+}
+
+void Compiler::compileMatchCaseBody(const MatchCase& case_) {
+    if (case_.blockBody) {
+        // Block body: { stmts; lastExpr }
+        // Compile all statements except the last as normal.
+        // The last statement (if ExprStmt) leaves its value on the stack.
+        // NOTE: Do NOT use beginScope/endScope here — the statements inside
+        // the block manage their own scopes (e.g., let creates its own scope).
+        const auto& stmts = case_.blockBody->statements;
+        if (stmts.empty()) {
+            emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+            return;
+        }
+        for (size_t i = 0; i < stmts.size(); i++) {
+            if (i == stmts.size() - 1) {
+                // Last statement: if it's an ExprStmt, compile only the expression
+                if (auto* es = dynamic_cast<ExprStmt*>(stmts[i].get())) {
+                    es->expression->accept(*this);
+                } else {
+                    // Non-expression last statement: compile as normal, push null
+                    stmts[i]->accept(*this);
+                    emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+                }
+            } else {
+                stmts[i]->accept(*this);
+            }
+        }
+    } else if (case_.body) {
+        // Expression body: just compile it
+        case_.body->accept(*this);
+    } else {
+        // No body at all — error case, push null
+        emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+    }
+}
+
 void Compiler::visitYieldExpr(const YieldExpr& expr) {
     currentLine = expr.keyword.line;
     currentColumn = expr.keyword.column;

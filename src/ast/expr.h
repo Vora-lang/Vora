@@ -409,6 +409,56 @@ public:
     std::unique_ptr<Expr> elseBranch;
 };
 
+// Match expression:  match <scrutinee> { <pattern> => <body>, ... }
+// Produces a value (expression context). Can also appear as an expression
+// statement where the value is discarded.
+// Patterns are simple tagged unions (not polymorphic) — see MatchPattern.
+
+struct BlockStmt;
+
+enum class PatternKind : uint8_t { Literal, Wildcard, Range };
+
+struct MatchPattern {
+    PatternKind kind = PatternKind::Wildcard;
+    Value literal;         // Kind::Literal
+    Value rangeLow;        // Kind::Range
+    Value rangeHigh;       // Kind::Range
+    bool rangeInclusive = true;  // true = ..=, false = ..
+    Token start;           // First token of the pattern (for error reporting)
+};
+
+struct MatchCase {
+    std::vector<MatchPattern> patterns;   // at least 1
+    std::unique_ptr<Expr> body;           // expression body (=> expr)
+    std::shared_ptr<BlockStmt> blockBody; // block body (=> { ... })
+    Token arrow;                          // => token
+};
+
+class MatchExpr : public Expr {
+public:
+    MatchExpr(
+        std::unique_ptr<Expr> scrutinee,
+        std::vector<MatchCase> cases,
+        Token matchKeyword,
+        Token rightBrace
+    )
+        : scrutinee(std::move(scrutinee)),
+          cases(std::move(cases)),
+          matchKeyword(std::move(matchKeyword)),
+          rightBrace(std::move(rightBrace)) {
+    }
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::unique_ptr<Expr> scrutinee;
+    std::vector<MatchCase> cases;
+    Token matchKeyword;
+    Token rightBrace;
+};
+
 // Anonymous function expression:  func(x, y) { body }
 // In expression contexts, `func` without a name creates a lambda.
 // Body uses shared_ptr<BlockStmt> — shared_ptr works with incomplete types,

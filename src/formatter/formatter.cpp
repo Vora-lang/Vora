@@ -460,6 +460,61 @@ std::string SourceFormatter::visitTernaryExpr(const TernaryExpr& expr) {
     return ss.str();
 }
 
+std::string SourceFormatter::visitMatchExpr(const MatchExpr& expr) {
+    std::stringstream ss;
+    ss << "match ";
+    ss << formatExpr(*expr.scrutinee, 0);
+    ss << " {";
+    incIndent();
+
+    for (size_t i = 0; i < expr.cases.size(); i++) {
+        const auto& c = expr.cases[i];
+        ss << nl();
+
+        // Patterns
+        for (size_t j = 0; j < c.patterns.size(); j++) {
+            if (j > 0) ss << " | ";
+            const auto& p = c.patterns[j];
+            if (p.kind == PatternKind::Wildcard) {
+                ss << "_";
+            } else if (p.kind == PatternKind::Literal) {
+                ss << valueToString(p.literal);
+            } else if (p.kind == PatternKind::Range) {
+                ss << valueToString(p.rangeLow);
+                ss << (p.rangeInclusive ? "..=" : "..");
+                ss << valueToString(p.rangeHigh);
+            }
+        }
+
+        ss << " => ";
+
+        if (c.blockBody) {
+            // Format block body
+            ss << "{";
+            incIndent();
+            const auto& stmts = c.blockBody->statements;
+            for (size_t si = 0; si < stmts.size(); si++) {
+                ss << nl();
+                ss << stmts[si]->accept(*this);
+            }
+            decIndent();
+            ss << nl() << "}";
+        } else if (c.body) {
+            ss << formatExpr(*c.body, 0);
+        } else {
+            ss << "null";
+        }
+
+        if (i + 1 < expr.cases.size()) {
+            ss << ",";
+        }
+    }
+
+    decIndent();
+    ss << nl() << "}";
+    return ss.str();
+}
+
 std::string SourceFormatter::visitFuncExpr(const FuncExpr& expr) {
     std::stringstream ss;
     ss << "func";

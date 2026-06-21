@@ -227,6 +227,38 @@ std::string ASTPrinter::visitTernaryExpr(const TernaryExpr& expr) {
     );
 }
 
+std::string ASTPrinter::visitMatchExpr(const MatchExpr& expr) {
+    std::stringstream ss;
+    ss << "(match " << print(expr.scrutinee.get());
+    for (const auto& c : expr.cases) {
+        ss << " (case (";
+        for (size_t i = 0; i < c.patterns.size(); i++) {
+            if (i > 0) ss << " | ";
+            const auto& p = c.patterns[i];
+            if (p.kind == PatternKind::Wildcard) {
+                ss << "_";
+            } else if (p.kind == PatternKind::Literal) {
+                ss << valueToString(p.literal);
+            } else if (p.kind == PatternKind::Range) {
+                ss << valueToString(p.rangeLow);
+                ss << (p.rangeInclusive ? "..=" : "..");
+                ss << valueToString(p.rangeHigh);
+            }
+        }
+        ss << ") ";
+        if (c.body) {
+            ss << print(c.body.get());
+        } else if (c.blockBody) {
+            ss << "(block ...)";
+        } else {
+            ss << "??";
+        }
+        ss << ")";
+    }
+    ss << ")";
+    return ss.str();
+}
+
 std::string ASTPrinter::visitFuncExpr(const FuncExpr& expr) {
     std::stringstream ss;
     ss << "(func";

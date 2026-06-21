@@ -843,6 +843,163 @@ std::unique_ptr<Expr> Parser::yieldExpression() {
     return std::make_unique<YieldExpr>(std::move(value), std::move(keyword));
 }
 
+MatchPattern Parser::parseMatchPattern() {
+    // Wildcard: _
+    if (check(TokenType::IDENTIFIER) && peek().lexeme == "_") {
+        Token underscore = advance();
+        MatchPattern p;
+        p.kind = PatternKind::Wildcard;
+        p.start = underscore;
+        return p;
+    }
+
+    // Boolean and null literals (cannot be part of ranges)
+    if (match(TokenType::TRUE)) {
+        MatchPattern p;
+        p.kind = PatternKind::Literal;
+        p.literal = true;
+        p.start = previous();
+        return p;
+    }
+    if (match(TokenType::FALSE)) {
+        MatchPattern p;
+        p.kind = PatternKind::Literal;
+        p.literal = false;
+        p.start = previous();
+        return p;
+    }
+    if (match(TokenType::NULL_TOKEN)) {
+        MatchPattern p;
+        p.kind = PatternKind::Literal;
+        p.literal = nullptr;
+        p.start = previous();
+        return p;
+    }
+
+    // Numbers and strings: parse as primary, then check for range operator
+    // (moved below to allow 1..=5 range patterns)
+    auto low = primary();
+    if (!low) {
+        MatchPattern p;
+        p.kind = PatternKind::Wildcard;  // error recovery
+        p.start = peek();
+        return p;
+    }
+
+    // Check for range operator: .. or ..=
+    if (match(TokenType::DOT_DOT) || match(TokenType::DOT_DOT_EQUAL)) {
+        bool inclusive = (previous().type == TokenType::DOT_DOT_EQUAL);
+        auto high = primary();
+        if (!high) {
+            MatchPattern p;
+            p.kind = PatternKind::Wildcard;
+            p.start = previous();
+            return p;
+        }
+        MatchPattern p;
+        p.kind = PatternKind::Range;
+        p.start = previous();
+        if (auto* lit = dynamic_cast<LiteralExpr*>(low.get())) {
+            p.rangeLow = lit->value;
+        } else {
+            p.rangeLow = static_cast<double>(0);
+        }
+        if (auto* lit = dynamic_cast<LiteralExpr*>(high.get())) {
+            p.rangeHigh = lit->value;
+        } else {
+            p.rangeHigh = static_cast<double>(0);
+        }
+        p.rangeInclusive = inclusive;
+        return p;
+    }
+
+    // Plain literal pattern (from primary)
+    MatchPattern p;
+    p.kind = PatternKind::Literal;
+    p.start = previous();
+    if (auto* lit = dynamic_cast<LiteralExpr*>(low.get())) {
+        p.literal = lit->value;
+    } else {
+        // Not a valid pattern literal — error recovery as wildcard
+        p.kind = PatternKind::Wildcard;
+    }
+    return p;
+}
+
+std::unique_ptr<Expr> Parser::matchExpression() {
+    Token matchKeyword = previous();  // 'match' token already consumed by caller
+
+    // Parse scrutinee
+    auto scrutinee = expression();
+    if (!scrutinee) {
+        scrutinee = std::make_unique<ErrorExpr>("Expected expression after 'match'", matchKeyword);
+    }
+
+    // Expect '{'
+    if (!match(TokenType::LEFT_BRACE)) {
+        error("Expected '{' after match scrutinee");
+        return std::make_unique<ErrorExpr>("Expected '{' after match scrutinee", peek());
+    }
+
+    std::vector<MatchCase> cases;
+
+    // Parse arms (comma-separated)
+    while (!check(TokenType::RIGHT_BRACE) && !isAtEnd()) {
+        MatchCase case_;
+        Token firstPatternTok = peek();
+
+        // Parse one pattern (v1: single pattern per arm; | separator not yet supported)
+        auto pat = parseMatchPattern();
+        case_.patterns.push_back(std::move(pat));
+
+        // Expect =>
+        if (!match(TokenType::FAT_ARROW)) {
+            error("Expected '=>' after match pattern");
+            synchronize();
+            if (check(TokenType::RIGHT_BRACE)) break;
+            continue;
+        }
+        case_.arrow = previous();
+
+        // Parse body: block { ... } or expression
+        // NOTE: blockStatement() expects LEFT_BRACE already consumed by caller
+        if (match(TokenType::LEFT_BRACE)) {
+            auto block = blockStatement();
+            case_.blockBody = std::shared_ptr<BlockStmt>(std::move(block));
+        } else {
+            // Expression body
+            case_.body = expression();
+            if (!case_.body) {
+                case_.body = std::make_unique<ErrorExpr>(
+                    "Expected expression after '=>'", case_.arrow);
+            }
+        }
+
+        cases.push_back(std::move(case_));
+
+        // Optional comma between arms
+        match(TokenType::COMMA);
+    }
+
+    Token rightBrace = peek();
+    if (!match(TokenType::RIGHT_BRACE)) {
+        error("Expected '}' after match arms");
+    }
+    rightBrace = previous();
+
+    if (cases.empty()) {
+        error("Match expression must have at least one arm");
+        return std::make_unique<ErrorExpr>("Empty match expression", matchKeyword);
+    }
+
+    return std::make_unique<MatchExpr>(
+        std::move(scrutinee),
+        std::move(cases),
+        matchKeyword,
+        rightBrace
+    );
+}
+
 std::unique_ptr<Expr> Parser::funcExpression() {
     // Parse anonymous function: func(params) { body }
     // 'func' keyword already consumed by caller.
@@ -1224,6 +1381,10 @@ std::unique_ptr<Expr> Parser::primary() {
 
     if (match(TokenType::YIELD)) {
         return yieldExpression();
+    }
+
+    if (match(TokenType::MATCH)) {
+        return matchExpression();
     }
 
     if (match(TokenType::FUNC)) {

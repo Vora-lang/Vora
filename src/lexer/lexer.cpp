@@ -28,6 +28,7 @@ namespace vora {
         {"as", TokenType::AS},
         {"from", TokenType::FROM},
         {"yield", TokenType::YIELD},
+        {"match", TokenType::MATCH},
         {"true", TokenType::TRUE},
         {"false", TokenType::FALSE},
         {"null", TokenType::NULL_TOKEN},
@@ -258,10 +259,17 @@ namespace vora {
             break;
 
         case '.':
-            if (peek() == '.' && peekNext() == '.') {
+            if (peek() == '.') {
                 advance();  // second dot
-                advance();  // third dot
-                addToken(TokenType::DOT_DOT_DOT);
+                if (peek() == '=') {
+                    advance();
+                    addToken(TokenType::DOT_DOT_EQUAL);
+                } else if (peek() == '.') {
+                    advance();  // third dot
+                    addToken(TokenType::DOT_DOT_DOT);
+                } else {
+                    addToken(TokenType::DOT_DOT);
+                }
             } else {
                 addToken(TokenType::DOT);
             }
@@ -342,8 +350,9 @@ namespace vora {
         case '=':
             if (match('=')) {
                 addToken(TokenType::EQUAL_EQUAL);
-            }
-            else {
+            } else if (match('>')) {
+                addToken(TokenType::FAT_ARROW);
+            } else {
                 addToken(TokenType::EQUAL);
             }
             break;

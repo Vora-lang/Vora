@@ -95,6 +95,7 @@ private:
     std::string visitSuperExpr(const SuperExpr& expr) override;
     std::string visitIncDecExpr(const IncDecExpr& expr) override;
     std::string visitTernaryExpr(const TernaryExpr& expr) override;
+    std::string visitMatchExpr(const MatchExpr& expr) override;
     std::string visitFuncExpr(const FuncExpr& expr) override;
     std::string visitYieldExpr(const YieldExpr& expr) override;
     std::string visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) override;

@@ -399,6 +399,41 @@ std::unique_ptr<Expr> TernaryExpr::clone() const {
 }
 
 // =========================================================================
+// MatchExpr
+// =========================================================================
+
+Value MatchExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitMatchExpr(*this);
+}
+
+void MatchExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitMatchExpr(*this);
+}
+
+std::string MatchExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitMatchExpr(*this);
+}
+
+std::unique_ptr<Expr> MatchExpr::clone() const {
+    std::vector<MatchCase> clonedCases;
+    for (const auto& c : cases) {
+        MatchCase cloned;
+        cloned.patterns = c.patterns;  // MatchPattern values are plain data, no pointers
+        if (c.body) cloned.body = c.body->clone();
+        // BlockStmt has no clone; body is shared (shallow copy via shared_ptr)
+        if (c.blockBody) cloned.blockBody = c.blockBody;
+        cloned.arrow = c.arrow;
+        clonedCases.push_back(std::move(cloned));
+    }
+    return std::make_unique<MatchExpr>(
+        scrutinee->clone(),
+        std::move(clonedCases),
+        matchKeyword,
+        rightBrace
+    );
+}
+
+// =========================================================================
 // FuncExpr
 // =========================================================================
 

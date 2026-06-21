@@ -68,6 +68,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::AS: return "AS";
         case TokenType::FROM: return "FROM";
         case TokenType::YIELD: return "YIELD";
+        case TokenType::MATCH: return "MATCH";
 
         case TokenType::PLUS_EQUAL: return "PLUS_EQUAL";
         case TokenType::MINUS_EQUAL: return "MINUS_EQUAL";
@@ -75,6 +76,9 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::DIVIDE_EQUAL: return "DIVIDE_EQUAL";
         case TokenType::MODULO_EQUAL: return "MODULO_EQUAL";
 
+        case TokenType::FAT_ARROW: return "FAT_ARROW";
+        case TokenType::DOT_DOT: return "DOT_DOT";
+        case TokenType::DOT_DOT_EQUAL: return "DOT_DOT_EQUAL";
         case TokenType::END_OF_FILE: return "EOF";
         case TokenType::INVALID: return "INVALID";
     }
