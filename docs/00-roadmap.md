@@ -1,6 +1,6 @@
 # Vora 优化路线图
 
-> 最后更新：2026-06-19
+> 最后更新：2026-06-21
 > 基于对代码库的全面审计，按收益/成本比排序。
 
 ---
@@ -297,16 +297,26 @@ vora_destroy_vm(vm);
 
 ---
 
-### 2.11 解构赋值 ⭐
+### 2.11 解构赋值 ✅ 已完成 (v0.22)
 
 ```vora
-let [a, b] = [1, 2]          // 数组解构
-let {name, age} = person      // Dict 解构
-let [first, ...rest] = arr    // 解构 + 剩余
-func foo({x, y}) { ... }     // 参数解构
+let [a, b] = [1, 2]           // 数组解构
+let {name, age} = person       // 对象解构 (简写)
+let {x: a, y: b} = obj         // 对象解构 (重命名)
+let [first, ...rest] = arr     // 解构 + 剩余 (函数内)
+let [a, [b, c]] = [1, [2, 3]]  // 嵌套解构
 ```
 
-**预估工期**：1 周
+**已实现**：
+- `let` / `const` 声明解构 (数组 `[...]` + 对象 `{...}`)
+- 嵌套模式 (数组嵌套数组、对象嵌套对象、交叉嵌套)
+- 数组 rest (`...rest`，函数内编译为 while 循环切片)
+- 对象简写 (`{x}` ≡ `{x: x}`) 和重命名 (`{x: a}`)
+- 全局/局部作用域均支持
+
+**实现**：新建 `BindingPattern` 层次结构 (IdentifierBinding / ArrayBinding / ObjectBinding)，不依赖 Expr/Stmt 体系。编译器递归脱糖为 INDEX / GET_PROPERTY + addLocal / defineGlobal，无新 opcode。
+
+**待完善 (v0.23)**：对象 rest (`{x, ...rest}`)、参数解构 (`func f({x,y})`)、解构赋值表达式 (`[a,b] = arr` 无 let)
 
 ---
 
@@ -413,7 +423,7 @@ cmake --preset windows-x64-release
 
 ### 4.3 测试覆盖率提升 ⭐
 
-- 当前 303 C++ 单元测试（942 断言）+ 42 语言测试 + 39 示例
+- 当前 303 C++ 单元测试（942 断言）+ 44 语言测试 + 41 示例
 - 缺少：边界值测试、并发/压力测试、回归套件自动化
 - 目标：行覆盖率 >85%
 
@@ -443,6 +453,7 @@ cmake --preset windows-x64-release
 ├── 2.4 Set + Map 数据结构           ← 基础数据结构补全
 ├── 2.9 错误类型层级                  ← Error 基类 + 按类型 catch
 ├── 2.10 C ABI 导出                  ← Lua 级嵌入能力
+├── 2.11 解构赋值                    ← ✅ 已完成 (v0.22)
 └── 4.1 性能基准套件
 
 2026 Q4 (10-12月) — 语言竞争力 ⭐⭐
@@ -450,8 +461,8 @@ cmake --preset windows-x64-release
 ├── 1.2 Superinstruction 合并        ← 10-20% 解释器加速
 ├── 2.3 std/regex                    ← 正则表达式（PCRE2）
 ├── 2.7 模式匹配                     ← 告别 if-else 链
-├── 2.11 解构赋值                    ← let [a,b]=arr
-└── 2.12 列表/Dict 推导式            ← [x for x in arr if ...]
+├── 2.12 列表/Dict 推导式            ← [x for x in arr if ...]
+└── 2.11 解构赋值完善 (参数解构)       ← func f({x,y})
 
 2027 Q1 (1-3月) — 生产级能力 ⭐⭐⭐
 ├── 2.6 异步/协程                    ← async/await + 事件循环
