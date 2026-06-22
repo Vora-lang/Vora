@@ -1,6 +1,6 @@
 # Vora 优化路线图
 
-> 最后更新：2026-06-22 (Phase 1 进度更新：std/fs, std/os, std/datetime, std/array, std/string, std/regex 全部完成；?. + ?? + defer 完成)
+> 最后更新：2026-06-22 (Phase 1 进度更新：std/fs, std/os, std/datetime, std/array, std/string, std/regex 全部完成；?. + ?? + defer + do-while 完成)
 > 基于对 Vora 语言定位、当前状态、行业标准的全面审查。
 
 ---
