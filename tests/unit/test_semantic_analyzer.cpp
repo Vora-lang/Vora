@@ -359,6 +359,37 @@ TEST_CASE("semantic_underscore_prefixed_not_unused") {
     CHECK_FALSE(tempUnused);
 }
 
+TEST_CASE("semantic_obj_method_not_unused") {
+    // Methods accessed via obj.method() should not be flagged as unused.
+    // They are part of the object's public interface.
+    auto r = analyze(
+        "Obj Person(name, age) {\n"
+        "    this.name = name\n"
+        "    this.age = age\n"
+        "    func greet() {\n"
+        "        print(\"I'm \" + this.name)\n"
+        "    }\n"
+        "    func birthday() {\n"
+        "        this.age = this.age + 1\n"
+        "    }\n"
+        "}\n"
+        "let alice = Person(\"Alice\", 25)\n"
+        "alice.greet()\n"
+        "alice.birthday()\n"
+    );
+    REQUIRE(r.program);
+
+    auto& unused = r.analyzer.getUnusedSymbols();
+    bool greetUnused = false;
+    bool birthdayUnused = false;
+    for (auto* s : unused) {
+        if (s->name == "greet") greetUnused = true;
+        if (s->name == "birthday") birthdayUnused = true;
+    }
+    CHECK_FALSE(greetUnused);
+    CHECK_FALSE(birthdayUnused);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Unreachable code detection
 // ═══════════════════════════════════════════════════════════════════════════
