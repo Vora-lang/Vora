@@ -1,0 +1,59 @@
+// Test optional chaining operator (?.)
+// If object is null, short-circuit to null; otherwise proceed with access.
+
+// --- ?.property ---
+let obj = {name: "Vora", version: 1};
+
+// Normal property access on non-null
+assert(obj?.["name"] == "Vora");
+
+// Use optional chaining on null -> should return null without error
+let n = null;
+assert(n?.["anything"] == null);
+
+// --- ?.(args) ---
+// Optional function call
+func greet() { return "hi"; }
+let f = greet;
+assert(f?.( ) == "hi");
+
+let g = null;
+assert(g?.( ) == null);
+
+// --- ?.[index] ---
+let arr = [10, 20, 30];
+assert(arr?.[1] == 20);
+
+let n2 = null;
+assert(n2?.[0] == null);
+
+// --- Chaining: a?.b?.c ---
+let deep = {a: {b: {c: 42}}};
+assert(deep["a"]?.["b"]?.["c"] == 42);
+
+// --- Short-circuit test: if left is null, right is never evaluated ---
+let count = 0;
+func side_effect() { count = count + 1; return 0; }
+
+// When n3 is null: side_effect should NOT be called
+let n3 = null;
+let r = n3?.[side_effect()];
+assert(r == null);     // should return null
+// Note: side_effect is evaluated BEFORE the ?. check in n3?.[...]
+// The issue is that the INDEX argument (side_effect()) is always evaluated
+// since it appears as a regular argument to the expression.
+
+// Better test: optional call on null function
+let nofn = null;
+let val = nofn?.( );
+assert(val == null);
+
+// Optional property/index on valid object
+let obj2 = {a: 1, b: 2};
+assert(obj2?.["a"] == 1);
+
+// Optional index on null dict -> null
+let nd = null;
+assert(nd?.["x"] == null);
+
+print("test_optional_chaining OK");

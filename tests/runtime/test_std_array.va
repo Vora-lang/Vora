@@ -1,0 +1,111 @@
+// test_std_array.va — Array module tests
+import "array"
+
+// --- sort ---
+let unsorted = [3, 1, 4, 1, 5, 9, 2, 6]
+let sorted = array.sort(unsorted)
+assert(sorted[0] == 1)
+assert(sorted[1] == 1)
+assert(sorted[2] == 2)
+assert(sorted[3] == 3)
+assert(sorted[4] == 4)
+assert(sorted[5] == 5)
+assert(sorted[6] == 6)
+assert(sorted[7] == 9)
+// Original array unchanged
+assert(unsorted[0] == 3)
+
+// --- sort already sorted ---
+let presorted = [1, 2, 3]
+let result = array.sort(presorted)
+assert(result[0] == 1)
+assert(result[1] == 2)
+assert(result[2] == 3)
+
+// --- sort single element ---
+let single = [42]
+assert(array.sort(single)[0] == 42)
+
+// --- sort empty ---
+let empty = []
+assert(array.sort(empty).length == 0)
+
+// --- reverse ---
+let fwd = [1, 2, 3, 4, 5]
+let rev = array.reverse(fwd)
+assert(rev[0] == 5)
+assert(rev[1] == 4)
+assert(rev[2] == 3)
+assert(rev[3] == 2)
+assert(rev[4] == 1)
+assert(fwd[0] == 1)  // original unchanged
+
+// --- join ---
+let words = ["a", "b", "c"]
+assert(array.join(words, ",") == "a,b,c")
+assert(array.join(words, "") == "abc")
+assert(array.join(words, " - ") == "a - b - c")
+assert(array.join([], ",") == "")
+
+// --- flatten ---
+let nested = [[1, 2], [3, 4], [5]]
+let flat = array.flatten(nested)
+assert(flat.length == 5)
+assert(flat[0] == 1)
+assert(flat[1] == 2)
+assert(flat[2] == 3)
+assert(flat[3] == 4)
+assert(flat[4] == 5)
+
+// --- flatten with mixed ---
+let mixed = [[1, 2], "hello", [3]]
+let flat2 = array.flatten(mixed)
+assert(flat2[0] == 1)
+assert(flat2[1] == 2)
+assert(flat2[2] == "hello")
+assert(flat2[3] == 3)
+
+// --- unique ---
+let dupes = [1, 2, 2, 3, 1, 4, 4, 5]
+let uniq = array.unique(dupes)
+assert(uniq.length == 5)
+assert(uniq[0] == 1)
+assert(uniq[1] == 2)
+assert(uniq[2] == 3)
+assert(uniq[3] == 4)
+assert(uniq[4] == 5)
+
+// --- unique with strings ---
+let strDupes = ["a", "b", "a", "c", "b"]
+let strUniq = array.unique(strDupes)
+assert(strUniq.length == 3)
+
+// --- chunk ---
+let items = [1, 2, 3, 4, 5, 6, 7]
+let chunks = array.chunk(items, 3)
+assert(chunks.length == 3)
+assert(chunks[0].length == 3)
+assert(chunks[1].length == 3)
+assert(chunks[2].length == 1)
+assert(chunks[0][0] == 1)
+assert(chunks[2][0] == 7)
+
+// --- compact ---
+let withNulls = [1, null, 2, null, 3]
+let compacted = array.compact(withNulls)
+assert(compacted.length == 3)
+assert(compacted[0] == 1)
+assert(compacted[1] == 2)
+assert(compacted[2] == 3)
+
+// --- compact all nulls ---
+let allNulls = [null, null]
+assert(array.compact(allNulls).length == 0)
+
+// --- fill ---
+let filled = array.fill("x", 5)
+assert(filled.length == 5)
+assert(filled[0] == "x")
+assert(filled[4] == "x")
+
+print("test_std_array OK")

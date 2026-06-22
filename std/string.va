@@ -1,0 +1,123 @@
+// std/string.va — Vora String Standard Library
+//
+// String manipulation utilities beyond built-in methods.
+// Usage: import "string"
+//        string.repeat("ha", 3)        // → "hahaha"
+//        string.padStart("42", 5, "0") // → "00042"
+//        string.padEnd("hi", 5, " ")   // → "hi   "
+//        string.capitalize("hello")    // → "Hello"
+
+// repeat(str, n) — repeat a string n times.
+export func repeat(str, n) {
+    let result = ""
+    for (let i = 0; i < n; i = i + 1) {
+        result = result + str
+    }
+    return result
+}
+
+// padStart(str, targetLen, padChar) — pad string from left to targetLen.
+export func padStart(str, targetLen, padChar) {
+    if (padChar == null) { padChar = " " }
+    if (str.length >= targetLen) { return str }
+    // Inline repeat — avoids cross-export call issue in module system
+    let padding = ""
+    let count = targetLen - str.length
+    for (let i = 0; i < count; i = i + 1) {
+        padding = padding + padChar
+    }
+    return padding + str
+}
+
+// padEnd(str, targetLen, padChar) — pad string from right to targetLen.
+export func padEnd(str, targetLen, padChar) {
+    if (padChar == null) { padChar = " " }
+    if (str.length >= targetLen) { return str }
+    // Inline repeat — avoids cross-export call issue in module system
+    let padding = ""
+    let count = targetLen - str.length
+    for (let i = 0; i < count; i = i + 1) {
+        padding = padding + padChar
+    }
+    return str + padding
+}
+
+// capitalize(str) — uppercase the first character, lowercase the rest.
+export func capitalize(str) {
+    if (str.length == 0) { return str }
+    return str[0].upper() + str.substring(1).lower()
+}
+
+// join(arr, sep) — join array elements into a string.
+export func join(arr, sep) {
+    let result = ""
+    for (let i = 0; i < arr.length; i = i + 1) {
+        if (i > 0) { result = result + sep }
+        result = result + toString(arr[i])
+    }
+    return result
+}
+
+// titleCase(str) — uppercase the first character of each word.
+export func titleCase(str) {
+    let words = str.split(" ")
+    let result = []
+    for (let i = 0; i < words.length; i = i + 1) {
+        let w = words[i]
+        // Inline capitalize — avoids cross-export call issue
+        if (w.length > 0) {
+            w = w[0].upper() + w.substring(1).lower()
+        }
+        result.add(w)
+    }
+    // Inline join — avoids cross-export call issue
+    let joined = ""
+    for (let i = 0; i < result.length; i = i + 1) {
+        if (i > 0) { joined = joined + " " }
+        joined = joined + toString(result[i])
+    }
+    return joined
+}
+
+// reverse(str) — reverse a string.
+export func reverse(str) {
+    let result = ""
+    let i = str.length
+    while (i > 0) {
+        i = i - 1
+        result = result + str[i]
+    }
+    return result
+}
+
+// count(str, sub) — count non-overlapping occurrences of sub in str.
+export func count(str, sub) {
+    if (sub == "") { return str.length + 1 }
+    let n = 0
+    let pos = 0
+    while (pos <= str.length - sub.length) {
+        let found = false
+        for (let i = pos; i <= str.length - sub.length; i = i + 1) {
+            if (str.substring(i, i + sub.length) == sub) {
+                n = n + 1
+                pos = i + sub.length
+                found = true
+                break
+            }
+        }
+        if (!found) { break }
+    }
+    return n
+}
+
+// isBlank(str) — returns true if string is empty or only whitespace.
+export func isBlank(str) {
+    return str.trim().length == 0
+}
+
+// lines(str) — split string into lines (splits on \n, \r\n, or \r).
+export func lines(str) {
+    // Normalize line endings to \n, then split
+    let normalized = str.replaceAll("\r\n", "\n").replaceAll("\r", "\n")
+    return normalized.split("\n")
+}

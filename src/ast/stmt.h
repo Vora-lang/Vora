@@ -372,4 +372,19 @@ public:
     Token errorToken;
 };
 
+// DeferStmt — schedules an expression to execute at function exit.
+// defer <expr>;
+// Deferred expressions execute in LIFO order when the function returns.
+class DeferStmt : public Stmt {
+public:
+    DeferStmt(std::unique_ptr<Expr> expression, Token keyword)
+        : expression(std::move(expression)), keyword(std::move(keyword)) {}
+
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
+
+    std::unique_ptr<Expr> expression;
+    Token keyword;
+};
+
 }

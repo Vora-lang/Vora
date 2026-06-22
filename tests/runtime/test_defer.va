@@ -1,0 +1,74 @@
+// Test defer statement
+// defer <expr>; schedules the expression to execute at function exit (LIFO).
+
+// --- Basic defer ---
+let counter = 0;
+func basic_defer() {
+    defer counter = counter + 1;
+    // counter is still 0 here
+}
+basic_defer();
+assert(counter == 1);
+
+// --- Multiple defers (LIFO order) ---
+let log = "";
+func multi_defer() {
+    defer log = log + "1";
+    defer log = log + "2";
+    defer log = log + "3";
+}
+multi_defer();
+assert(log == "321");  // LIFO: 3, 2, 1
+
+// --- Defer in nested functions ---
+let outer = 0;
+func outer_func() {
+    defer outer = 10;
+    func inner() {
+        defer outer = 20;  // this defer is in inner, not outer
+    }
+    inner();
+    // inner's defer ran when inner returned
+    assert(outer == 20);
+}
+outer_func();
+// outer's defer runs now
+assert(outer == 10);
+
+// --- Defer with expressions ---
+let val = 0;
+func defer_expr() {
+    defer val = val + 5;
+    val = 3;
+}
+defer_expr();
+assert(val == 8);  // 3 + 5
+
+// --- Defer with function calls ---
+let cleanup_count = 0;
+func cleanup() { cleanup_count = cleanup_count + 1; }
+func defer_call() {
+    defer cleanup();
+    defer cleanup();
+}
+defer_call();
+assert(cleanup_count == 2);
+
+// --- Defer with return ---
+let before_return = 0;
+func defer_return(x) {
+    defer before_return = 99;
+    if (x > 5) {
+        return x;
+    }
+    return 0;
+}
+defer_return(10);
+assert(before_return == 99);
+
+// Reset and test
+before_return = 0;
+defer_return(3);
+assert(before_return == 99);
+
+print("test_defer OK");

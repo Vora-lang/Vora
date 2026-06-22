@@ -121,6 +121,7 @@ public:
                                     const Expr* initializer, bool isConst);
     void compileBindPattern(const BindingPattern& pattern,
                             int sourceSlot, bool isConst);
+    void visitOptionalChainExpr(const OptionalChainExpr& expr) override;
     void visitErrorExpr(const ErrorExpr& expr) override;
 
     // --- StmtVisitor ---
@@ -140,6 +141,7 @@ public:
     void visitThrowStmt(const ThrowStmt& stmt) override;
     void visitImportStmt(const ImportStmt& stmt) override;
     void visitExportStmt(const ExportStmt& stmt) override;
+    void visitDeferStmt(const DeferStmt& stmt) override;
     void visitErrorStmt(const ErrorStmt& stmt) override;
 
     // Export name tracking (for modules being compiled as import targets)
@@ -260,6 +262,16 @@ private:
     std::vector<UpvalueDescriptor> upvalues;
     int resolveUpvalue(Compiler* compiler, const std::string& name);
     bool isUpvalueConst(int upvalueIdx) const;  // check if captured upvalue is const
+
+    // =========================================================================
+    // Defer tracking (per-function LIFO execution at return)
+    // =========================================================================
+    struct DeferredCall {
+        uint8_t protoIndex;
+        std::vector<UpvalueDescriptor> upvalues;
+    };
+    std::vector<DeferredCall> deferredProtos;
+    void emitDeferCalls();  // emit calls for all deferred closures (LIFO), popping results
 
     // =========================================================================
     // Bytecode emission

@@ -30,6 +30,8 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::DOT_DOT_DOT: return "DOT_DOT_DOT";
         case TokenType::COLON: return "COLON";
         case TokenType::QUESTION: return "QUESTION";
+        case TokenType::QUESTION_QUESTION: return "QUESTION_QUESTION";
+        case TokenType::QUESTION_DOT: return "QUESTION_DOT";
         case TokenType::SEMICOLON: return "SEMICOLON";
         case TokenType::EQUAL: return "EQUAL";
         case TokenType::LESS: return "LESS";
@@ -69,6 +71,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::FROM: return "FROM";
         case TokenType::YIELD: return "YIELD";
         case TokenType::MATCH: return "MATCH";
+        case TokenType::DEFER: return "DEFER";
 
         case TokenType::PLUS_EQUAL: return "PLUS_EQUAL";
         case TokenType::MINUS_EQUAL: return "MINUS_EQUAL";

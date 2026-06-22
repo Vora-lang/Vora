@@ -29,6 +29,7 @@ namespace vora {
         {"from", TokenType::FROM},
         {"yield", TokenType::YIELD},
         {"match", TokenType::MATCH},
+        {"defer", TokenType::DEFER},
         {"true", TokenType::TRUE},
         {"false", TokenType::FALSE},
         {"null", TokenType::NULL_TOKEN},
@@ -280,7 +281,13 @@ namespace vora {
             break;
 
         case '?':
-            addToken(TokenType::QUESTION);
+            if (match('?')) {
+                addToken(TokenType::QUESTION_QUESTION);
+            } else if (match('.')) {
+                addToken(TokenType::QUESTION_DOT);
+            } else {
+                addToken(TokenType::QUESTION);
+            }
             break;
 
         case ';':

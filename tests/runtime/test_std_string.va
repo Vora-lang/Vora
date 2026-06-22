@@ -1,0 +1,67 @@
+// test_std_string.va — String module tests
+import "string"
+
+// --- repeat ---
+assert(string.repeat("ha", 3) == "hahaha")
+assert(string.repeat("x", 0) == "")
+assert(string.repeat("abc", 1) == "abc")
+assert(string.repeat("", 5) == "")
+
+// --- padStart ---
+assert(string.padStart("42", 5, "0") == "00042")
+assert(string.padStart("hello", 3, " ") == "hello")  // already long enough
+assert(string.padStart("x", 4, "-") == "---x")
+
+// --- padEnd ---
+assert(string.padEnd("hi", 5, " ") == "hi   ")
+assert(string.padEnd("world", 3, " ") == "world")  // already long enough
+assert(string.padEnd("x", 4, ".") == "x...")
+
+// --- capitalize ---
+assert(string.capitalize("hello") == "Hello")
+assert(string.capitalize("WORLD") == "World")
+assert(string.capitalize("") == "")
+assert(string.capitalize("a") == "A")
+
+// --- titleCase ---
+assert(string.titleCase("hello world") == "Hello World")
+assert(string.titleCase("vora script language") == "Vora Script Language")
+
+// --- reverse ---
+assert(string.reverse("abc") == "cba")
+assert(string.reverse("Vora") == "aroV")
+assert(string.reverse("") == "")
+assert(string.reverse("a") == "a")
+
+// --- isBlank ---
+assert(string.isBlank("") == true)
+assert(string.isBlank("   ") == true)
+assert(string.isBlank("\t") == true)
+assert(string.isBlank("abc") == false)
+assert(string.isBlank(" a ") == false)
+
+// --- lines ---
+let text = "line1\nline2\nline3"
+let ls = string.lines(text)
+assert(ls.length == 3)
+assert(ls[0] == "line1")
+assert(ls[1] == "line2")
+assert(ls[2] == "line3")
+
+// --- lines with single line ---
+let single = "just one line"
+let sl = string.lines(single)
+assert(sl.length == 1)
+assert(sl[0] == "just one line")
+
+// --- count ---
+let s = "hello hello world"
+// count searches for substring occurrences
+let c = string.count(s, "hello")
+assert(c == 2)
+let c2 = string.count(s, "world")
+assert(c2 == 1)
+let c3 = string.count(s, "xyz")
+assert(c3 == 0)
+
+print("test_std_string OK")

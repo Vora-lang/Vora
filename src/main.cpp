@@ -305,6 +305,8 @@ int main(
     int argc,
     char* argv[]
 ) {
+    // Capture program args for std/os module
+    setProgramArgs(argc, argv);
 
     bool printAst = false;
     bool printTokens = false;

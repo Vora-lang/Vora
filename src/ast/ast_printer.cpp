@@ -290,6 +290,27 @@ std::string ASTPrinter::visitDestructureAssignmentExpr(const DestructureAssignme
     return "(destructure-assign " + expr.value->accept(*this) + ")";
 }
 
+std::string ASTPrinter::visitOptionalChainExpr(const OptionalChainExpr& expr) {
+    std::string result = "(?.";
+    result += expr.object->accept(*this);
+    switch (expr.kind) {
+        case OptionalChainExpr::Kind::PROPERTY:
+            result += " " + expr.property;
+            break;
+        case OptionalChainExpr::Kind::CALL:
+            result += " (call";
+            for (const auto& arg : expr.arguments) {
+                result += " " + arg->accept(*this);
+            }
+            result += ")";
+            break;
+        case OptionalChainExpr::Kind::INDEX:
+            result += " [" + expr.index->accept(*this) + "]";
+            break;
+    }
+    return result + ")";
+}
+
 std::string ASTPrinter::visitErrorExpr(const ErrorExpr& expr) {
     return "(error \"" + expr.message + "\")";
 }
@@ -525,6 +546,10 @@ std::string ASTPrinter::visitImportStmt(const ImportStmt& stmt) {
 
 std::string ASTPrinter::visitExportStmt(const ExportStmt& stmt) {
     return "(export " + print(stmt.declaration.get()) + ")";
+}
+
+std::string ASTPrinter::visitDeferStmt(const DeferStmt& stmt) {
+    return "(defer " + stmt.expression->accept(*this) + ")";
 }
 
 std::string ASTPrinter::visitErrorStmt(const ErrorStmt& stmt) {

@@ -296,6 +296,9 @@ bool Compiler::isUpvalueConst(int upvalueIdx) const {
 Chunk Compiler::compile(const Program* program) {
     program->accept(*this);
 
+    // Execute deferred calls (LIFO) before implicit return
+    emitDeferCalls();
+
     // Implicit return null at end of program
     emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
     emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
@@ -350,6 +353,23 @@ void Compiler::visitErrorExpr(const ErrorExpr& /*expr*/) {
 
 void Compiler::visitErrorStmt(const ErrorStmt& /*stmt*/) {
     // No-op: error statements produce no bytecode.
+}
+
+void Compiler::emitDeferCalls() {
+    // Emit calls to all deferred closures in LIFO order (reverse of registration).
+    // Each defer: OP_CLOSURE <protoIndex> <upvalueCount> {<isLocal> <index>}*
+    //             OP_CALL 0
+    //             OP_POP  (discard the defer's return value)
+    for (auto it = deferredProtos.rbegin(); it != deferredProtos.rend(); ++it) {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_CLOSURE), it->protoIndex);
+        emitByte(static_cast<uint8_t>(it->upvalues.size()));
+        for (const auto& uv : it->upvalues) {
+            emitByte(uv.isLocal ? 1 : 0);
+            emitByte(uv.index);
+        }
+        emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 0);
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    }
 }
 
 } // namespace vora

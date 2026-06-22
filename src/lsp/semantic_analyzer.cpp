@@ -646,6 +646,13 @@ void SemanticAnalyzer::visitExportStmt(const ExportStmt& stmt) {
     }
 }
 
+void SemanticAnalyzer::visitDeferStmt(const DeferStmt& stmt) {
+    // Analyze the deferred expression
+    if (stmt.expression) {
+        visitExpr(*stmt.expression);
+    }
+}
+
 void SemanticAnalyzer::visitErrorStmt(const ErrorStmt& /*stmt*/) {
     // ErrorStmt is a no-op placeholder — nothing to analyze.
 }
@@ -812,6 +819,16 @@ void SemanticAnalyzer::visitDestructureAssignmentExpr(const DestructureAssignmen
     }
     if (expr.value) {
         visitExpr(*expr.value);
+    }
+}
+
+void SemanticAnalyzer::visitOptionalChainExpr(const OptionalChainExpr& expr) {
+    if (expr.object) visitExpr(*expr.object);
+    if (expr.kind == OptionalChainExpr::Kind::INDEX && expr.index) {
+        visitExpr(*expr.index);
+    }
+    for (const auto& arg : expr.arguments) {
+        if (arg) visitExpr(*arg);
     }
 }
 

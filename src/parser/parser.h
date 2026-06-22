@@ -104,6 +104,8 @@ private:
     std::unique_ptr<Stmt> fromImportStatement();
     std::unique_ptr<Stmt> exportStatement();
 
+    std::unique_ptr<Stmt> deferStatement();
+
 private:
     bool isAtEnd() const;
 

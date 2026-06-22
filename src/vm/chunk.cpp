@@ -69,6 +69,8 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_CLEAR_EXCEPTION: return "OP_CLEAR_EXCEPTION";
         case OpCode::OP_THROW:          return "OP_THROW";
         case OpCode::OP_FINALLY_END:    return "OP_FINALLY_END";
+        case OpCode::OP_JUMP_IF_NULL:   return "OP_JUMP_IF_NULL";
+        case OpCode::OP_IMPORT:         return "OP_IMPORT";
     }
     return "OP_UNKNOWN";
 }
@@ -372,7 +374,8 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             return offset + 4;
         }
         case OpCode::OP_JUMP:
-        case OpCode::OP_JUMP_IF_FALSE: {
+        case OpCode::OP_JUMP_IF_FALSE:
+        case OpCode::OP_JUMP_IF_NULL: {
             uint16_t jumpOffset = static_cast<uint16_t>(code[offset + 1])
                                 | (static_cast<uint16_t>(code[offset + 2]) << 8);
             std::printf("%-16s %4d -> %zu\n", opcodeName(instruction),

@@ -1,0 +1,48 @@
+// Test null coalescing operator (??)
+// If left is not null, return left; otherwise return right.
+
+// Basic null coalescing
+let t1 = null ?? 42;
+assert(t1 == 42);
+
+let t2 = 10 ?? 42;
+assert(t2 == 10);
+
+let t3 = "hello" ?? "world";
+assert(t3 == "hello");
+
+let t4 = null ?? "default";
+assert(t4 == "default");
+
+// Non-null falsy values should NOT trigger ??
+let t5 = 0 ?? 100;
+assert(t5 == 0);
+
+let t6 = false ?? true;
+assert(t6 == false);
+
+let t7 = "" ?? "default";
+assert(t7 == "");
+
+// Nested ??
+let t8 = null ?? null ?? 42;
+assert(t8 == 42);
+
+let t9 = null ?? 10 ?? 42;
+assert(t9 == 10);
+
+// With variables
+let a = null;
+let b = a ?? 99;
+assert(b == 99);
+
+let c = 55;
+let d = c ?? 99;
+assert(d == 55);
+
+// With dict subscript
+let obj = {x: 1, y: null};
+assert(obj["x"] ?? 0 == 1);
+assert(obj["y"] ?? 0 == 0);
+
+print("test_null_coalescing OK");

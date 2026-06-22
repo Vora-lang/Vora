@@ -536,4 +536,43 @@ public:
     Token errorToken;
 };
 
+// OptionalChainExpr — optional property/call/index access via ?.
+// a?.b, a?.(), a?.[i]
+// If the object is null, the entire expression short-circuits to null.
+// Otherwise, the operation proceeds normally.
+class OptionalChainExpr : public Expr {
+public:
+    enum class Kind : uint8_t { PROPERTY, CALL, INDEX };
+
+    OptionalChainExpr(
+        std::unique_ptr<Expr> object,
+        Kind kind,
+        Token questionDot
+    )
+        : object(std::move(object)),
+          kind(kind),
+          questionDot(std::move(questionDot)) {
+    }
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::unique_ptr<Expr> object;
+    Kind kind;
+    Token questionDot;   // the ?. token
+
+    // Kind::PROPERTY
+    std::string property;
+
+    // Kind::CALL
+    std::vector<std::unique_ptr<Expr>> arguments;
+    Token closeParen;    // )
+
+    // Kind::INDEX
+    std::unique_ptr<Expr> index;
+    Token closeBracket;  // ]
+};
+
 }

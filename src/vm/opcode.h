@@ -94,6 +94,9 @@ enum class OpCode : uint8_t {
     OP_THROW,          // throw exception (value on stack top)
     OP_FINALLY_END,    // marker for finally block end
 
+    // Null safety
+    OP_JUMP_IF_NULL,   // pop + conditional jump if top is null (operand: uint16_t offset)
+
     // Module system
     OP_IMPORT,         // import module → push module dict (operand: uint8_t pathConstIndex, uint8_t nameConstIndex)
 };

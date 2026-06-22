@@ -7,12 +7,17 @@
 
 #include "builtins.h"
 
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "../gc/gc_heap.h"
 #include "nlohmann/json.hpp"  // nlohmann/json — JSON parsing engine
@@ -441,6 +446,15 @@ void registerBuiltins(VM& vm) {
 
     // Register JSON builtins
     registerJsonBuiltins(vm);
+
+    // Register filesystem builtins
+    registerFsBuiltins(vm);
+
+    // Register OS builtins
+    registerOsBuiltins(vm);
+
+    // Register datetime builtins
+    registerDatetimeBuiltins(vm);
 }
 
 // ============================================================================
@@ -1145,6 +1159,206 @@ void registerJsonBuiltins(VM& vm) {
             } catch (...) {
                 return nullptr;
             }
+        });
+}
+
+// ============================================================================
+// Filesystem built-in native functions — used by std/fs.va
+// ============================================================================
+
+void registerFsBuiltins(VM& vm) {
+    // readFile(path) — read entire file as string, returns null on error
+    vm.defineNative("vora_fs_readFile", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+                return nullptr;
+            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
+            std::ifstream file(path, std::ios::binary);
+            if (!file.is_open()) return nullptr;
+            std::stringstream ss;
+            ss << file.rdbuf();
+            return GcHeap::instance().alloc<GcString>(ss.str());
+        });
+
+    // writeFile(path, content) — write string to file, returns true on success
+    vm.defineNative("vora_fs_writeFile", 2,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]) ||
+                !std::holds_alternative<GcPtr<GcString>>(arguments[1]))
+                return false;
+            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& content = std::get<GcPtr<GcString>>(arguments[1])->value;
+            std::ofstream file(path, std::ios::binary);
+            if (!file.is_open()) return false;
+            file << content;
+            return file.good();
+        });
+
+    // exists(path) — check if file or directory exists
+    vm.defineNative("vora_fs_exists", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+                return false;
+            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
+            std::error_code ec;
+            bool result = std::filesystem::exists(path, ec);
+            return result && !ec;
+        });
+
+    // listDir(path) — list directory contents, returns array of filenames
+    vm.defineNative("vora_fs_listDir", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+                return nullptr;
+            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
+            auto arr = GcHeap::instance().alloc<Array>();
+            try {
+                for (const auto& entry : std::filesystem::directory_iterator(path)) {
+                    auto filename = entry.path().filename().string();
+                    arr->elements.push_back(
+                        GcHeap::instance().alloc<GcString>(filename));
+                }
+            } catch (const std::filesystem::filesystem_error&) {
+                return nullptr;
+            }
+            return arr;
+        });
+
+    // mkdir(path) — create directory, returns true on success
+    vm.defineNative("vora_fs_mkdir", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+                return false;
+            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
+            std::error_code ec;
+            bool ok = std::filesystem::create_directory(path, ec);
+            return ok && !ec;
+        });
+
+    // remove(path) — remove file or empty directory, returns true on success
+    vm.defineNative("vora_fs_remove", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+                return false;
+            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
+            std::error_code ec;
+            bool ok = std::filesystem::remove(path, ec);
+            return ok && !ec;
+        });
+}
+
+// ============================================================================
+// OS built-in native functions — used by std/os.va
+// ============================================================================
+
+namespace {
+    std::vector<std::string> g_programArgs;
+}
+
+void setProgramArgs(int argc, char* argv[]) {
+    g_programArgs.clear();
+    for (int i = 0; i < argc; i++) {
+        g_programArgs.push_back(argv[i] ? argv[i] : "");
+    }
+}
+
+void registerOsBuiltins(VM& vm) {
+    // getenv(name) — get environment variable, returns null if not set
+    vm.defineNative("vora_os_getenv", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+                return nullptr;
+            const auto& name = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const char* val = std::getenv(name.c_str());
+            if (!val) return nullptr;
+            return GcHeap::instance().alloc<GcString>(std::string(val));
+        });
+
+    // getcwd() — get current working directory
+    vm.defineNative("vora_os_getcwd", 0,
+        [](const std::vector<Value>&) -> Value {
+            std::error_code ec;
+            auto p = std::filesystem::current_path(ec);
+            if (ec) return nullptr;
+            return GcHeap::instance().alloc<GcString>(p.string());
+        });
+
+    // exit(code) — exit the process with given code
+    vm.defineNative("vora_os_exit", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            int code = 0;
+            if (std::holds_alternative<int64_t>(arguments[0]))
+                code = static_cast<int>(std::get<int64_t>(arguments[0]));
+            else if (std::holds_alternative<double>(arguments[0]))
+                code = static_cast<int>(std::get<double>(arguments[0]));
+            std::exit(code);
+            return nullptr;
+        });
+
+    // shell(cmd) — execute shell command and capture stdout, returns string
+    vm.defineNative("vora_os_shell", 1,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+                return nullptr;
+            const auto& cmd = std::get<GcPtr<GcString>>(arguments[0])->value;
+#ifdef _WIN32
+            std::string fullCmd = "cmd /c \"" + cmd + "\" 2>&1";
+#else
+            std::string fullCmd = cmd + " 2>&1";
+#endif
+            std::array<char, 256> buffer;
+            std::string result;
+#ifdef _WIN32
+            FILE* pipe = _popen(fullCmd.c_str(), "r");
+#else
+            FILE* pipe = popen(fullCmd.c_str(), "r");
+#endif
+            if (!pipe) return nullptr;
+            while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+                result += buffer.data();
+            }
+#ifdef _WIN32
+            int rc = _pclose(pipe);
+#else
+            int rc = pclose(pipe);
+#endif
+            // Strip trailing newline if present
+            if (!result.empty() && result.back() == '\n') result.pop_back();
+            if (!result.empty() && result.back() == '\r') result.pop_back();
+            return GcHeap::instance().alloc<GcString>(result);
+        });
+
+    // args() — get command-line arguments
+    vm.defineNative("vora_os_args", 0,
+        [](const std::vector<Value>&) -> Value {
+            auto arr = GcHeap::instance().alloc<Array>();
+            for (const auto& a : g_programArgs) {
+                arr->elements.push_back(
+                    GcHeap::instance().alloc<GcString>(a));
+            }
+            return arr;
+        });
+}
+
+// ============================================================================
+// Datetime built-in native functions — used by std/datetime.va
+// ============================================================================
+
+void registerDatetimeBuiltins(VM& vm) {
+    // now() — current Unix timestamp in seconds (double)
+    vm.defineNative("vora_time_now", 0,
+        [](const std::vector<Value>&) -> Value {
+            auto now = std::chrono::system_clock::now().time_since_epoch();
+            auto secs = std::chrono::duration_cast<std::chrono::duration<double>>(now).count();
+            return secs;
+        });
+
+    // nowMs() — current Unix timestamp in milliseconds (int64_t)
+    vm.defineNative("vora_time_nowMs", 0,
+        [](const std::vector<Value>&) -> Value {
+            auto now = std::chrono::system_clock::now().time_since_epoch();
+            auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+            return static_cast<int64_t>(millis);
         });
 }
 

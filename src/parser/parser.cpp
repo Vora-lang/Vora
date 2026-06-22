@@ -103,6 +103,7 @@ void Parser::synchronize() {
                 case TokenType::EXPORT:
                 case TokenType::THROW:
                 case TokenType::YIELD:
+                case TokenType::DEFER:
                     return;
                 default:
                     break;
@@ -208,6 +209,10 @@ std::unique_ptr<Stmt> Parser::statement() {
 
     if (match(TokenType::EXPORT)) {
         return exportStatement();
+    }
+
+    if (match(TokenType::DEFER)) {
+        return deferStatement();
     }
 
     auto expr = expression();
@@ -1301,6 +1306,7 @@ int Parser::getPrecedence(TokenType type) const {
             return 1; // lowest, right-associative handled in Pratt
 
         case TokenType::OR:
+        case TokenType::QUESTION_QUESTION:
             return 1;
 
         case TokenType::AND:
@@ -1690,6 +1696,65 @@ std::unique_ptr<Expr> Parser::call() {
             continue;
         }
 
+        // Optional chaining: ?.property, ?.(args), ?.[index]
+        if (match(TokenType::QUESTION_DOT)) {
+            Token qdot = previous();
+
+            // ?. must be followed by identifier, (, or [
+            if (match(TokenType::IDENTIFIER)) {
+                std::string property = previous().lexeme;
+                auto chain = std::make_unique<OptionalChainExpr>(
+                    std::move(expr),
+                    OptionalChainExpr::Kind::PROPERTY,
+                    qdot
+                );
+                chain->property = property;
+                expr = std::move(chain);
+                continue;
+            }
+
+            if (match(TokenType::LEFT_PAREN)) {
+                auto chain = std::make_unique<OptionalChainExpr>(
+                    std::move(expr),
+                    OptionalChainExpr::Kind::CALL,
+                    qdot
+                );
+                if (!check(TokenType::RIGHT_PAREN)) {
+                    do {
+                        auto arg = expression();
+                        if (!arg) arg = std::make_unique<ErrorExpr>("Expected argument expression", peek());
+                        chain->arguments.push_back(std::move(arg));
+                    } while (match(TokenType::COMMA));
+                }
+                if (!match(TokenType::RIGHT_PAREN)) {
+                    error("Expected ')' after optional call arguments");
+                }
+                chain->closeParen = previous();
+                expr = std::move(chain);
+                continue;
+            }
+
+            if (match(TokenType::LEFT_BRACKET)) {
+                auto chain = std::make_unique<OptionalChainExpr>(
+                    std::move(expr),
+                    OptionalChainExpr::Kind::INDEX,
+                    qdot
+                );
+                auto indexExpr = expression();
+                if (!indexExpr) indexExpr = std::make_unique<ErrorExpr>("Expected index expression", peek());
+                chain->index = std::move(indexExpr);
+                if (!match(TokenType::RIGHT_BRACKET)) {
+                    error("Expected ']' after optional index expression");
+                }
+                chain->closeBracket = previous();
+                expr = std::move(chain);
+                continue;
+            }
+
+            error("Expected property name, '(', or '[' after '?.'");
+            continue;
+        }
+
         // postfix x++ / x--  (only if lhs is an lvalue, otherwise
         // the ++/-- belongs to the next statement as a prefix operator)
         if ((check(TokenType::PLUS_PLUS) || check(TokenType::MINUS_MINUS)) &&
@@ -2067,6 +2132,19 @@ std::unique_ptr<Stmt> Parser::exportStatement() {
     }
 
     return errorStmt("Expected func, let, const, or Obj after 'export'");
+}
+
+std::unique_ptr<Stmt> Parser::deferStatement() {
+    Token keyword = previous();  // 'defer' token
+
+    auto expr = expression();
+    if (!expr) {
+        return errorStmt("Expected expression after 'defer'");
+    }
+
+    match(TokenType::SEMICOLON);
+
+    return std::make_unique<DeferStmt>(std::move(expr), keyword);
 }
 
 }

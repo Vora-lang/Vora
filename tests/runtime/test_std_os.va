@@ -1,0 +1,31 @@
+// test_std_os.va — OS module tests
+import "os"
+
+// --- getcwd ---
+let cwd = os.getcwd()
+assert(cwd != null)
+assert(type(cwd) == "string")
+assert(cwd.length > 0)
+
+// --- getenv ---
+// PATH should always be set on any reasonable system
+let path = os.getenv("PATH")
+assert(path != null)
+assert(type(path) == "string")
+
+// Non-existent env var returns null
+let noenv = os.getenv("_VORA_NONEXISTENT_ENV_VAR_12345")
+assert(noenv == null)
+
+// --- shell ---
+let output = os.shell("echo hello_test")
+assert(output != null)
+assert(output.length > 0)
+
+// --- args ---
+let args = os.args
+assert(args != null)
+assert(type(args) == "array")
+assert(args.length >= 1)  // at least the script path
+
+print("test_std_os OK")

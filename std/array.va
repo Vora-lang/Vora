@@ -1,0 +1,139 @@
+// std/array.va — Vora Array Standard Library
+//
+// Array utilities: sort, reverse, join, flatten, unique.
+// Usage: import "array"
+//        array.sort([3,1,2])           // → [1,2,3]
+//        array.reverse([1,2,3])        // → [3,2,1]
+//        array.join(["a","b"], ",")     // → "a,b"
+//        array.flatten([[1,2],[3]])    // → [1,2,3]
+//        array.unique([1,2,1,3])       // → [1,2,3]
+
+// sort(arr) — returns a new sorted array (ascending, numeric/string elements).
+// Uses insertion sort for simplicity; suitable for small-to-medium arrays.
+export func sort(arr) {
+    let result = []
+    for (let i = 0; i < arr.length; i = i + 1) {
+        result.add(arr[i])
+    }
+
+    // Insertion sort
+    for (let i = 1; i < result.length; i = i + 1) {
+        let key = result[i]
+        let j = i - 1
+        while (j >= 0) {
+            let cmp = result[j]
+            let swap = false
+            // Numeric comparison
+            if (type(key) == "int" || type(key) == "float") {
+                if (type(cmp) == "int" || type(cmp) == "float") {
+                    swap = float(key) < float(cmp)
+                }
+            }
+            // String comparison (lexicographic)
+            if (type(key) == "string" && type(cmp) == "string") {
+                swap = key < cmp
+            }
+            if (!swap) { break }
+            result[j + 1] = result[j]
+            j = j - 1
+        }
+        result[j + 1] = key
+    }
+    return result
+}
+
+// reverse(arr) — returns a new reversed array.
+export func reverse(arr) {
+    let result = []
+    let i = arr.length
+    while (i > 0) {
+        i = i - 1
+        result.add(arr[i])
+    }
+    return result
+}
+
+// join(arr, separator) — joins array elements into a string.
+// Each element is converted to string via toString().
+export func join(arr, separator) {
+    let result = ""
+    for (let i = 0; i < arr.length; i = i + 1) {
+        if (i > 0) { result = result + separator }
+        result = result + toString(arr[i])
+    }
+    return result
+}
+
+// flatten(arr) — flattens one level of nesting. Returns a new array.
+export func flatten(arr) {
+    let result = []
+    for (let i = 0; i < arr.length; i = i + 1) {
+        let item = arr[i]
+        if (type(item) == "array") {
+            for (let j = 0; j < item.length; j = j + 1) {
+                result.add(item[j])
+            }
+        } else {
+            result.add(item)
+        }
+    }
+    return result
+}
+
+// unique(arr) — returns a new array with duplicate elements removed.
+// Preserves the order of first occurrence.
+export func unique(arr) {
+    let result = []
+    for (let i = 0; i < arr.length; i = i + 1) {
+        let item = arr[i]
+        let found = false
+        for (let j = 0; j < result.length; j = j + 1) {
+            if (result[j] == item) {
+                found = true
+                break
+            }
+        }
+        if (!found) {
+            result.add(item)
+        }
+    }
+    return result
+}
+
+// chunk(arr, size) — splits array into chunks of the given size.
+// Returns an array of arrays. The last chunk may be smaller.
+export func chunk(arr, size) {
+    let result = []
+    let current = []
+    for (let i = 0; i < arr.length; i = i + 1) {
+        current.add(arr[i])
+        if (current.length >= size) {
+            result.add(current)
+            current = []
+        }
+    }
+    if (current.length > 0) {
+        result.add(current)
+    }
+    return result
+}
+
+// fill(value, count) — create an array filled with count copies of value.
+export func fill(value, count) {
+    let result = []
+    for (let i = 0; i < count; i = i + 1) {
+        result.add(value)
+    }
+    return result
+}
+
+// compact(arr) — remove null values from array.
+export func compact(arr) {
+    let result = []
+    for (let i = 0; i < arr.length; i = i + 1) {
+        if (arr[i] != null) {
+            result.add(arr[i])
+        }
+    }
+    return result
+}

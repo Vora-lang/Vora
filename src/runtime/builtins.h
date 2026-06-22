@@ -31,6 +31,18 @@ void registerMathBuiltins(VM& vm);
 // Register JSON built-in native functions (used by std/json.va).
 void registerJsonBuiltins(VM& vm);
 
+// Register filesystem built-in native functions (used by std/fs.va).
+void registerFsBuiltins(VM& vm);
+
+// Register OS built-in native functions (used by std/os.va).
+void registerOsBuiltins(VM& vm);
+
+// Register datetime built-in native functions (used by std/datetime.va).
+void registerDatetimeBuiltins(VM& vm);
+
+// Set program arguments (called from main() before registerOsBuiltins).
+void setProgramArgs(int argc, char* argv[]);
+
 // Array method factory — returns a bound method for the given array.
 // Used by OP_GET_PROPERTY dispatch in the VM.
 // Returns nullptr if the method name is unknown.

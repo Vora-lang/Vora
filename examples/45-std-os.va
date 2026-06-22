@@ -1,0 +1,23 @@
+// examples/45-std-os.va — OS module demonstration
+import "os"
+
+// getenv(name) — read environment variable
+let path = os.getenv("PATH")
+if (path != null) {
+    print("PATH (first 60 chars): " + path.substring(0, 60) + "...")
+} else {
+    print("PATH not found")
+}
+
+// getcwd() — current working directory
+let cwd = os.getcwd()
+print("Current working directory: " + cwd)
+
+// args — command-line arguments
+print("Program arguments: " + toString(os.args))
+
+// shell(cmd) — execute shell command and capture output
+print("")
+print("Shell: 'echo Hello from shell!'")
+let output = os.shell("echo Hello from shell!")
+print("Output: " + output)

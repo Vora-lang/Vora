@@ -61,6 +61,7 @@ int SourceFormatter::tokenPrecedence(TokenType type) {
             return PREC_ASSIGNMENT;
 
         case TokenType::OR:
+        case TokenType::QUESTION_QUESTION:
             return PREC_ASSIGNMENT;
 
         case TokenType::AND:
@@ -136,10 +137,11 @@ int SourceFormatter::exprPrecedence(const Expr& expr) {
         return PREC_UNARY;
     }
 
-    // Call, index, property — highest precedence before atoms
+    // Call, index, property, optional chain — highest precedence before atoms
     if (dynamic_cast<const CallExpr*>(&expr) ||
         dynamic_cast<const IndexExpr*>(&expr) ||
-        dynamic_cast<const PropertyExpr*>(&expr)) {
+        dynamic_cast<const PropertyExpr*>(&expr) ||
+        dynamic_cast<const OptionalChainExpr*>(&expr)) {
         return PREC_CALL;
     }
 
@@ -551,6 +553,30 @@ std::string SourceFormatter::visitDestructureAssignmentExpr(const DestructureAss
     return result;
 }
 
+std::string SourceFormatter::visitOptionalChainExpr(const OptionalChainExpr& expr) {
+    std::stringstream ss;
+    ss << formatExpr(*expr.object, PREC_CALL);
+    ss << "?.";
+    switch (expr.kind) {
+        case OptionalChainExpr::Kind::PROPERTY:
+            ss << expr.property;
+            break;
+        case OptionalChainExpr::Kind::CALL: {
+            ss << "(";
+            for (size_t i = 0; i < expr.arguments.size(); ++i) {
+                if (i > 0) ss << ", ";
+                ss << formatExpr(*expr.arguments[i], 0);
+            }
+            ss << ")";
+            break;
+        }
+        case OptionalChainExpr::Kind::INDEX:
+            ss << "[" << formatExpr(*expr.index, 0) << "]";
+            break;
+    }
+    return ss.str();
+}
+
 std::string SourceFormatter::visitErrorExpr(const ErrorExpr& expr) {
     // Emit a placeholder that is valid Vora syntax (null) so formatted
     // output remains syntactically valid even for partial/error ASTs.
@@ -844,6 +870,10 @@ std::string SourceFormatter::visitImportStmt(const ImportStmt& stmt) {
 std::string SourceFormatter::visitExportStmt(const ExportStmt& stmt) {
     // Visit the inner declaration and prefix with 'export '
     return "export " + stmt.declaration->accept(*this);
+}
+
+std::string SourceFormatter::visitDeferStmt(const DeferStmt& stmt) {
+    return "defer " + formatExpr(*stmt.expression, 0) + ";";
 }
 
 std::string SourceFormatter::visitErrorStmt(const ErrorStmt& stmt) {

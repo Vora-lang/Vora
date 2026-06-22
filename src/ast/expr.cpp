@@ -525,4 +525,34 @@ std::unique_ptr<Expr> ErrorExpr::clone() const {
     return std::make_unique<ErrorExpr>(message, errorToken);
 }
 
+// =========================================================================
+// OptionalChainExpr
+// =========================================================================
+
+Value OptionalChainExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitOptionalChainExpr(*this);
+}
+
+void OptionalChainExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitOptionalChainExpr(*this);
+}
+
+std::string OptionalChainExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitOptionalChainExpr(*this);
+}
+
+std::unique_ptr<Expr> OptionalChainExpr::clone() const {
+    auto copy = std::make_unique<OptionalChainExpr>(
+        object->clone(), kind, questionDot
+    );
+    copy->property = property;
+    copy->closeParen = closeParen;
+    copy->closeBracket = closeBracket;
+    if (index) copy->index = index->clone();
+    for (auto& arg : arguments) {
+        copy->arguments.push_back(arg->clone());
+    }
+    return copy;
+}
+
 }

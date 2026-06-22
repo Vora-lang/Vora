@@ -1,0 +1,29 @@
+// examples/48-std-string.va — String module demonstration
+import "string"
+
+// repeat(str, n) — repeat string
+print("repeat: " + string.repeat("ha", 3))
+
+// padStart / padEnd — pad to target length
+print("padStart: '" + string.padStart("42", 5, "0") + "'")
+print("padEnd:   '" + string.padEnd("hi", 5, " ") + "'")
+
+// capitalize / titleCase
+print("capitalize: " + string.capitalize("hello world"))
+print("titleCase:  " + string.titleCase("hello world from vora"))
+
+// reverse string
+print("reverse: " + string.reverse("Vora"))
+
+// isBlank
+print("isBlank(''):   " + toString(string.isBlank("")))
+print("isBlank('  '):  " + toString(string.isBlank("  ")))
+print("isBlank('abc'): " + toString(string.isBlank("abc")))
+
+// lines — split into lines
+let text = "line1\nline2\nline3"
+let ls = string.lines(text)
+print("lines count: " + toString(ls.length))
+for l in ls {
+    print("  " + l)
+}

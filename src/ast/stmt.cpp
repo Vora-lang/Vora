@@ -207,4 +207,16 @@ std::string ErrorStmt::accept(StmtVisitor<std::string>& visitor) const {
     return visitor.visitErrorStmt(*this);
 }
 
+// =========================================================================
+// DeferStmt
+// =========================================================================
+
+void DeferStmt::accept(StmtVisitor<void>& visitor) const {
+    visitor.visitDeferStmt(*this);
+}
+
+std::string DeferStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitDeferStmt(*this);
+}
+
 }

@@ -1100,6 +1100,13 @@ InterpretResult VM::run() {
                 }
                 break;
             }
+            case OpCode::OP_JUMP_IF_NULL: {
+                uint16_t offset = readShort();
+                if (std::holds_alternative<std::nullptr_t>(pop())) {
+                    ip += offset;
+                }
+                break;
+            }
             case OpCode::OP_LOOP: {
                 uint16_t offset = readShort();
                 ip -= offset;

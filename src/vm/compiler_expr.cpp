@@ -164,6 +164,29 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
         return;
     }
 
+    // Null coalescing operator: a ?? b
+    // If a is not null, short-circuit and return a; otherwise evaluate b.
+    // Pattern:
+    //   <left>
+    //   DUP                  -- save copy for null check
+    //   OP_JUMP_IF_NULL -> else  -- pop dup; if null, jump. Stack: [left]
+    //   OP_JUMP -> end        -- left is non-null, skip the b branch. Stack: [left]
+    // else:
+    //   OP_POP                -- pop original null left. Stack: []
+    //   <right>               -- Stack: [right]
+    // end:
+    if (expr.op.type == TokenType::QUESTION_QUESTION) {
+        expr.left->accept(*this);
+        emitByte(static_cast<uint8_t>(OpCode::OP_DUP));
+        size_t elseJump = emitJump(OpCode::OP_JUMP_IF_NULL);
+        size_t endJump = emitJump(OpCode::OP_JUMP);
+        patchJump(elseJump);
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+        expr.right->accept(*this);
+        patchJump(endJump);
+        return;
+    }
+
     // Constant folding: if both operands are literal constants, evaluate at
     // compile time and emit a single constant instead of runtime bytecode.
     auto* leftLit = dynamic_cast<const LiteralExpr*>(expr.left.get());
@@ -921,6 +944,9 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
         s->accept(fnCompiler);
     }
 
+    // Execute deferred calls (LIFO) before implicit return
+    fnCompiler.emitDeferCalls();
+
     // Implicit return null
     fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
     fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
@@ -948,6 +974,48 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
         emitByte(uv.index);
     }
     // The closure is now on the stack — caller can assign, call, etc.
+}
+
+void Compiler::visitOptionalChainExpr(const OptionalChainExpr& expr) {
+    // Compile: evaluate object, if null short-circuit to null; otherwise do operation.
+    // Pattern:
+    //   <object>
+    //   DUP
+    //   OP_JUMP_IF_NULL -> end    (pops the dup; if null, jumps leaving [object]=null)
+    //   <operation: property/call/index>  (stack: [object], ready for operation)
+    // end:
+
+    expr.object->accept(*this);
+    emitByte(static_cast<uint8_t>(OpCode::OP_DUP));
+    size_t nullJump = emitJump(OpCode::OP_JUMP_IF_NULL);
+    // No OP_POP here — OP_JUMP_IF_NULL already consumed the dup'd value.
+    // The original object is on the stack, ready for the operation.
+
+    currentLine = expr.questionDot.line;
+    currentColumn = expr.questionDot.column;
+
+    switch (expr.kind) {
+        case OptionalChainExpr::Kind::PROPERTY: {
+            uint8_t propIndex = identifierConstant(expr.property);
+            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIndex);
+            break;
+        }
+        case OptionalChainExpr::Kind::CALL: {
+            for (auto& arg : expr.arguments) {
+                arg->accept(*this);
+            }
+            emitBytes(static_cast<uint8_t>(OpCode::OP_CALL),
+                      static_cast<uint8_t>(expr.arguments.size()));
+            break;
+        }
+        case OptionalChainExpr::Kind::INDEX: {
+            expr.index->accept(*this);
+            emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+            break;
+        }
+    }
+
+    patchJump(nullJump);
 }
 
 } // namespace vora

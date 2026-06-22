@@ -1,0 +1,55 @@
+// test_std_fs.va — Filesystem module tests
+import "fs"
+
+// Clean up any leftovers from previous runs
+let testPath = "_test_std_fs.va.tmp"
+let testDir = "_test_std_fs_dir.va.tmp"
+if (fs.exists(testPath)) { fs.delete(testPath) }
+if (fs.exists(testDir)) { fs.delete(testDir) }
+
+// --- writeFile + readFile ---
+let data = "Hello Vora!\nLine 2\nLine 3"
+let ok = fs.writeFile(testPath, data)
+assert(ok == true)
+
+let content = fs.readFile(testPath)
+assert(content == data)
+
+// --- exists ---
+assert(fs.exists(testPath) == true)
+assert(fs.exists("_nonexistent_file_xyz.va") == false)
+
+// --- readFile non-existent returns null ---
+let missing = fs.readFile("_nonexistent_file_xyz.va")
+assert(missing == null)
+
+// --- listDir ---
+let files = fs.listDir(".")
+assert(files != null)
+assert(type(files) == "array")
+// At least the test file we just created should be in the list
+let found = false
+for f in files {
+    if (f == testPath) {
+        found = true
+        break
+    }
+}
+assert(found == true)
+
+// --- mkdir ---
+let dirOk = fs.mkdir(testDir)
+assert(dirOk == true)
+assert(fs.exists(testDir) == true)
+
+// --- remove file ---
+let rmOk = fs.delete(testPath)
+assert(rmOk == true)
+assert(fs.exists(testPath) == false)
+
+// --- remove directory ---
+let rmDirOk = fs.delete(testDir)
+assert(rmDirOk == true)
+assert(fs.exists(testDir) == false)
+
+print("test_std_fs OK")

@@ -56,6 +56,8 @@ namespace vora {
         DOT_DOT_DOT, // ...
         COLON, // :
         QUESTION, // ?
+        QUESTION_QUESTION, // ??
+        QUESTION_DOT, // ?.
         SEMICOLON, // ;
 
         // Literals
@@ -88,6 +90,7 @@ namespace vora {
         FROM, // from
         YIELD, // yield
         MATCH, // match
+        DEFER, // defer
 
         // Special
         FAT_ARROW, // =>

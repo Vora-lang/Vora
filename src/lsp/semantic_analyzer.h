@@ -218,6 +218,7 @@ public:
     void visitThrowStmt(const ThrowStmt& stmt) override;
     void visitImportStmt(const ImportStmt& stmt) override;
     void visitExportStmt(const ExportStmt& stmt) override;
+    void visitDeferStmt(const DeferStmt& stmt) override;
     void visitErrorStmt(const ErrorStmt& stmt) override;
 
     // ExprVisitor
@@ -243,6 +244,7 @@ public:
     void visitFuncExpr(const FuncExpr& expr) override;
     void visitYieldExpr(const YieldExpr& expr) override;
     void visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) override;
+    void visitOptionalChainExpr(const OptionalChainExpr& expr) override;
     void visitErrorExpr(const ErrorExpr& expr) override;
 
 private:

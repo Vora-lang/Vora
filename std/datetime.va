@@ -1,0 +1,89 @@
+// std/datetime.va — Vora Datetime Standard Library
+//
+// Timestamps, date/time utilities.
+// Usage: import "datetime"
+//        let ts = datetime.now()       // Unix timestamp in seconds
+//        let ms = datetime.nowMs()     // Unix timestamp in milliseconds
+
+export let now = vora_time_now
+export let nowMs = vora_time_nowMs
+
+// timestampToDate(ts) — convert Unix timestamp (seconds) to {year, month, day,
+// hour, minute, second} dict. Uses local time.
+// month: 1-12, day: 1-31, hour: 0-23, minute: 0-59, second: 0-59
+export func timestampToDate(ts) {
+    // Algorithm adapted from Howard Hinnant's civil_from_days
+    let totalSeconds = int(ts)
+    let days = int(totalSeconds / 86400)
+    let secOfDay = totalSeconds % 86400
+    if (secOfDay < 0) {
+        days = days - 1
+        secOfDay = secOfDay + 86400
+    }
+
+    // Shift epoch from 1970-01-01 to 0000-03-01 (month 3)
+    let z = days + 719468
+    let era = int((z >= 0 ? z : z - 146096) / 146097)
+    let doe = z - era * 146097                              // day of era [0, 146096]
+    let yoe = int((doe - doe / 1460 + doe / 36524 - doe / 146096) / 365)  // year of era [0, 399]
+    let y = yoe + era * 400
+    let doy = doe - (365 * yoe + int(yoe / 4) - int(yoe / 100))          // day of year [0, 365]
+    let mp = int((5 * doy + 2) / 153)                       // month phase [0, 11]
+    let d = doy - int((153 * mp + 2) / 5) + 1               // day of month [1, 31]
+    let m = mp + (mp < 10 ? 3 : -9)                         // month [1, 12]
+    let year = y + (m <= 2 ? 1 : 0)
+
+    let hour = int(secOfDay / 3600)
+    let minute = int((secOfDay % 3600) / 60)
+    let second = secOfDay % 60
+
+    return {
+        year: year,
+        month: m,
+        day: d,
+        hour: hour,
+        minute: minute,
+        second: second
+    }
+}
+
+// formatDuration(seconds) — format a duration in seconds as "Xh Ym Zs" or
+// "Ym Zs" or "Zs" or "Xms" (for sub-second durations).
+export func formatDuration(seconds) {
+    // Handle negative without recursion
+    if (seconds < 0) {
+        seconds = -seconds
+    }
+    // Sub-second: show as milliseconds
+    if (seconds < 1) {
+        let ms = int(seconds * 1000 + 0.5)
+        return toString(ms) + "ms"
+    }
+    let secs = int(seconds)
+    let mins = int(secs / 60)
+    let hrs = int(mins / 60)
+    secs = int(secs % 60)
+    mins = int(mins % 60)
+
+    let parts = []
+    if (hrs > 0) { parts.add(toString(hrs) + "h") }
+    if (mins > 0) { parts.add(toString(mins) + "m") }
+    if (secs > 0 || parts.length == 0) { parts.add(toString(secs) + "s") }
+
+    let result = ""
+    for (let i = 0; i < parts.length; i = i + 1) {
+        if (i > 0) { result = result + " " }
+        result = result + parts[i]
+    }
+    return result
+}
+
+// sleep(seconds) — busy-wait for approximately the given number of seconds.
+// Uses clock() for timing. Resolution is limited by clock() precision.
+export func sleep(seconds) {
+    let start = clock()
+    let target = start + seconds
+    while (clock() < target) {
+        // busy-wait
+    }
+}

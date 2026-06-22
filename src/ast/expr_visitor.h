@@ -43,6 +43,7 @@ public:
     virtual R visitFuncExpr(const FuncExpr& expr) = 0;
     virtual R visitYieldExpr(const YieldExpr& expr) = 0;
     virtual R visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) = 0;
+    virtual R visitOptionalChainExpr(const OptionalChainExpr& expr) = 0;
     virtual R visitErrorExpr(const ErrorExpr& expr) = 0;
 };
 

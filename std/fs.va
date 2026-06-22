@@ -1,0 +1,17 @@
+// std/fs.va — Vora Filesystem Standard Library
+//
+// File I/O and filesystem operations.
+// Usage: import "fs"
+//        fs.readFile("data.txt")       // read whole file as string
+//        fs.writeFile("out.txt", "hi") // write string to file
+//        fs.exists("data.txt")         // check if file exists
+//        fs.listDir(".")               // list directory contents
+//        fs.mkdir("newdir")            // create directory
+//        fs.delete("old.txt")          // delete file or empty directory
+
+export let readFile = vora_fs_readFile
+export let writeFile = vora_fs_writeFile
+export let exists = vora_fs_exists
+export let listDir = vora_fs_listDir
+export let mkdir = vora_fs_mkdir
+export let delete = vora_fs_remove

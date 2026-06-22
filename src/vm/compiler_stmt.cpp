@@ -260,6 +260,9 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
 }
 
 void Compiler::visitReturnStmt(const ReturnStmt& stmt) {
+    // Execute deferred calls (LIFO) before returning
+    emitDeferCalls();
+
     // Pop catch handlers for any enclosing try blocks before returning
     for (int t = 0; t < tryNesting; t++) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
@@ -668,6 +671,9 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
         s->accept(fnCompiler);
     }
 
+    // Execute deferred calls (LIFO) before implicit return
+    fnCompiler.emitDeferCalls();
+
     // Implicit return null at end of function
     fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
     fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
@@ -798,6 +804,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
                 s->accept(methodCompiler);
             }
 
+            methodCompiler.emitDeferCalls();
             methodCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
             methodCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
 
@@ -877,6 +884,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     for (const auto& s : stmt.body->statements) {
         s->accept(ctorCompiler);
     }
+    ctorCompiler.emitDeferCalls();
     ctorCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
     ctorCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
     ctorCompiler.endScope();
@@ -1246,6 +1254,44 @@ void Compiler::visitExportStmt(const ExportStmt& stmt) {
     } else if (auto* os = dynamic_cast<ObjStmt*>(stmt.declaration.get())) {
         exportNames.push_back(os->name);
     }
+}
+
+void Compiler::visitDeferStmt(const DeferStmt& stmt) {
+    // Compile the deferred expression as a 0-argument function prototype.
+    // Store it so that at return points we emit OP_CLOSURE + OP_CALL for
+    // each deferred prototype in LIFO order.
+
+    Compiler fnCompiler(errorReporter_);
+    fnCompiler.enclosing = this;
+    fnCompiler.chunk.source = chunk.source;
+
+    fnCompiler.beginScope();
+
+    // Compile the expression as the body of a 0-arg function
+    stmt.expression->accept(fnCompiler);
+
+    // Implicit return of the expression value
+    fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
+
+    fnCompiler.endScope();
+
+    // Capture upvalues BEFORE moving from fnCompiler
+    auto capturedUpvalues = fnCompiler.upvalues;
+
+    // Build function prototype (0 args, 0 required)
+    FunctionPrototype proto;
+    proto.name = "<defer>";
+    proto.arity = 0;
+    proto.requiredArity = 0;
+    proto.hasRest = false;
+    proto.upvalues = std::move(fnCompiler.upvalues);
+    proto.chunk = std::move(fnCompiler.chunk);
+    proto.isGenerator = fnCompiler.isGenerator;
+
+    uint8_t protoIndex = addFunctionPrototype(std::move(proto));
+
+    // Record for emission at return points (LIFO order via reverse iteration)
+    deferredProtos.push_back({protoIndex, std::move(capturedUpvalues)});
 }
 
 } // namespace vora

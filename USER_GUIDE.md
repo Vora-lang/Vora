@@ -1,6 +1,6 @@
 # Vora 语言用户手册 / User Guide
 
-> **版本 / Version**: v0.21 | **最后更新 / Last updated**: 2026-06-17
+> **版本 / Version**: v0.22 | **最后更新 / Last updated**: 2026-06-22
 >
 > Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.
 
@@ -158,6 +158,33 @@ null || "fallback"   // "fallback" — null 是 falsy
 [] || "fallback"     // "fallback" — 空数组是 falsy
 ```
 
+### 空值合并运算符 `??`
+**v0.21+**
+
+`??` 仅在左侧为 `null` 时返回右侧，其他 falsy 值（`0`、`false`、`""`）不会触发：
+
+```vora
+null ?? 42           // 42
+10 ?? 42             // 10
+0 ?? 100             // 0    — 0 不是 null，保留
+false ?? true        // false — false 不是 null，保留
+"" ?? "default"      // ""   — 空字符串不是 null，保留
+```
+
+### 可选链 `?.`
+**v0.21+**
+
+安全地访问可能为 `null` 的对象。如果接收者为 `null`，整个表达式短路返回 `null`：
+
+```vora
+obj?.property        // 如果 obj 为 null → null；否则 obj.property
+obj?.(args)          // 可选函数调用
+arr?.[index]         // 可选下标访问
+
+// 链式使用
+deep?.a?.b?.c        // 任一中间值为 null 则短路
+```
+
 ### 三元运算符 `?:`
 
 ```vora
@@ -200,6 +227,33 @@ if (x > 0) {
 ```
 
 条件周围括号可选。
+
+### defer 延迟执行
+**v0.21+**
+
+`defer` 将表达式推迟到当前函数返回时执行，多个 `defer` 按 LIFO（后进先出）顺序执行：
+
+```vora
+func process() {
+    defer print("cleanup 1")
+    defer print("cleanup 2")
+    print("doing work")
+    // 输出顺序: doing work → cleanup 2 → cleanup 1
+}
+```
+
+每个返回点（包括显式 `return`）都会执行已注册的 `defer`：
+
+```vora
+func demo(x) {
+    defer print("cleanup")
+    if (x > 5) { return "big" }
+    return "small"
+}
+// 无论哪个分支，cleanup 都会执行
+```
+
+> **注意**: `defer` 在异常抛出时不会执行（当前限制）。
 
 ### while 循环
 

@@ -99,6 +99,7 @@ private:
     std::string visitFuncExpr(const FuncExpr& expr) override;
     std::string visitYieldExpr(const YieldExpr& expr) override;
     std::string visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) override;
+    std::string visitOptionalChainExpr(const OptionalChainExpr& expr) override;
     std::string visitErrorExpr(const ErrorExpr& expr) override;
 
     // =====================================================================
@@ -121,6 +122,7 @@ private:
     std::string visitThrowStmt(const ThrowStmt& stmt) override;
     std::string visitImportStmt(const ImportStmt& stmt) override;
     std::string visitExportStmt(const ExportStmt& stmt) override;
+    std::string visitDeferStmt(const DeferStmt& stmt) override;
     std::string visitErrorStmt(const ErrorStmt& stmt) override;
 
     // =====================================================================
