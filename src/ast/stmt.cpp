@@ -76,6 +76,18 @@ std::string WhileStmt::accept(StmtVisitor<std::string>& visitor) const {
 }
 
 // =========================================================================
+// DoWhileStmt
+// =========================================================================
+
+void DoWhileStmt::accept(StmtVisitor<void>& visitor) const {
+    visitor.visitDoWhileStmt(*this);
+}
+
+std::string DoWhileStmt::accept(StmtVisitor<std::string>& visitor) const {
+    return visitor.visitDoWhileStmt(*this);
+}
+
+// =========================================================================
 // ForStmt
 // =========================================================================
 

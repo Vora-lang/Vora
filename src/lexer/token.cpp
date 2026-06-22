@@ -72,6 +72,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::YIELD: return "YIELD";
         case TokenType::MATCH: return "MATCH";
         case TokenType::DEFER: return "DEFER";
+        case TokenType::DO: return "DO";
 
         case TokenType::PLUS_EQUAL: return "PLUS_EQUAL";
         case TokenType::MINUS_EQUAL: return "MINUS_EQUAL";

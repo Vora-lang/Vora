@@ -131,6 +131,7 @@ public:
     void visitReturnStmt(const ReturnStmt& stmt) override;
     void visitIfStmt(const IfStmt& stmt) override;
     void visitWhileStmt(const WhileStmt& stmt) override;
+    void visitDoWhileStmt(const DoWhileStmt& stmt) override;
     void visitForStmt(const ForStmt& stmt) override;
     void visitCForStmt(const CForStmt& stmt) override;
     void visitFuncStmt(const FuncStmt& stmt) override;

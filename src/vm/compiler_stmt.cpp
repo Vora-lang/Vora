@@ -367,6 +367,48 @@ void Compiler::visitWhileStmt(const WhileStmt& stmt) {
     loopStack.pop_back();
 }
 
+void Compiler::visitDoWhileStmt(const DoWhileStmt& stmt) {
+    size_t loopStart = chunk.code.size();
+
+    // Push loop context with continueTarget = SIZE_MAX initially.
+    // Unlike while (where continueTarget == loopStart for backward jump),
+    // do-while has continue jump forward to the condition, which hasn't
+    // been compiled yet. This matches the for-in/C-for pattern.
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth});
+
+    // --- Body (always executes at least once, unconditionally) ---
+    stmt.body->accept(*this);
+
+    // --- Condition (continue target) ---
+    // Record this position as the continue target and patch any forward
+    // continue jumps emitted during body compilation.
+    loopStack.back().continueTarget = chunk.code.size();
+    for (size_t jumpOffset : loopStack.back().continueJumps) {
+        patchJump(jumpOffset);
+    }
+    loopStack.back().continueJumps.clear();
+
+    stmt.condition->accept(*this);
+    size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+
+    // Pop truthy condition value from successful check
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+    // Loop back to body start (not condition — body re-executes)
+    emitLoop(loopStart);
+
+    // --- Exit ---
+    patchJump(exitJump);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+    // Patch all break jumps
+    for (size_t jumpOffset : loopStack.back().breakJumps) {
+        patchJump(jumpOffset);
+    }
+
+    loopStack.pop_back();
+}
+
 void Compiler::visitForStmt(const ForStmt& stmt) {
     currentLine = stmt.forToken.line;
     currentColumn = stmt.forToken.column;

@@ -143,6 +143,24 @@ public:
     std::unique_ptr<Stmt> body;
 };
 
+class DoWhileStmt : public Stmt {
+public:
+    DoWhileStmt(
+        std::unique_ptr<Expr> condition,
+        std::unique_ptr<Stmt> body
+    )
+        : condition(std::move(condition)),
+          body(std::move(body)) {
+    }
+
+    void        accept(StmtVisitor<void>& visitor)        const override;
+    std::string accept(StmtVisitor<std::string>& visitor) const override;
+
+    std::unique_ptr<Expr> condition;
+
+    std::unique_ptr<Stmt> body;
+};
+
 class ForStmt : public Stmt {
 public:
     ForStmt(

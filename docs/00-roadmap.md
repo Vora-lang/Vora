@@ -165,7 +165,7 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 ### Phase 1: 2026 Q3 (7-9月) — 标准库 + 核心语法补全 🔴
 
 > 目标：让 Vora 能做实际工作（文件操作、正则匹配、空安全）
-> 进度：✅ std/fs ✅ std/os ✅ std/datetime ✅ std/array ✅ std/string ✅ std/regex ✅ ?. + ?? ✅ defer ❌ Error 类型层级 ❌ do-while ❌ ...expr ❌ 常量池去重
+> 进度：✅ std/fs ✅ std/os ✅ std/datetime ✅ std/array ✅ std/string ✅ std/regex ✅ ?. + ?? ✅ defer ✅ do-while ❌ Error 类型层级 ❌ ...expr ❌ 常量池去重
 
 ```
 标准库（最高优先级）
@@ -180,7 +180,7 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 ├── ✅ 空安全 ?. + ??                    ← 消除 null 检查嵌套
 ├── ✅ defer 延迟执行                    ← Go 风格资源释放（编译期实现）
 ├── ❌ 错误类型层级 + catch (e if Type)   ← Error 基类 + 按类型过滤
-├── ❌ do-while 循环                     ← 基础控制流补全
+├── ✅ do-while 循环                     ← 基础控制流补全
 ├── ❌ 调用端展开 ...expr                ← 与 rest 参数对称（1-2 天）
 └── ❌ 常量池去重优化（编译期）            ← 编译速度提升
 ```

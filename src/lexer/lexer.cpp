@@ -30,6 +30,7 @@ namespace vora {
         {"yield", TokenType::YIELD},
         {"match", TokenType::MATCH},
         {"defer", TokenType::DEFER},
+        {"do", TokenType::DO},
         {"true", TokenType::TRUE},
         {"false", TokenType::FALSE},
         {"null", TokenType::NULL_TOKEN},

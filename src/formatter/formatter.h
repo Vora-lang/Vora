@@ -112,6 +112,7 @@ private:
     std::string visitReturnStmt(const ReturnStmt& stmt) override;
     std::string visitIfStmt(const IfStmt& stmt) override;
     std::string visitWhileStmt(const WhileStmt& stmt) override;
+    std::string visitDoWhileStmt(const DoWhileStmt& stmt) override;
     std::string visitForStmt(const ForStmt& stmt) override;
     std::string visitCForStmt(const CForStmt& stmt) override;
     std::string visitFuncStmt(const FuncStmt& stmt) override;

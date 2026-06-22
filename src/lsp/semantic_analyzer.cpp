@@ -371,6 +371,26 @@ void SemanticAnalyzer::visitWhileStmt(const WhileStmt& stmt) {
     reachable_ = true;
 }
 
+void SemanticAnalyzer::visitDoWhileStmt(const DoWhileStmt& stmt) {
+    // Body always executes at least once in do-while.
+    // Push a new scope for the body.
+    bool prev = pushScope();
+    reachable_ = true;  // body is always reachable
+    if (stmt.body) {
+        stmt.body->accept(*this);
+    }
+    popScope();
+    reachable_ = prev;  // restore outer reachability
+
+    // Visit condition (in outer scope)
+    if (stmt.condition) {
+        visitExpr(*stmt.condition);
+    }
+
+    // After do-while: code after loop is reachable.
+    reachable_ = true;
+}
+
 void SemanticAnalyzer::visitForStmt(const ForStmt& stmt) {
     if (stmt.iterable) {
         visitExpr(*stmt.iterable);

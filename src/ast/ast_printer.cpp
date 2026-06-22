@@ -422,6 +422,18 @@ std::string ASTPrinter::visitWhileStmt(const WhileStmt& stmt) {
     return ss.str();
 }
 
+std::string ASTPrinter::visitDoWhileStmt(const DoWhileStmt& stmt) {
+    std::stringstream ss;
+
+    ss << "(do-while ";
+    ss << print(stmt.body.get());
+    ss << " ";
+    ss << print(stmt.condition.get());
+    ss << ")";
+
+    return ss.str();
+}
+
 std::string ASTPrinter::visitForStmt(const ForStmt& stmt) {
     std::stringstream ss;
 

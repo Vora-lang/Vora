@@ -1,0 +1,56 @@
+// examples/50-do-while.va — Do-while loop examples
+// Run: vora examples/50-do-while.va
+
+print("=== do-while Examples ===")
+
+// Example 1: Basic counting
+print("Basic counting 0..4:")
+let i = 0
+do {
+    print(i)
+    i = i + 1
+} while (i < 5)
+
+print("---")
+
+// Example 2: Always runs at least once
+print("Runs once even with false condition:")
+let x = 100
+do {
+    print(x)
+} while (x < 10)
+
+print("---")
+
+// Example 3: break inside do-while
+print("Break at 3:")
+let j = 0
+do {
+    print(j)
+    j = j + 1
+    if (j >= 3) { break }
+} while (true)
+
+print("---")
+
+// Example 4: continue inside do-while
+print("Continue (skip even numbers):")
+let k = 0
+do {
+    k = k + 1
+    if (k % 2 == 0) { continue }
+    print(k)
+} while (k < 6)
+
+print("---")
+
+// Example 5: Input validation pattern
+print("Input validation (simulated):")
+let input = 0
+let attempts = 0
+do {
+    attempts = attempts + 1
+    input = input + 25  // simulate getting valid input
+    print("Attempt " + toString(attempts) + ": value=" + toString(input))
+} while (input < 100)
+print("Valid input received: " + toString(input))

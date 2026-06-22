@@ -27,6 +27,7 @@ public:
     virtual R visitReturnStmt(const ReturnStmt& stmt) = 0;
     virtual R visitIfStmt(const IfStmt& stmt) = 0;
     virtual R visitWhileStmt(const WhileStmt& stmt) = 0;
+    virtual R visitDoWhileStmt(const DoWhileStmt& stmt) = 0;
     virtual R visitForStmt(const ForStmt& stmt) = 0;
     virtual R visitCForStmt(const CForStmt& stmt) = 0;
     virtual R visitFuncStmt(const FuncStmt& stmt) = 0;

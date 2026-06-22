@@ -716,6 +716,16 @@ std::string SourceFormatter::visitWhileStmt(const WhileStmt& stmt) {
     return ss.str();
 }
 
+std::string SourceFormatter::visitDoWhileStmt(const DoWhileStmt& stmt) {
+    std::stringstream ss;
+    ss << "do";
+    ss << formatBlockBody(*stmt.body);
+    ss << " while (";
+    ss << formatExpr(*stmt.condition, 0);
+    ss << ")";
+    return ss.str();
+}
+
 std::string SourceFormatter::visitForStmt(const ForStmt& stmt) {
     // Vora syntax: for var in expr { ... }  (no parentheses)
     std::stringstream ss;

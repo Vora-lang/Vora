@@ -85,6 +85,8 @@ private:
 
     std::unique_ptr<Stmt> whileStatement();
 
+    std::unique_ptr<Stmt> doWhileStatement();
+
     std::unique_ptr<Stmt> forStatement();
     std::unique_ptr<Stmt> cForStatement(Token forToken);
 

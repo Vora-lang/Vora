@@ -265,6 +265,35 @@ while (i < 5) {
 }
 ```
 
+### do-while 循环
+
+> 引入版本: v0.25
+
+```vora
+let i = 0
+do {
+    print(i)
+    i += 1
+} while (i < 5)
+
+// do-while 体至少执行一次：
+let x = 100
+do {
+    print(x)     // 即使条件为 false 也会输出 100
+} while (x < 10)
+
+// 单语句体：
+do
+    x += 1
+while (x < 200)
+
+// break 和 continue 正常工作：
+do {
+    if (done) { break }
+    if (skip) { continue }
+} while (true)
+```
+
 ### for-in 循环
 
 > 引入版本: v0.5 | 对象遍历: v0.16 | 迭代器协议: v0.21

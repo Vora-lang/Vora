@@ -104,6 +104,7 @@ void Parser::synchronize() {
                 case TokenType::THROW:
                 case TokenType::YIELD:
                 case TokenType::DEFER:
+                case TokenType::DO:
                     return;
                 default:
                     break;
@@ -160,6 +161,10 @@ std::unique_ptr<Stmt> Parser::statement() {
 
     if (match(TokenType::WHILE)) {
         return whileStatement();
+    }
+
+    if (match(TokenType::DO)) {
+        return doWhileStatement();
     }
 
     if (match(TokenType::FOR)) {
@@ -1252,6 +1257,49 @@ std::unique_ptr<Stmt> Parser::whileStatement() {
     }
 
     return std::make_unique<WhileStmt>(
+        std::move(condition),
+        std::move(body)
+    );
+}
+
+std::unique_ptr<Stmt> Parser::doWhileStatement() {
+    // Parse body first (always executes at least once)
+    auto body = statement();
+    if (!body) {
+        body = std::make_unique<ErrorStmt>("Expected body for do-while loop", peek());
+    }
+
+    // Expect 'while' keyword
+    Token whileToken = peek();
+    if (!match(TokenType::WHILE)) {
+        error("Expected 'while' after 'do' body");
+        return std::make_unique<DoWhileStmt>(
+            std::make_unique<ErrorExpr>("Expected 'while' after do body", whileToken),
+            std::move(body)
+        );
+    }
+
+    // Expect '('
+    if (!match(TokenType::LEFT_PAREN)) {
+        error("Expected '(' after 'while'");
+        // Continue anyway — try to parse condition without '('
+    }
+
+    auto condition = expression();
+    if (!condition) {
+        condition = std::make_unique<ErrorExpr>("Expected condition after while", peek());
+    }
+
+    // Expect ')'
+    if (!match(TokenType::RIGHT_PAREN)) {
+        error("Expected ')' after condition");
+        // Continue — the AST is still valid
+    }
+
+    // Optional trailing semicolon
+    match(TokenType::SEMICOLON);
+
+    return std::make_unique<DoWhileStmt>(
         std::move(condition),
         std::move(body)
     );

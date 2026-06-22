@@ -91,7 +91,7 @@ namespace vora {
         YIELD, // yield
         MATCH, // match
         DEFER, // defer
-
+        DO, // do
         // Special
         FAT_ARROW, // =>
         DOT_DOT, // ..
