@@ -8,6 +8,63 @@
 #include <stdexcept>
 #include <string>
 
+namespace {
+
+// Recursively sanitize invalid UTF-8 byte sequences in all strings
+// within a JSON value, replacing them with U+FFFD (the Unicode
+// replacement character). This prevents nlohmann::json::dump()
+// from throwing type_error.316 when serializing.
+void sanitizeUtf8(std::string& s) {
+    size_t i = 0;
+    while (i < s.size()) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        if (c < 0x80) {
+            i += 1;
+        } else if (c < 0xC0) {
+            // Unexpected continuation byte — replace.
+            s[i] = '\xEF'; s.insert(i + 1, "\xBF\xBD");
+            i += 3;
+        } else if (c < 0xE0) {
+            if (i + 1 >= s.size() || (static_cast<unsigned char>(s[i + 1]) & 0xC0) != 0x80) {
+                s[i] = '\xEF'; s.insert(i + 1, "\xBF\xBD"); i += 3;
+            } else { i += 2; }
+        } else if (c < 0xF0) {
+            if (i + 2 >= s.size() ||
+                (static_cast<unsigned char>(s[i + 1]) & 0xC0) != 0x80 ||
+                (static_cast<unsigned char>(s[i + 2]) & 0xC0) != 0x80) {
+                s[i] = '\xEF'; s.insert(i + 1, "\xBF\xBD"); i += 3;
+            } else { i += 3; }
+        } else if (c < 0xF8) {
+            if (i + 3 >= s.size() ||
+                (static_cast<unsigned char>(s[i + 1]) & 0xC0) != 0x80 ||
+                (static_cast<unsigned char>(s[i + 2]) & 0xC0) != 0x80 ||
+                (static_cast<unsigned char>(s[i + 3]) & 0xC0) != 0x80) {
+                s[i] = '\xEF'; s.insert(i + 1, "\xBF\xBD"); i += 3;
+            } else { i += 4; }
+        } else {
+            s[i] = '\xEF'; s.insert(i + 1, "\xBF\xBD"); i += 3;
+        }
+    }
+}
+
+void sanitizeJsonStrings(nlohmann::json& j) {
+    if (j.is_string()) {
+        std::string s = j.get<std::string>();
+        sanitizeUtf8(s);
+        j = s;
+    } else if (j.is_array()) {
+        for (auto& elem : j) {
+            sanitizeJsonStrings(elem);
+        }
+    } else if (j.is_object()) {
+        for (auto& [key, val] : j.items()) {
+            sanitizeJsonStrings(val);
+        }
+    }
+}
+
+} // anonymous namespace
+
 namespace vora::lsp {
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -123,7 +180,13 @@ std::string buildResponse(const nlohmann::json& id, const nlohmann::json& result
     j["jsonrpc"] = "2.0";
     j["id"] = id;
     j["result"] = result;
-    return j.dump();
+    try {
+        return j.dump();
+    } catch (const nlohmann::json::type_error&) {
+        // Result may contain invalid UTF-8 — sanitize and retry.
+        sanitizeJsonStrings(j);
+        return j.dump();
+    }
 }
 
 std::string buildErrorResponse(const nlohmann::json& id,
@@ -142,7 +205,12 @@ std::string buildErrorResponse(const nlohmann::json& id,
     }
 
     j["error"] = err;
-    return j.dump();
+    try {
+        return j.dump();
+    } catch (const nlohmann::json::type_error&) {
+        sanitizeJsonStrings(j);
+        return j.dump();
+    }
 }
 
 std::string buildNotification(const std::string& method,
@@ -153,7 +221,12 @@ std::string buildNotification(const std::string& method,
     if (!params.is_null()) {
         j["params"] = params;
     }
-    return j.dump();
+    try {
+        return j.dump();
+    } catch (const nlohmann::json::type_error&) {
+        sanitizeJsonStrings(j);
+        return j.dump();
+    }
 }
 
 // Thread-safe request ID counter (atomic increment, starts at 1).
