@@ -1,6 +1,6 @@
 # Vora 优化路线图
 
-> 最后更新：2026-06-22 (高明审查 + 路线图重写)
+> 最后更新：2026-06-22 (Phase 1 进度更新：std/fs, std/os, std/datetime, std/array, std/string 完成；?. + ?? + defer 完成)
 > 基于对 Vora 语言定位、当前状态、行业标准的全面审查。
 
 ---
@@ -61,7 +61,7 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 | 语法现代性 | 低（`end` 关键字、无类语法） | 高（JS 风格、大括号、`Obj`） | ✅ 语法是核心优势 |
 | OOP | 无原生支持（metatable hack） | 原生类 + C3 多继承 + super | ✅ OOP 是核心优势 |
 | 嵌入性 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐（有 GC + 零依赖） | 需要 C API 追上 Lua |
-| 标准库 | 极小但够用 | 极小（仅 math + json） | ❌ 需要补齐 |
+| 标准库 | 极小但够用 | 7 个模块（math/json/fs/os/datetime/array/string） | 🟡 仍需 regex |
 | 异常处理 | 无（pcall 不是语法级） | try/catch/finally 完整 | ✅ 异常处理是核心优势 |
 | 性能 | ⭐⭐⭐⭐⭐（寄存器 VM + 经典优化） | ⭐⭐⭐ | 中期优化 |
 
@@ -165,22 +165,27 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 ### Phase 1: 2026 Q3 (7-9月) — 标准库 + 核心语法补全 🔴
 
 > 目标：让 Vora 能做实际工作（文件操作、正则匹配、空安全）
+> 进度：✅ std/fs ✅ std/os ✅ std/datetime ✅ std/array ✅ std/string ✅ ?. + ?? ✅ defer ❌ std/regex ❌ Error 类型层级 ❌ do-while ❌ ...expr ❌ 常量池去重
 
 ```
 标准库（最高优先级）
-├── std/fs  — readFile/writeFile/exists/listDir/mkdir/remove
-├── std/os  — env/getcwd/exit/shell/args
-└── std/regex — match/replace/find（集成 RE2 或 PCRE2）
+├── ✅ std/fs  — readFile/writeFile/exists/listDir/mkdir/delete
+├── ✅ std/os  — env/getcwd/exit/shell/args
+├── ✅ std/datetime — now/nowMs/timestampToDate/formatDuration/sleep
+├── ✅ std/array — sort/reverse/join/flatten/unique/chunk/fill/compact
+├── ✅ std/string — repeat/padStart/padEnd/capitalize/titleCase/count/lines
+└── ❌ std/regex — match/replace/find（集成 RE2 或 PCRE2）
 
 核心语法
-├── 空安全 ?. + ??                    ← 消除 null 检查嵌套
-├── 错误类型层级 + catch (e if Type)   ← Error 基类 + 按类型过滤
-├── do-while 循环                     ← 基础控制流补全
-├── 调用端展开 ...expr                ← 与 rest 参数对称（1-2 天）
-└── 常量池去重优化（编译期）            ← 编译速度提升
+├── ✅ 空安全 ?. + ??                    ← 消除 null 检查嵌套
+├── ✅ defer 延迟执行                    ← Go 风格资源释放（编译期实现）
+├── ❌ 错误类型层级 + catch (e if Type)   ← Error 基类 + 按类型过滤
+├── ❌ do-while 循环                     ← 基础控制流补全
+├── ❌ 调用端展开 ...expr                ← 与 rest 参数对称（1-2 天）
+└── ❌ 常量池去重优化（编译期）            ← 编译速度提升
 ```
 
-**为什么标准库排第一**：没有 `std/fs` 和 `std/os`，Vora 无法读写文件、获取环境变量、执行系统命令。这限制了它作为脚本语言的基本能力。一个不能读文件的脚本语言，语法再好也没用。
+**为什么标准库排第一**：没有 `std/fs` 和 `std/os`，Vora 无法读写文件、获取环境变量、执行系统命令。这限制了它作为脚本语言的基本能力。一个不能读文件的脚本语言，语法再好也没用。**（已补齐：fs/os/datetime/array/string 共 5 个模块，剩余 regex 待实现。）**
 
 ---
 
@@ -273,12 +278,12 @@ OOP 完善
 |------|------|------|
 | `std/math` | ✅ 已完成 | abs/min/max/floor/ceil/sqrt/sin/cos/random |
 | `std/json` | ✅ 已完成 | parse/stringify |
-| `std/fs` | 🔴 待实现 | readFile/writeFile/exists/listDir |
-| `std/os` | 🔴 待实现 | env/getcwd/exit/shell |
+| `std/fs` | ✅ 已完成 | readFile/writeFile/exists/listDir/mkdir/delete |
+| `std/os` | ✅ 已完成 | env/getcwd/exit/shell/args |
+| `std/datetime` | ✅ 已完成 | now/nowMs/timestampToDate/formatDuration/sleep |
+| `std/array` | ✅ 已完成 | sort/reverse/join/flatten/unique/chunk/fill/compact |
+| `std/string` | ✅ 已完成 | repeat/padStart/padEnd/capitalize/titleCase/count/lines |
 | `std/regex` | 🔴 待实现 | match/replace |
-| `std/datetime` | 🔴 待实现 | 时间戳、日期运算 |
-| `std/array` | 🔴 待实现 | sort/reverse/join/flatten/unique |
-| `std/string` | 🔴 待实现 | 补充内建方法之外的字符串工具 |
 
 ### 5.4 工具链缺失
 
