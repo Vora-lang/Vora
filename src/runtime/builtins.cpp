@@ -146,31 +146,68 @@ void registerBuiltins(VM& vm) {
 
     vm.defineNative("range", -1,
         [](const std::vector<Value>& arguments) -> Value {
-            double start = 0, end = 0, step = 1;
-            // Guard toDouble against non-numeric arguments (would throw bad_variant_access).
-            if (arguments.size() >= 1) {
-                if (!isNumeric(arguments[0])) return nullptr;
-                end = toDouble(arguments[0]);
+            // Determine whether to use integer or float arithmetic.
+            // If all arguments are integers and step is integer, produce ints.
+            bool useInt = true;
+            for (auto& arg : arguments) {
+                if (!std::holds_alternative<int64_t>(arg)) {
+                    useInt = false;
+                    break;
+                }
             }
-            if (arguments.size() >= 2) {
-                if (!isNumeric(arguments[1])) return nullptr;
-                start = toDouble(arguments[0]);
-                end = toDouble(arguments[1]);
-            }
-            if (arguments.size() >= 3) {
-                if (!isNumeric(arguments[2])) return nullptr;
-                start = toDouble(arguments[0]);
-                end = toDouble(arguments[1]);
-                step = toDouble(arguments[2]);
-            }
-            if (step == 0.0) return nullptr;  // infinite loop guard
+
             auto arr = GcHeap::instance().alloc<Array>();
-            if (step > 0) {
-                for (double i = start; i < end; i += step)
-                    arr->elements.push_back(i);
-            } else if (step < 0) {
-                for (double i = start; i > end; i += step)
-                    arr->elements.push_back(i);
+
+            if (useInt) {
+                int64_t start = 0, end = 0, step = 1;
+                if (arguments.size() >= 1) {
+                    if (!std::holds_alternative<int64_t>(arguments[0])) return nullptr;
+                    end = std::get<int64_t>(arguments[0]);
+                }
+                if (arguments.size() >= 2) {
+                    if (!std::holds_alternative<int64_t>(arguments[1])) return nullptr;
+                    start = std::get<int64_t>(arguments[0]);
+                    end = std::get<int64_t>(arguments[1]);
+                }
+                if (arguments.size() >= 3) {
+                    if (!std::holds_alternative<int64_t>(arguments[2])) return nullptr;
+                    start = std::get<int64_t>(arguments[0]);
+                    end = std::get<int64_t>(arguments[1]);
+                    step = std::get<int64_t>(arguments[2]);
+                }
+                if (step == 0) return nullptr;
+                if (step > 0) {
+                    for (int64_t i = start; i < end; i += step)
+                        arr->elements.push_back(i);
+                } else {
+                    for (int64_t i = start; i > end; i += step)
+                        arr->elements.push_back(i);
+                }
+            } else {
+                double start = 0, end = 0, step = 1;
+                if (arguments.size() >= 1) {
+                    if (!isNumeric(arguments[0])) return nullptr;
+                    end = toDouble(arguments[0]);
+                }
+                if (arguments.size() >= 2) {
+                    if (!isNumeric(arguments[1])) return nullptr;
+                    start = toDouble(arguments[0]);
+                    end = toDouble(arguments[1]);
+                }
+                if (arguments.size() >= 3) {
+                    if (!isNumeric(arguments[2])) return nullptr;
+                    start = toDouble(arguments[0]);
+                    end = toDouble(arguments[1]);
+                    step = toDouble(arguments[2]);
+                }
+                if (step == 0.0) return nullptr;
+                if (step > 0) {
+                    for (double i = start; i < end; i += step)
+                        arr->elements.push_back(i);
+                } else if (step < 0) {
+                    for (double i = start; i > end; i += step)
+                        arr->elements.push_back(i);
+                }
             }
             return arr;
         });
