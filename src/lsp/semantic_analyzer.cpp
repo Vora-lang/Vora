@@ -515,6 +515,7 @@ void SemanticAnalyzer::visitObjStmt(const ObjStmt& stmt) {
             methodSym.name = methodFunc->name;
             methodSym.kind = SymbolKind::Method;
             methodSym.declToken = methodFunc->nameToken;
+            methodSym.isExported = true;  // methods are part of the object's public interface
             for (auto& p : methodFunc->params) {
                 methodSym.paramNames.push_back(p.name);
             }
