@@ -19,7 +19,7 @@ endif()
 # duplicate compilation).
 # ──────────────────────────────────────────────────
 
-add_library(vora_lib OBJECT
+add_library(vora_lib STATIC
 
     src/common/error_reporter.cpp
 
@@ -93,11 +93,12 @@ configure_file(
 
 add_executable(Vora
     src/main.cpp
-    $<TARGET_OBJECTS:vora_lib>
 
     # Windows resource file (icon + version info) — ignored on non-MSVC
     "${CMAKE_BINARY_DIR}/vora.rc"
 )
+
+target_link_libraries(Vora PRIVATE vora_lib)
 
 target_include_directories(
     Vora PRIVATE src
@@ -120,40 +121,6 @@ include(GNUInstallDirs)
 install(TARGETS Vora
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-
-# ──────────────────────────────────────────────────
-# LSP server executable
-# Source files live in the sibling Vora-LSP repository
-# (<repo-root>/../Vora-LSP/server/).
-# ──────────────────────────────────────────────────
-
-set(VORA_LSP_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Vora-LSP/server"
-    CACHE PATH "Path to Vora-LSP server source directory")
-
-if(EXISTS "${VORA_LSP_SOURCE_DIR}/main.cpp")
-    add_executable(vora-lsp
-        "${VORA_LSP_SOURCE_DIR}/main.cpp"
-        "${VORA_LSP_SOURCE_DIR}/lsp_server.cpp"
-        "${VORA_LSP_SOURCE_DIR}/lsp_server.h"
-        $<TARGET_OBJECTS:vora_lib>
-    )
-
-    target_include_directories(vora-lsp PRIVATE
-        src
-        include
-        "${VORA_LSP_SOURCE_DIR}"
-    )
-
-    target_compile_features(vora-lsp PRIVATE cxx_std_17)
-
-    install(TARGETS vora-lsp
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    )
-
-    message(STATUS "LSP server target enabled (source: ${VORA_LSP_SOURCE_DIR})")
-else()
-    message(STATUS "LSP server target disabled (Vora-LSP not found at ${VORA_LSP_SOURCE_DIR})")
-endif()
 
 # ──────────────────────────────────────────────────
 # CTest — one test per .va file
@@ -243,7 +210,6 @@ if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/doctest.h")
 endif()
 
 add_executable(Vora_tests
-    $<TARGET_OBJECTS:vora_lib>
     tests/unit/test_main.cpp
     tests/unit/test_value.cpp
     tests/unit/test_chunk.cpp
@@ -263,6 +229,8 @@ target_include_directories(Vora_tests PRIVATE
 )
 
 target_compile_features(Vora_tests PRIVATE cxx_std_17)
+
+target_link_libraries(Vora_tests PRIVATE vora_lib)
 
 # Define DOCTEST_CONFIG_IMPLEMENT only for the test driver file.
 set_source_files_properties(
@@ -315,9 +283,10 @@ if(VORA_FUZZER)
     )
 
     add_executable(Vora_fuzzer
-        $<TARGET_OBJECTS:vora_lib>
         tests/fuzz/fuzz_vm.cpp
     )
+
+    target_link_libraries(Vora_fuzzer PRIVATE vora_lib)
 
     target_include_directories(Vora_fuzzer PRIVATE src)
 
@@ -528,7 +497,7 @@ if(WIN32)
                 -ext "${WIX_TOOLS_DIR}/WixUIExtension.dll"
                 -out "${CMAKE_BINARY_DIR}/vora-${PROJECT_VERSION}-Windows-AMD64.msi"
                 "${CMAKE_BINARY_DIR}/vora.wixobj"
-            DEPENDS Vora vora-lsp "${CMAKE_BINARY_DIR}/vora.wxs"
+            DEPENDS Vora "${CMAKE_BINARY_DIR}/vora.wxs"
             COMMENT "Building MSI with WiX v3 + WixUI..."
         )
         message(STATUS "MSI target enabled (candle: ${WIX_CANDLE}, light: ${WIX_LIGHT})")
