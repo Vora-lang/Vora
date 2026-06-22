@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <regex>
 #include <sstream>
 
 #include "../gc/gc_heap.h"
@@ -455,6 +456,9 @@ void registerBuiltins(VM& vm) {
 
     // Register datetime builtins
     registerDatetimeBuiltins(vm);
+
+    // Register regex builtins
+    registerRegexBuiltins(vm);
 }
 
 // ============================================================================
@@ -1359,6 +1363,98 @@ void registerDatetimeBuiltins(VM& vm) {
             auto now = std::chrono::system_clock::now().time_since_epoch();
             auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
             return static_cast<int64_t>(millis);
+        });
+}
+
+// ============================================================================
+// Regex built-in native functions — used by std/regex.va
+// ============================================================================
+
+void registerRegexBuiltins(VM& vm) {
+    // match(pattern, text) — test if regex pattern matches anywhere in text
+    vm.defineNative("vora_regex_match", 2,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]) ||
+                !std::holds_alternative<GcPtr<GcString>>(arguments[1]))
+                return false;
+            const auto& pattern = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& text = std::get<GcPtr<GcString>>(arguments[1])->value;
+            try {
+                std::regex re(pattern);
+                return std::regex_search(text, re);
+            } catch (const std::regex_error&) {
+                return nullptr;  // invalid pattern
+            }
+        });
+
+    // find(pattern, text) — find all regex matches, returns array of match strings
+    vm.defineNative("vora_regex_find", 2,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]) ||
+                !std::holds_alternative<GcPtr<GcString>>(arguments[1]))
+                return nullptr;
+            const auto& pattern = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& text = std::get<GcPtr<GcString>>(arguments[1])->value;
+            try {
+                std::regex re(pattern);
+                auto arr = GcHeap::instance().alloc<Array>();
+                auto begin = std::sregex_iterator(text.begin(), text.end(), re);
+                auto end = std::sregex_iterator();
+                for (auto it = begin; it != end; ++it) {
+                    arr->elements.push_back(
+                        GcHeap::instance().alloc<GcString>(it->str()));
+                }
+                return arr;
+            } catch (const std::regex_error&) {
+                return nullptr;  // invalid pattern
+            }
+        });
+
+    // replace(pattern, text, replacement) — replace all regex matches
+    vm.defineNative("vora_regex_replace", 3,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]) ||
+                !std::holds_alternative<GcPtr<GcString>>(arguments[1]) ||
+                !std::holds_alternative<GcPtr<GcString>>(arguments[2]))
+                return nullptr;
+            const auto& pattern = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& text = std::get<GcPtr<GcString>>(arguments[1])->value;
+            const auto& replacement = std::get<GcPtr<GcString>>(arguments[2])->value;
+            try {
+                std::regex re(pattern);
+                std::string result = std::regex_replace(text, re, replacement);
+                return GcHeap::instance().alloc<GcString>(result);
+            } catch (const std::regex_error&) {
+                return nullptr;  // invalid pattern
+            }
+        });
+
+    // split(pattern, text) — split string by regex delimiter
+    vm.defineNative("vora_regex_split", 2,
+        [](const std::vector<Value>& arguments) -> Value {
+            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]) ||
+                !std::holds_alternative<GcPtr<GcString>>(arguments[1]))
+                return nullptr;
+            const auto& pattern = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& text = std::get<GcPtr<GcString>>(arguments[1])->value;
+            try {
+                std::regex re(pattern);
+                auto arr = GcHeap::instance().alloc<Array>();
+                auto begin = std::sregex_token_iterator(text.begin(), text.end(), re, -1);
+                auto end = std::sregex_token_iterator();
+                for (auto it = begin; it != end; ++it) {
+                    arr->elements.push_back(
+                        GcHeap::instance().alloc<GcString>(*it));
+                }
+                // If no matches found, return the original string in an array
+                if (arr->elements.empty()) {
+                    arr->elements.push_back(
+                        GcHeap::instance().alloc<GcString>(text));
+                }
+                return arr;
+            } catch (const std::regex_error&) {
+                return nullptr;  // invalid pattern
+            }
         });
 }
 

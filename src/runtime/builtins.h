@@ -40,6 +40,9 @@ void registerOsBuiltins(VM& vm);
 // Register datetime built-in native functions (used by std/datetime.va).
 void registerDatetimeBuiltins(VM& vm);
 
+// Register regex built-in native functions (used by std/regex.va).
+void registerRegexBuiltins(VM& vm);
+
 // Set program arguments (called from main() before registerOsBuiltins).
 void setProgramArgs(int argc, char* argv[]);
 

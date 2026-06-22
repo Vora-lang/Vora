@@ -1,6 +1,6 @@
 # Vora 优化路线图
 
-> 最后更新：2026-06-22 (Phase 1 进度更新：std/fs, std/os, std/datetime, std/array, std/string 完成；?. + ?? + defer 完成)
+> 最后更新：2026-06-22 (Phase 1 进度更新：std/fs, std/os, std/datetime, std/array, std/string, std/regex 全部完成；?. + ?? + defer 完成)
 > 基于对 Vora 语言定位、当前状态、行业标准的全面审查。
 
 ---
@@ -61,7 +61,7 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 | 语法现代性 | 低（`end` 关键字、无类语法） | 高（JS 风格、大括号、`Obj`） | ✅ 语法是核心优势 |
 | OOP | 无原生支持（metatable hack） | 原生类 + C3 多继承 + super | ✅ OOP 是核心优势 |
 | 嵌入性 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐（有 GC + 零依赖） | 需要 C API 追上 Lua |
-| 标准库 | 极小但够用 | 7 个模块（math/json/fs/os/datetime/array/string） | 🟡 仍需 regex |
+| 标准库 | 极小但够用 | 8 个模块（math/json/fs/os/datetime/array/string/regex） | ✅ 标准库已覆盖核心场景 |
 | 异常处理 | 无（pcall 不是语法级） | try/catch/finally 完整 | ✅ 异常处理是核心优势 |
 | 性能 | ⭐⭐⭐⭐⭐（寄存器 VM + 经典优化） | ⭐⭐⭐ | 中期优化 |
 
@@ -165,7 +165,7 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 ### Phase 1: 2026 Q3 (7-9月) — 标准库 + 核心语法补全 🔴
 
 > 目标：让 Vora 能做实际工作（文件操作、正则匹配、空安全）
-> 进度：✅ std/fs ✅ std/os ✅ std/datetime ✅ std/array ✅ std/string ✅ ?. + ?? ✅ defer ❌ std/regex ❌ Error 类型层级 ❌ do-while ❌ ...expr ❌ 常量池去重
+> 进度：✅ std/fs ✅ std/os ✅ std/datetime ✅ std/array ✅ std/string ✅ std/regex ✅ ?. + ?? ✅ defer ❌ Error 类型层级 ❌ do-while ❌ ...expr ❌ 常量池去重
 
 ```
 标准库（最高优先级）
@@ -174,7 +174,7 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 ├── ✅ std/datetime — now/nowMs/timestampToDate/formatDuration/sleep
 ├── ✅ std/array — sort/reverse/join/flatten/unique/chunk/fill/compact
 ├── ✅ std/string — repeat/padStart/padEnd/capitalize/titleCase/count/lines
-└── ❌ std/regex — match/replace/find（集成 RE2 或 PCRE2）
+└── ✅ std/regex — test/find/replace/split（基于 C++ std::regex，ECMAScript 语法）
 
 核心语法
 ├── ✅ 空安全 ?. + ??                    ← 消除 null 检查嵌套
@@ -283,7 +283,7 @@ OOP 完善
 | `std/datetime` | ✅ 已完成 | now/nowMs/timestampToDate/formatDuration/sleep |
 | `std/array` | ✅ 已完成 | sort/reverse/join/flatten/unique/chunk/fill/compact |
 | `std/string` | ✅ 已完成 | repeat/padStart/padEnd/capitalize/titleCase/count/lines |
-| `std/regex` | 🔴 待实现 | match/replace |
+| `std/regex` | ✅ 已实现 | test/find/replace/split |
 
 ### 5.4 工具链缺失
 
