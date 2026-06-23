@@ -21,6 +21,42 @@ void Compiler::emitBytes(uint8_t a, uint8_t b) {
     chunk.write(a, b, currentLine, currentColumn);
 }
 
+void Compiler::emitShort(uint16_t value) {
+    chunk.write(static_cast<uint8_t>(value & 0xFF),
+                static_cast<uint8_t>((value >> 8) & 0xFF),
+                currentLine, currentColumn);
+}
+
+void Compiler::emitGetGlobal(int slot) {
+    if (slot <= 255) {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL),
+                  static_cast<uint8_t>(slot));
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL_WIDE));
+        emitShort(static_cast<uint16_t>(slot));
+    }
+}
+
+void Compiler::emitSetGlobal(int slot) {
+    if (slot <= 255) {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
+                  static_cast<uint8_t>(slot));
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL_WIDE));
+        emitShort(static_cast<uint16_t>(slot));
+    }
+}
+
+void Compiler::emitDefineGlobal(int slot) {
+    if (slot <= 255) {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
+                  static_cast<uint8_t>(slot));
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL_WIDE));
+        emitShort(static_cast<uint16_t>(slot));
+    }
+}
+
 void Compiler::emitConstant(Value value) {
     chunk.writeConstant(value, currentLine, currentColumn);
 }

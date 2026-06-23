@@ -446,6 +446,58 @@ greet("Hey", "A", "B")     // ["Hey", ["A", "B"]]
 - 剩余参数**不能有默认值**
 - 适用于普通函数、匿名函数、对象构造函数和方法
 
+### 调用端展开 (Call-Site Spread)
+
+> 引入版本: v0.25
+
+与剩余参数对称——将数组**展开**为独立的函数实参：
+
+**基本用法：**
+
+```vora
+func add(a, b, c) {
+    return a + b + c
+}
+
+let args = [1, 2, 3]
+print(add(...args))  // 6 —— 等价于 add(1, 2, 3)
+```
+
+**与固定参数混合：**
+
+```vora
+func greet(title, name, surname) {
+    return title + " " + name + " " + surname
+}
+
+print(greet("Dr.", ...["Jane", "Smith"]))  // "Dr. Jane Smith"
+```
+
+**与剩余参数配合使用（参数转发）：**
+
+```vora
+func wrapper(...rest) {
+    // rest 是数组，...rest 将其展开为独立参数
+    return add(...rest)
+}
+
+print(wrapper(1, 2, 3))  // 6
+```
+
+**多个展开：**
+
+```vora
+let a = [1, 2]
+let b = [3, 4, 5]
+print(add(...a, ...b))  // 等价于 add(1, 2, 3, 4, 5)
+```
+
+**规则：**
+- `...expr` 只能出现在**函数调用**的参数列表中
+- 展开的值**必须是数组**，否则运行时错误
+- 展开后的总参数数量不能超过 255
+- 可用于常规函数、方法、可选链调用
+
 ### 解构赋值 (Destructuring Assignment)
 
 > 引入版本: v0.22
@@ -859,7 +911,7 @@ print("Name: ${obj.name}")      // Name: Alice
 
 | 函数 | 说明 |
 |------|------|
-| `type(v)` | 返回类型名：`"int"`, `"float"`, `"string"`, `"array"`, `"dict"`, `"boolean"`, `"null"`, `"function"`, `"object"` |
+| `type(v)` | 返回类型名：`"int"`, `"float"`, `"string"`, `"array"`, `"dict"`, `"boolean"`, `"null"`, `"function"`, `"object"`, `"set"`, `"map"`, `"class"` |
 | `int(v)` | 转换为整数 |
 | `float(v)` | 转换为浮点数 |
 | `toString(v)` | 转换为字符串 |
@@ -868,7 +920,7 @@ print("Name: ${obj.name}")      // Name: Alice
 
 | 函数 | 说明 |
 |------|------|
-| `len(v)` | 返回数组元素数 / 字符串长度 / 字典键数 |
+| `len(v)` | 返回数组元素数 / 字符串字节数 / 字典键数 |
 | `clock()` | 返回自 Epoch 以来的秒数（浮点） |
 | `assert(cond, msg?)` | 条件为 falsy 时抛出异常 |
 | `input(prompt?)` | 从 stdin 读取一行，EOF 返回 `null` |
@@ -998,3 +1050,81 @@ s[0]                                // "H" — 索引访问
 [1, 2] + 99         // [1, 2, 99] — 追加
 99 + [1, 2]         // [99, 1, 2] — 前插
 ```
+
+### 列表推导 / List Comprehensions
+
+> 引入版本: v0.26
+
+列表推导提供了一种简洁的方式来创建数组，通过对可迭代对象的每个元素应用表达式，并可选择性地过滤元素。
+
+**语法：**
+
+```vora
+[expression for variable in iterable]
+[expression for variable in iterable if condition]
+```
+
+**示例：**
+
+```vora
+// 基本映射
+[i * 2 for i in range(5)]          // [0, 2, 4, 6, 8]
+
+// 带过滤条件
+[i for i in range(30) if i % 3 == 0]
+// [0, 3, 6, 9, 12, 15, 18, 21, 24, 27]
+
+// 字符串操作
+let names = ["alice", "bob", "charlie"]
+[name.upper() for name in names if name.length > 3]
+// ["ALICE", "CHARLIE"]
+
+// 嵌套列表推导（乘法表）
+[[i * j for j in range(1, 6)] for i in range(1, 6)]
+// [[1, 2, 3, 4, 5], [2, 4, 6, 8, 10], ...]
+```
+
+**规则：**
+- `for` 和 `in` 是关键字，必须按此顺序出现
+- `if` 子句是可选的，用于过滤元素
+- 列表推导是一个表达式，求值为一个新数组
+- 支持嵌套（内层推导可引用外层变量）
+- 空的 `if` 条件或空的可迭代对象产生空数组
+
+### 字典推导 / Dict Comprehensions
+
+> 引入版本: v0.26
+
+字典推导提供了一种简洁的方式来创建字典，通过对可迭代对象的每个元素计算键值对，并可选择性地过滤元素。
+
+**语法：**
+
+```vora
+{keyExpr: valueExpr for variable in iterable}
+{keyExpr: valueExpr for variable in iterable if condition}
+```
+
+**示例：**
+
+```vora
+// 单词 → 长度映射
+let words = ["Google", "Runoob", "Taobao"]
+{w: w.length for w in words}
+// {"Google": 6, "Runoob": 6, "Taobao": 6}
+
+// 带过滤条件
+{n: n * n for n in range(1, 6) if n % 2 == 0}
+// {2: 4, 4: 16}
+
+// 嵌套列表推导作为值
+{k: [i * 2 for i in range(3)] for k in ["a", "b"]}
+// {"a": [0, 2, 4], "b": [0, 2, 4]}
+```
+
+**规则：**
+- `for` 和 `in` 是关键字，必须按此顺序出现
+- 键表达式中的裸标识符不会被自动转换为字符串——它会被当作变量求值
+- `if` 子句是可选的，用于过滤元素
+- 字典推导是一个表达式，求值为一个新字典
+- 支持嵌套（内层推导可引用外层变量）
+- 重复键以后出现的为准（字典合并规则）

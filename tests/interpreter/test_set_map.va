@@ -1,0 +1,67 @@
+// interpreter/test_set_map.va — Set/Map method tests (TEST-008)
+// Run: vora tests/interpreter/test_set_map.va
+
+print("=== Set & Map Methods ===")
+
+// --- Set tests ---
+let s = Set([1, 2, 3])
+assert(s.has(1), "set.has existing")
+assert(!s.has(99), "set.has missing")
+assert(s.size == 3, "set.size")
+
+s.add(4)
+assert(s.has(4), "set.add")
+assert(s.size == 4, "set.size after add")
+
+s.remove(2)
+assert(!s.has(2), "set.remove")
+assert(s.size == 3, "set.size after remove")
+
+let sc = Set([1, 2, 3])
+sc.clear()
+assert(sc.size == 0, "set.clear")
+
+// Union
+let a = Set([1, 2])
+let b = Set([3, 4])
+let u = a + b
+assert(u.has(1) and u.has(3), "set union")
+assert(u.size == 4, "set union size")
+
+// Deduplication
+let dup = Set([1, 1, 2, 2, 3])
+assert(dup.size == 3, "set deduplication")
+
+// Iteration
+let sum = 0
+for x in s { sum = sum + x }
+assert(sum > 0, "set iteration")
+
+// --- Map tests ---
+let m = Map()
+m.set("key1", 100)
+m.set("key2", 200)
+assert(m.get("key1") == 100, "map.set/get")
+assert(m.has("key1"), "map.has existing")
+assert(!m.has("nope"), "map.has missing")
+assert(m.size == 2, "map.size")
+
+m.remove("key1")
+assert(!m.has("key1"), "map.remove")
+assert(m.size == 1, "map.size after remove")
+
+m.clear()
+assert(m.size == 0, "map.clear")
+
+// keys and values
+let m2 = Map()
+m2.set("a", 1)
+m2.set("b", 2)
+// keys() returns Array (not Set)
+let mkeys = m2.keys()
+assert(mkeys.length == 2, "map.keys length")
+// values() returns Array
+let mvals = m2.values()
+assert(mvals.length == 2, "map.values length")
+
+print("Set & Map methods: PASS")

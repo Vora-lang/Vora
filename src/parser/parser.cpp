@@ -57,6 +57,11 @@ void Parser::synchronize() {
     // Track delimiter nesting depth so we can synchronize to the matching
     // close-brace rather than stopping at the first one we encounter.
     // This prevents cascading parse errors when recovering inside nested blocks.
+    //
+    // Counters start at 0 and may temporarily go negative when recovery begins
+    // inside a nested block (more RIGHT_* than LEFT_* before the recovery point).
+    // The <= 0 checks below correctly handle this: a negative depth means we're
+    // already at or above the enclosing level, which is a safe exit point.
     int braceDepth = 0;
     int parenDepth = 0;
     int bracketDepth = 0;
@@ -1464,17 +1469,41 @@ std::unique_ptr<Expr> Parser::primary() {
         if (lexeme.size() >= 2 && lexeme[0] == '0') {
             switch (lexeme[1]) {
                 case 'x': case 'X':
-                    return std::make_unique<LiteralExpr>(
-                        static_cast<int64_t>(std::stoull(lexeme, nullptr, 16))
-                    );
+                    try {
+                        return std::make_unique<LiteralExpr>(
+                            static_cast<int64_t>(std::stoull(lexeme, nullptr, 16))
+                        );
+                    } catch (const std::invalid_argument&) {
+                        error("Invalid hex literal");
+                        return std::make_unique<ErrorExpr>("Invalid hex literal", previous());
+                    } catch (const std::out_of_range&) {
+                        error("Hex literal out of range");
+                        return std::make_unique<ErrorExpr>("Hex literal out of range", previous());
+                    }
                 case 'o': case 'O':
-                    return std::make_unique<LiteralExpr>(
-                        static_cast<int64_t>(std::stoull(lexeme.substr(2), nullptr, 8))
-                    );
+                    try {
+                        return std::make_unique<LiteralExpr>(
+                            static_cast<int64_t>(std::stoull(lexeme.substr(2), nullptr, 8))
+                        );
+                    } catch (const std::invalid_argument&) {
+                        error("Invalid octal literal");
+                        return std::make_unique<ErrorExpr>("Invalid octal literal", previous());
+                    } catch (const std::out_of_range&) {
+                        error("Octal literal out of range");
+                        return std::make_unique<ErrorExpr>("Octal literal out of range", previous());
+                    }
                 case 'b': case 'B':
-                    return std::make_unique<LiteralExpr>(
-                        static_cast<int64_t>(std::stoull(lexeme.substr(2), nullptr, 2))
-                    );
+                    try {
+                        return std::make_unique<LiteralExpr>(
+                            static_cast<int64_t>(std::stoull(lexeme.substr(2), nullptr, 2))
+                        );
+                    } catch (const std::invalid_argument&) {
+                        error("Invalid binary literal");
+                        return std::make_unique<ErrorExpr>("Invalid binary literal", previous());
+                    } catch (const std::out_of_range&) {
+                        error("Binary literal out of range");
+                        return std::make_unique<ErrorExpr>("Binary literal out of range", previous());
+                    }
                 default:
                     break;
             }
@@ -1537,19 +1566,77 @@ std::unique_ptr<Expr> Parser::primary() {
     if (match(TokenType::LEFT_BRACKET)) {
         Token leftBracket = previous();
 
-        std::vector<std::unique_ptr<Expr>> elements;
+        // Empty array: []
+        if (match(TokenType::RIGHT_BRACKET)) {
+            return std::make_unique<ArrayExpr>(
+                std::vector<std::unique_ptr<Expr>>{},
+                leftBracket
+            );
+        }
 
-        if (!check(TokenType::RIGHT_BRACKET)) {
-            do {
-                auto element = expression();
+        // Parse first expression — could be an array element or a comprehension result
+        auto first = expression();
+        if (!first) {
+            first = std::make_unique<ErrorExpr>("Expected expression", peek());
+        }
 
-                if (!element) {
-                    element = std::make_unique<ErrorExpr>("Expected expression in array literal", peek());
-                }
-
-                elements.push_back(std::move(element));
+        // Check if this is a list comprehension: [expr for var in iterable if cond]
+        if (match(TokenType::FOR)) {
+            // Parse loop variable name
+            std::string variable;
+            if (!match(TokenType::IDENTIFIER)) {
+                error("Expected variable name after 'for' in list comprehension");
+                variable = "?error?";
+            } else {
+                variable = previous().lexeme;
             }
-            while (match(TokenType::COMMA));
+
+            // Parse 'in' keyword
+            if (!match(TokenType::IN)) {
+                error("Expected 'in' after variable in list comprehension");
+            }
+
+            // Parse iterable expression
+            auto iterable = expression();
+            if (!iterable) {
+                iterable = std::make_unique<ErrorExpr>("Expected iterable after 'in' in list comprehension", peek());
+            }
+
+            // Optional 'if' condition
+            std::unique_ptr<Expr> condition;
+            if (match(TokenType::IF)) {
+                condition = expression();
+                if (!condition) {
+                    condition = std::make_unique<ErrorExpr>("Expected condition after 'if' in list comprehension", peek());
+                }
+            }
+
+            // Expect ']'
+            if (!match(TokenType::RIGHT_BRACKET)) {
+                error("Expected ']' after list comprehension");
+            }
+
+            return std::make_unique<ListCompExpr>(
+                std::move(first),
+                std::move(variable),
+                std::move(iterable),
+                std::move(condition),
+                leftBracket
+            );
+        }
+
+        // Regular array literal: [elem1, elem2, ...]
+        std::vector<std::unique_ptr<Expr>> elements;
+        elements.push_back(std::move(first));
+
+        while (match(TokenType::COMMA)) {
+            auto element = expression();
+
+            if (!element) {
+                element = std::make_unique<ErrorExpr>("Expected expression in array literal", peek());
+            }
+
+            elements.push_back(std::move(element));
         }
 
         if (!match(TokenType::RIGHT_BRACKET)) {
@@ -1570,39 +1657,110 @@ std::unique_ptr<Expr> Parser::primary() {
     if (match(TokenType::LEFT_BRACE)) {
         Token leftBrace = previous();
 
+        // Empty dict: {}
+        if (match(TokenType::RIGHT_BRACE)) {
+            return std::make_unique<DictExpr>(
+                std::vector<std::pair<std::unique_ptr<Expr>, std::unique_ptr<Expr>>>{},
+                leftBrace
+            );
+        }
+
+        // Parse first pair (key, colon, value). We defer the bare-identifier→
+        // string conversion because if this is a dict comprehension, the key
+        // is a template expression (a variable), not a string literal.
+        auto key = expression();
+        if (!key) {
+            key = std::make_unique<ErrorExpr>("Expected dict key", peek());
+        }
+
+        if (!match(TokenType::COLON)) {
+            error("Expected ':' after dict key");
+        }
+
+        auto value = expression();
+        if (!value) {
+            value = std::make_unique<ErrorExpr>("Expected dict value", peek());
+        }
+
+        // Check if this is a dict comprehension: {key: val for var in iterable if cond}
+        if (match(TokenType::FOR)) {
+            // Parse loop variable name
+            std::string variable;
+            if (!match(TokenType::IDENTIFIER)) {
+                error("Expected variable name after 'for' in dict comprehension");
+                variable = "?error?";
+            } else {
+                variable = previous().lexeme;
+            }
+
+            // Parse 'in' keyword
+            if (!match(TokenType::IN)) {
+                error("Expected 'in' after variable in dict comprehension");
+            }
+
+            // Parse iterable expression
+            auto iterable = expression();
+            if (!iterable) {
+                iterable = std::make_unique<ErrorExpr>("Expected iterable after 'in' in dict comprehension", peek());
+            }
+
+            // Optional 'if' condition
+            std::unique_ptr<Expr> condition;
+            if (match(TokenType::IF)) {
+                condition = expression();
+                if (!condition) {
+                    condition = std::make_unique<ErrorExpr>("Expected condition after 'if' in dict comprehension", peek());
+                }
+            }
+
+            // Expect '}'
+            if (!match(TokenType::RIGHT_BRACE)) {
+                error("Expected '}' after dict comprehension");
+            }
+
+            return std::make_unique<DictCompExpr>(
+                std::move(key),
+                std::move(value),
+                std::move(variable),
+                std::move(iterable),
+                std::move(condition),
+                leftBrace
+            );
+        }
+
+        // Regular dict literal — now convert bare identifier keys to strings.
+        if (auto varKey = dynamic_cast<VariableExpr*>(key.get())) {
+            key = std::make_unique<LiteralExpr>(GcHeap::instance().alloc<GcString>(varKey->name));
+        }
+
         std::vector<std::pair<std::unique_ptr<Expr>, std::unique_ptr<Expr>>> pairs;
+        pairs.push_back({std::move(key), std::move(value)});
 
-        if (!check(TokenType::RIGHT_BRACE)) {
-            do {
-                auto key = expression();
-                if (!key) {
-                    key = std::make_unique<ErrorExpr>("Expected dict key", peek());
-                }
+        while (match(TokenType::COMMA)) {
+            auto nextKey = expression();
+            if (!nextKey) {
+                nextKey = std::make_unique<ErrorExpr>("Expected dict key", peek());
+            }
 
-                // Bare identifiers in dict keys are treated as string literals
-                // (e.g. {name: "Vora"} — "name" is the string key, not a variable).
-                if (auto varKey = dynamic_cast<VariableExpr*>(key.get())) {
-                    key = std::make_unique<LiteralExpr>(GcHeap::instance().alloc<GcString>(varKey->name));
-                }
+            if (auto varKey = dynamic_cast<VariableExpr*>(nextKey.get())) {
+                nextKey = std::make_unique<LiteralExpr>(GcHeap::instance().alloc<GcString>(varKey->name));
+            }
 
-                if (!match(TokenType::COLON)) {
-                    error("Expected ':' after dict key");
-                    // Skip this malformed pair and continue.
-                    continue;
-                }
+            if (!match(TokenType::COLON)) {
+                error("Expected ':' after dict key");
+                continue;
+            }
 
-                auto value = expression();
-                if (!value) {
-                    value = std::make_unique<ErrorExpr>("Expected dict value", peek());
-                }
+            auto nextValue = expression();
+            if (!nextValue) {
+                nextValue = std::make_unique<ErrorExpr>("Expected dict value", peek());
+            }
 
-                pairs.push_back({std::move(key), std::move(value)});
-            } while (match(TokenType::COMMA));
+            pairs.push_back({std::move(nextKey), std::move(nextValue)});
         }
 
         if (!match(TokenType::RIGHT_BRACE)) {
             error("Expected '}' after dict literal");
-            // Return partial dict with whatever pairs we parsed.
             return std::make_unique<DictExpr>(std::move(pairs), leftBrace);
         }
 
@@ -1633,16 +1791,27 @@ std::unique_ptr<Expr> Parser::finishCall(
     if (!check(TokenType::RIGHT_PAREN)) {
 
         do {
+            // Check for call-site spread: ...expr
+            if (match(TokenType::DOT_DOT_DOT)) {
+                auto spreadExpr = expression();
+                if (!spreadExpr) {
+                    spreadExpr = std::make_unique<ErrorExpr>(
+                        "Expected expression after ...", peek());
+                }
+                arguments.push_back(std::make_unique<SpreadExpr>(
+                    std::move(spreadExpr), previous()));
+            } else {
+                auto argument = expression();
 
-            auto argument = expression();
+                if (!argument) {
+                    argument = std::make_unique<ErrorExpr>(
+                        "Expected expression", peek());
+                }
 
-            if (!argument) {
-                argument = std::make_unique<ErrorExpr>("Expected expression", peek());
+                arguments.push_back(
+                    std::move(argument)
+                );
             }
-
-            arguments.push_back(
-                std::move(argument)
-            );
         }
         while (match(TokenType::COMMA));
     }
@@ -1807,7 +1976,8 @@ std::unique_ptr<Expr> Parser::call() {
         // the ++/-- belongs to the next statement as a prefix operator)
         if ((check(TokenType::PLUS_PLUS) || check(TokenType::MINUS_MINUS)) &&
             (dynamic_cast<VariableExpr*>(expr.get()) ||
-             dynamic_cast<PropertyExpr*>(expr.get()))) {
+             dynamic_cast<PropertyExpr*>(expr.get()) ||
+             dynamic_cast<IndexExpr*>(expr.get()))) {
             Token op = advance();  // consume ++ / --
             expr = std::make_unique<IncDecExpr>(op, std::move(expr), false);
             continue;

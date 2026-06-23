@@ -64,6 +64,11 @@ enum class OpCode : uint8_t {
     OP_TAIL_CALL,      // tail call — reuses current frame (operand: uint8_t argCount)
     OP_CLOSURE,        // create closure from function prototype (operand: uint8_t constIndex, then N upvalue pairs)
     OP_RETURN,         // return from function
+
+    // Call-site spread
+    OP_PUSH_SPREAD,    // push new spread count entry (0) onto spreadCountStack
+    OP_SPREAD,         // pop array, push elements, increment spread count
+    OP_CALL_N,         // call with dynamic arg count from spread (operand: uint8_t fixedCount)
     OP_YIELD,           // yield from generator — saves state, returns to caller
 
     // Upvalues (closures)
@@ -99,6 +104,12 @@ enum class OpCode : uint8_t {
 
     // Module system
     OP_IMPORT,         // import module → push module dict (operand: uint8_t pathConstIndex, uint8_t nameConstIndex)
+
+    // Globals — wide (16-bit slot index for >256 globals)
+    // Placed at end to avoid shifting existing opcode numeric values.
+    OP_DEFINE_GLOBAL_WIDE,  // define global var (operand: uint16_t slot, LE)
+    OP_GET_GLOBAL_WIDE,     // push global var (operand: uint16_t slot, LE)
+    OP_SET_GLOBAL_WIDE,     // set global var, leave value on stack (operand: uint16_t slot, LE)
 };
 
 } // namespace vora

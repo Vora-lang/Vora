@@ -44,6 +44,9 @@ public:
     virtual R visitYieldExpr(const YieldExpr& expr) = 0;
     virtual R visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) = 0;
     virtual R visitOptionalChainExpr(const OptionalChainExpr& expr) = 0;
+    virtual R visitSpreadExpr(const SpreadExpr& expr) = 0;
+    virtual R visitListCompExpr(const ListCompExpr& expr) = 0;
+    virtual R visitDictCompExpr(const DictCompExpr& expr) = 0;
     virtual R visitErrorExpr(const ErrorExpr& expr) = 0;
 };
 

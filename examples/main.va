@@ -1,2 +1,2 @@
-let lrt = 1
-print("lrt = ", lrt)
+let lrt:float = 1
+print("lrt = ", lrt) // lrt = 1.00

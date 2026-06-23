@@ -290,6 +290,35 @@ std::string ASTPrinter::visitDestructureAssignmentExpr(const DestructureAssignme
     return "(destructure-assign " + expr.value->accept(*this) + ")";
 }
 
+std::string ASTPrinter::visitSpreadExpr(const SpreadExpr& expr) {
+    return "(spread " + expr.expr->accept(*this) + ")";
+}
+
+std::string ASTPrinter::visitListCompExpr(const ListCompExpr& expr) {
+    std::stringstream ss;
+    ss << "(list-comp " << print(expr.resultExpr.get());
+    ss << " for " << expr.variable << " in ";
+    ss << print(expr.iterable.get());
+    if (expr.condition) {
+        ss << " if " << print(expr.condition.get());
+    }
+    ss << ")";
+    return ss.str();
+}
+
+std::string ASTPrinter::visitDictCompExpr(const DictCompExpr& expr) {
+    std::stringstream ss;
+    ss << "(dict-comp " << print(expr.keyExpr.get());
+    ss << ": " << print(expr.valueExpr.get());
+    ss << " for " << expr.variable << " in ";
+    ss << print(expr.iterable.get());
+    if (expr.condition) {
+        ss << " if " << print(expr.condition.get());
+    }
+    ss << ")";
+    return ss.str();
+}
+
 std::string ASTPrinter::visitOptionalChainExpr(const OptionalChainExpr& expr) {
     std::string result = "(?.";
     result += expr.object->accept(*this);

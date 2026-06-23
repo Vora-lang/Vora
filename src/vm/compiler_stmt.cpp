@@ -41,8 +41,7 @@ void Compiler::visitLetStmt(const LetStmt& stmt) {
             slot = defineGlobal(stmt.name);
         }
         if (hadError) return;
-        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
-                  static_cast<uint8_t>(slot));
+        emitDefineGlobal(slot);
     } else {
         // Local variable — the initializer value is already on the stack.
         // It stays there as the local's slot. Just record the slot.
@@ -90,8 +89,7 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
                 slot = defineGlobal(id.name);
             }
             if (hadError) return;
-            emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
-                      static_cast<uint8_t>(slot));
+            emitDefineGlobal(slot);
         } else {
             addLocal(id.name, isConst);
         }
@@ -155,8 +153,7 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
                 // Get array length: _rest_len = _vora_len(_arr_src)
                 std::string lenName = "_ds" + std::to_string(tempId) + "_len";
                 int lenBuiltinSlot = resolveGlobal("_vora_len");
-                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL),
-                          static_cast<uint8_t>(lenBuiltinSlot));
+                emitGetGlobal(lenBuiltinSlot);
                 emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
                           static_cast<uint8_t>(srcSlot));
                 emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
@@ -274,15 +271,27 @@ void Compiler::visitReturnStmt(const ReturnStmt& stmt) {
     // This enables infinite tail recursion without stack overflow.
     if (stmt.value && tryNesting == 0 && finallyNesting == 0) {
         if (auto* call = dynamic_cast<CallExpr*>(stmt.value.get())) {
-            // Compile callee first (goes below arguments on stack)
-            call->callee->accept(*this);
-            // Compile arguments (pushed on top of callee)
+            // Skip TCO if any argument uses call-site spread — OP_TAIL_CALL
+            // uses a fixed arg count and can't handle dynamically-sized spreads.
+            // The regular path below routes through visitCallExpr → OP_CALL_N.
+            bool hasSpread = false;
             for (const auto& arg : call->arguments) {
-                arg->accept(*this);
+                if (dynamic_cast<SpreadExpr*>(arg.get())) {
+                    hasSpread = true;
+                    break;
+                }
             }
-            emitBytes(static_cast<uint8_t>(OpCode::OP_TAIL_CALL),
-                      static_cast<uint8_t>(call->arguments.size()));
-            return;  // OP_TAIL_CALL handles frame reuse, no OP_RETURN needed
+            if (!hasSpread) {
+                // Compile callee first (goes below arguments on stack)
+                call->callee->accept(*this);
+                // Compile arguments (pushed on top of callee)
+                for (const auto& arg : call->arguments) {
+                    arg->accept(*this);
+                }
+                emitBytes(static_cast<uint8_t>(OpCode::OP_TAIL_CALL),
+                          static_cast<uint8_t>(call->arguments.size()));
+                return;  // OP_TAIL_CALL handles frame reuse, no OP_RETURN needed
+            }
         }
     }
 
@@ -333,7 +342,7 @@ void Compiler::visitWhileStmt(const WhileStmt& stmt) {
 
     // Push loop context for break/continue.
     // While loops: continueTarget == loopStart (backward jump to condition)
-    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth});
+    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 0, 0});
 
     // Condition
     stmt.condition->accept(*this);
@@ -374,7 +383,7 @@ void Compiler::visitDoWhileStmt(const DoWhileStmt& stmt) {
     // Unlike while (where continueTarget == loopStart for backward jump),
     // do-while has continue jump forward to the condition, which hasn't
     // been compiled yet. This matches the for-in/C-for pattern.
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth});
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 0, 0});
 
     // --- Body (always executes at least once, unconditionally) ---
     stmt.body->accept(*this);
@@ -441,8 +450,7 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
 
     // Call _vora_len to get the length of _iter
     int lenSlot = resolveGlobal("_vora_len");
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL),
-              static_cast<uint8_t>(lenSlot));
+    emitGetGlobal(lenSlot);
 
     int iterSlot = resolveLocal("_iter");
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
@@ -461,8 +469,9 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
 
     size_t loopStart = chunk.code.size();
     // continueTarget = SIZE_MAX signals "for-in loop: use forward jump,
-    // target will be set later". extraLocalsToPop = 3 accounts for the
-    // auto-generated _iter, _i, _len locals that must be cleaned up on break.
+    // target will be set later". extraLocalsToPopOnBreak = 3 accounts for
+    // the auto-generated _iter, _i, _len locals that must be cleaned up on
+    // break (but NOT on continue — they persist across iterations).
     loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 3});
 
     // --- Condition: _i < _len ---
@@ -524,7 +533,7 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
 
     // Save break jumps before popping the loop context. They must be
     // patched AFTER endScope() because break already handled cleanup of
-    // _iter/_i/_len via extraLocalsToPop — landing before endScope()
+    // _iter/_i/_len via extraLocalsToPopOnBreak — landing before endScope()
     // would double-pop those locals.
     std::vector<size_t> savedBreakJumps = std::move(loopStack.back().breakJumps);
 
@@ -560,7 +569,8 @@ void Compiler::visitCForStmt(const CForStmt& stmt) {
     //   - beginScope wraps the whole loop (initializer locals are scoped here)
     //   - enclosingScopeDepth = scopeDepth (inside the scope) so continue only
     //     pops body-locals, never the initializer locals
-    //   - extraLocalsToPop tracks initializer locals so break can clean them up
+    //   - extraLocalsToPopOnBreak tracks initializer locals so break can clean
+    //     them up (extraLocalsToPopOnContinue is 0 — initializers persist)
     //   - Break jumps land after endScope(); continue jumps land at increment
 
     beginScope();
@@ -577,7 +587,7 @@ void Compiler::visitCForStmt(const CForStmt& stmt) {
 
     size_t loopStart = chunk.code.size();
     // continueTarget = SIZE_MAX signals "target will be set later"
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, extraLocals});
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, extraLocals, 0});
 
     // --- Condition ---
     if (stmt.condition) {
@@ -625,7 +635,7 @@ void Compiler::visitCForStmt(const CForStmt& stmt) {
     endScope();
 
     // Patch break jumps after endScope() — break already cleaned up init locals
-    // via extraLocalsToPop, so it skips endScope().
+    // via extraLocalsToPopOnBreak, so it skips endScope().
     for (size_t jumpOffset : savedBreakJumps) {
         patchJump(jumpOffset);
     }
@@ -751,8 +761,7 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
         // Global function — use interned slot ID (errors on redefinition).
         int slot = defineGlobal(stmt.name);
         if (hadError) return;
-        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
-                  static_cast<uint8_t>(slot));
+        emitDefineGlobal(slot);
     }
     // For local functions (scopeDepth > 0): the name was pre-allocated via
     // addLocal before body compilation. OP_CLOSURE already pushed the
@@ -961,8 +970,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     if (scopeDepth == 0) {
         int slot = defineGlobal(stmt.name);
         if (hadError) return;
-        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
-                  static_cast<uint8_t>(slot));
+        emitDefineGlobal(slot);
     } else {
         addLocal(stmt.name);
     }
@@ -972,6 +980,7 @@ void Compiler::visitBreakStmt(const BreakStmt& stmt) {
     currentLine = stmt.keyword.line;
     currentColumn = stmt.keyword.column;
     if (loopStack.empty()) {
+        error("'break' outside of loop");
         return;
     }
 
@@ -992,7 +1001,7 @@ void Compiler::visitBreakStmt(const BreakStmt& stmt) {
     }
     // For-in loops generate _iter, _i, _len at enclosingScopeDepth which
     // must also be cleaned up on break (they persist through continue).
-    localsToPop += loopStack.back().extraLocalsToPop;
+    localsToPop += loopStack.back().extraLocalsToPopOnBreak;
 
     if (localsToPop > 0) {
         emitBytes(static_cast<uint8_t>(OpCode::OP_POPN),
@@ -1008,6 +1017,7 @@ void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
     currentLine = stmt.keyword.line;
     currentColumn = stmt.keyword.column;
     if (loopStack.empty()) {
+        error("'continue' outside of loop");
         return;
     }
 
@@ -1025,6 +1035,11 @@ void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
             break;
         }
     }
+    // Pop any loop-infrastructure locals that should not persist through
+    // continue (currently 0 for both for-in and C-for; this is explicit so
+    // future loop constructs can use it).
+    localsToPop += loopStack.back().extraLocalsToPopOnContinue;
+
     if (localsToPop > 0) {
         emitBytes(static_cast<uint8_t>(OpCode::OP_POPN),
                   static_cast<uint8_t>(localsToPop));
@@ -1234,8 +1249,7 @@ void Compiler::visitImportStmt(const ImportStmt& stmt) {
                 addLocal(name, false);
             } else {
                 int slot = resolveGlobal(name);
-                emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
-                          static_cast<uint8_t>(slot));
+                emitDefineGlobal(slot);
             }
         }
         return;
@@ -1279,8 +1293,7 @@ void Compiler::visitImportStmt(const ImportStmt& stmt) {
         addLocal(varName, false);
     } else {
         int slot = resolveGlobal(varName);
-        emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL),
-                  static_cast<uint8_t>(slot));
+        emitDefineGlobal(slot);
     }
 }
 
@@ -1292,7 +1305,13 @@ void Compiler::visitExportStmt(const ExportStmt& stmt) {
     if (auto* fs = dynamic_cast<FuncStmt*>(stmt.declaration.get())) {
         exportNames.push_back(fs->name);
     } else if (auto* ls = dynamic_cast<LetStmt*>(stmt.declaration.get())) {
-        exportNames.push_back(ls->name);
+        // 'const' declarations also use LetStmt (with isConst=true).
+        // For destructuring patterns (ls->pattern is set), the name is
+        // empty — the binding pattern names are not yet extracted.
+        if (!ls->name.empty()) {
+            exportNames.push_back(ls->name);
+        }
+        // TODO: extract names from ls->pattern for destructuring exports
     } else if (auto* os = dynamic_cast<ObjStmt*>(stmt.declaration.get())) {
         exportNames.push_back(os->name);
     }

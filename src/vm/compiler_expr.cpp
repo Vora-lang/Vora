@@ -113,12 +113,12 @@ void Compiler::compileVariableOrPropertyRef(const std::string& name) {
     } else {
         if (hasPropertyChain) {
             // When there's a property chain on a global (e.g. ${obj.prop}),
-            // use a direct global lookup. If the global doesn't exist it's
-            // a runtime error — better than silently falling back to the
-            // literal ${...} text.
+            // use OP_GET_GLOBAL (not _SAFE). The _SAFE variant would fall back
+            // to the literal "${obj.prop}" string, which would then fail with a
+            // confusing "property not found on String" error. A direct "undefined
+            // global" error is clearer.
             int slot = resolveGlobal(base);
-            emitByte(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL));
-            emitByte(static_cast<uint8_t>(slot));
+            emitGetGlobal(slot);
         } else {
             // Simple global: use safe lookup with fallback to literal text.
             int slot = resolveGlobal(base);
@@ -200,14 +200,35 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
                 int64_t a = std::get<int64_t>(lv);
                 int64_t b = std::get<int64_t>(rv);
                 switch (expr.op.type) {
-                    case TokenType::PLUS:     emitConstant(a + b); return;
-                    case TokenType::MINUS:    emitConstant(a - b); return;
-                    case TokenType::MULTIPLY: emitConstant(a * b); return;
+                    case TokenType::PLUS:
+                        // Check for signed overflow before folding
+                        if ((b > 0 && a > INT64_MAX - b) ||
+                            (b < 0 && a < INT64_MIN - b)) break;
+                        emitConstant(a + b); return;
+                    case TokenType::MINUS:
+                        if ((b < 0 && a > INT64_MAX + b) ||
+                            (b > 0 && a < INT64_MIN + b)) break;
+                        emitConstant(a - b); return;
+                    case TokenType::MULTIPLY:
+                        if (a != 0) {
+                            if (a > 0) {
+                                if (b > 0 && a > INT64_MAX / b) break;
+                                if (b < 0 && b < INT64_MIN / a) break;
+                            } else {
+                                if (b > 0 && a < INT64_MIN / b) break;
+                                if (b < 0 && a < INT64_MAX / b) break;
+                            }
+                        }
+                        emitConstant(a * b); return;
                     case TokenType::DIVIDE:
                         if (b == 0) break;
+                        // INT64_MIN / -1 overflows
+                        if (a == INT64_MIN && b == -1) break;
                         emitConstant(static_cast<double>(a) / static_cast<double>(b)); return;
                     case TokenType::MODULO:
                         if (b == 0) break;
+                        // INT64_MIN % -1 overflows
+                        if (a == INT64_MIN && b == -1) break;
                         emitConstant(static_cast<double>(std::fmod(static_cast<double>(a), static_cast<double>(b)))); return;
                     default: break;
                 }
@@ -318,8 +339,7 @@ void Compiler::visitVariableExpr(const VariableExpr& expr) {
                       static_cast<uint8_t>(upvalueIdx));
         } else {
             int slot = resolveGlobal(expr.name);
-            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL),
-                      static_cast<uint8_t>(slot));
+            emitGetGlobal(slot);
         }
     }
 }
@@ -361,8 +381,7 @@ void Compiler::visitAssignmentExpr(const AssignmentExpr& expr) {
                 error("Cannot assign to const variable '" + expr.name + "'");
                 return;
             }
-            emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
-                      static_cast<uint8_t>(slot));
+            emitSetGlobal(slot);
         }
     }
 }
@@ -429,8 +448,7 @@ void Compiler::visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) {
                           static_cast<uint8_t>(upvalueIdx));
             } else {
                 int slot = resolveGlobal(var->name);
-                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
-                          static_cast<uint8_t>(slot));
+            emitSetGlobal(slot);
             }
         }
         return;
@@ -478,14 +496,408 @@ void Compiler::visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) {
 void Compiler::visitCallExpr(const CallExpr& expr) {
     currentLine = expr.paren.line;
     currentColumn = expr.paren.column;
-    // Compile callee first (goes below arguments on stack)
+
+    // Detect if any argument uses call-site spread.
+    bool hasSpread = false;
+    uint8_t fixedCount = 0;
+    for (const auto& arg : expr.arguments) {
+        if (dynamic_cast<SpreadExpr*>(arg.get())) {
+            hasSpread = true;
+        } else {
+            fixedCount++;
+        }
+    }
+
+    if (!hasSpread) {
+        // Fast path: no spread — existing behaviour unchanged.
+        expr.callee->accept(*this);
+        for (const auto& arg : expr.arguments) {
+            arg->accept(*this);
+        }
+        emitBytes(static_cast<uint8_t>(OpCode::OP_CALL),
+                  static_cast<uint8_t>(expr.arguments.size()));
+        return;
+    }
+
+    // Spread path: push a counter entry, compile callee + args, emit OP_CALL_N.
+    emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_SPREAD));
     expr.callee->accept(*this);
-    // Compile arguments (pushed on top of callee)
     for (const auto& arg : expr.arguments) {
         arg->accept(*this);
     }
-    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL),
-              static_cast<uint8_t>(expr.arguments.size()));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL_N), fixedCount);
+}
+
+void Compiler::visitSpreadExpr(const SpreadExpr& expr) {
+    // Compile the inner expression (must evaluate to an Array), then
+    // OP_SPREAD will expand it into individual stack values at runtime.
+    expr.expr->accept(*this);
+    emitByte(static_cast<uint8_t>(OpCode::OP_SPREAD));
+}
+
+void Compiler::visitListCompExpr(const ListCompExpr& expr) {
+    currentLine = expr.leftBracket.line;
+    currentColumn = expr.leftBracket.column;
+    // Desugar list comprehension into a for-in loop that accumulates results:
+    //
+    //   [resultExpr for var in iterable if condition]
+    // becomes:
+    //   {
+    //     let _lcN = []                    // result array
+    //     let _iter = iterable             // for-in setup
+    //     let _i = 0
+    //     let _len = _vora_len(_iter)
+    //     while (_i < _len) {
+    //       let var = _iter[_i]
+    //       if condition:                  // optional
+    //         _lcN = _lcN + [resultExpr]   // array concat via OP_ADD
+    //       _i += 1
+    //     }
+    //     // _lcN stays on stack as expression value
+    //   }
+    //
+    // We use a wrapping beginScope() so addLocal() works even at function
+    // level (scopeDepth == 0). But we do NOT call endScope() for the
+    // wrapper — instead we manually remove the tracking so _lcN remains
+    // on the stack as the expression result.
+
+    // ── Wrapping scope (so addLocal works even at function level) ──
+    beginScope();
+
+    // ── Step 1: Create empty result array ──
+    std::string resultName = "_lc" + std::to_string(listCompCounter++);
+    emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 0);  // push []
+    addLocal(resultName);
+    int resultSlot = resolveLocal(resultName);
+
+    // ── Step 2: For-in setup scope ──
+    beginScope();
+
+    // Compile iterable → _iter
+    expr.iterable->accept(*this);
+    addLocal("_iter");
+
+    // _i = 0
+    emitConstant(0.0);
+    addLocal("_i");
+
+    // _len = _vora_len(_iter)
+    int lenGlobalSlot = resolveGlobal("_vora_len");
+    emitGetGlobal(lenGlobalSlot);
+
+    int iterSlot = resolveLocal("_iter");
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(iterSlot));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+    addLocal("_len");
+
+    // ── Step 3: Loop structure ──
+    size_t loopStart = chunk.code.size();
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 3});
+
+    // Condition: _i < _len
+    int iSlot = resolveLocal("_i");
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(iSlot));
+
+    int lenLocalSlot = resolveLocal("_len");
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(lenLocalSlot));
+
+    emitByte(static_cast<uint8_t>(OpCode::OP_LESS));
+    size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+    // ── Step 4: Body scope ──
+    beginScope();
+
+    // var = _iter[_i]
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(iterSlot));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(iSlot));
+    emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+    addLocal(expr.variable);
+
+    // ── Step 5: Optional if condition ──
+    size_t skipAppendJump = 0;
+    size_t skipConditionPopJump = 0;
+    if (expr.condition) {
+        expr.condition->accept(*this);
+        skipAppendJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // pop condition when true
+    }
+
+    // ── Step 6: Append to result: _lcN = _lcN + [resultExpr] ──
+    // Push _lcN and track it as a temp local (_lx) so the compiler knows
+    // this stack slot is occupied. This prevents resultExpr compilation
+    // (e.g. nested list comprehensions) from assigning locals to the
+    // wrong stack position.
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(resultSlot));
+    std::string tmpName = "_lx" + std::to_string(listCompCounter++);
+    addLocal(tmpName);
+
+    expr.resultExpr->accept(*this);            // push result value
+
+    emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 1);  // wrap: [value]
+    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));        // array concat: _lx + [value]
+    emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+              static_cast<uint8_t>(resultSlot));           // update _lcN
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));        // discard concat result
+    // Remove _lx from tracking (OP_ADD already consumed its runtime value).
+    // _lx must be the last entry in locals — resultExpr compilation must
+    // not leave any locals in the current scope (nested comprehensions
+    // clean up their own locals via beginScope/endScope or manual cleanup).
+    assert(!locals.empty() && locals.back().name == tmpName);
+    scopeLocalCounts.back()--;
+    locals.pop_back();
+
+    // After append, skip over the condition-pop (only needed for false path)
+    if (expr.condition) {
+        skipConditionPopJump = emitJump(OpCode::OP_JUMP);
+        patchJump(skipAppendJump);             // false lands here
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));   // pop condition (false)
+        patchJump(skipConditionPopJump);       // true lands here (after skipping pop)
+    }
+
+    // ── Step 7: End body scope (pops loop variable) ──
+    endScope();
+
+    // ── Step 8: Increment _i ──
+    loopStack.back().continueTarget = chunk.code.size();
+
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(iSlot));
+    emitConstant(1.0);
+    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+              static_cast<uint8_t>(iSlot));
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+    // ── Step 9: Loop back ──
+    emitLoop(loopStart);
+
+    // Patch exit jump
+    patchJump(exitJump);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+    // Patch continue jumps
+    for (size_t jumpOffset : loopStack.back().continueJumps) {
+        size_t target = loopStack.back().continueTarget;
+        size_t jumpSize = target - jumpOffset - 2;
+        if (jumpSize > UINT16_MAX) jumpSize = UINT16_MAX;
+        chunk.writeAt(jumpOffset, static_cast<uint8_t>(jumpSize & 0xFF));
+        chunk.writeAt(jumpOffset + 1, static_cast<uint8_t>((jumpSize >> 8) & 0xFF));
+    }
+
+    // Save and patch break jumps
+    std::vector<size_t> savedBreakJumps = std::move(loopStack.back().breakJumps);
+    loopStack.pop_back();
+
+    // ── Step 10: End for-in scope (pops _iter, _i, _len) ──
+    endScope();
+
+    // Patch break jumps after endScope() (break already cleaned up 3 locals)
+    for (size_t jumpOffset : savedBreakJumps) {
+        patchJump(jumpOffset);
+    }
+
+    // ── Step 11: Manual wrapper cleanup ──
+    // _lcN is on the stack as the expression's value. Remove the wrapping
+    // scope's tracking WITHOUT emitting OP_POPN (so the value stays).
+    int wrapperCount = scopeLocalCounts.back();
+    scopeLocalCounts.pop_back();
+    // Remove _lcN from locals (it's the last entry added in wrapper scope)
+    for (int i = 0; i < wrapperCount; i++) {
+        locals.pop_back();
+    }
+    scopeDepth--;
+}
+
+void Compiler::visitDictCompExpr(const DictCompExpr& expr) {
+    currentLine = expr.leftBrace.line;
+    currentColumn = expr.leftBrace.column;
+    // Desugar dict comprehension into a for-in loop that accumulates results:
+    //
+    //   {keyExpr: valueExpr for var in iterable if condition}
+    // becomes:
+    //   {
+    //     let _dcN = {}                    // result dict (OP_DICT 0)
+    //     let _iter = iterable
+    //     let _i = 0
+    //     let _len = _vora_len(_iter)
+    //     while (_i < _len) {
+    //       let var = _iter[_i]
+    //       if condition:
+    //         _dcN = _dcN + {keyExpr: valueExpr}   // one-pair dict + OP_ADD merge
+    //       _i += 1
+    //     }
+    //     // _dcN stays on stack as expression value
+    //   }
+    //
+    // Bug #1 fix: wrapping beginScope() ensures scopeLocalCounts is non-empty.
+    // Bug #2 fix: unconditional OP_JUMP over false-path OP_POP.
+    // Bug #3 fix: _dx temp local tracks the OP_GET_LOCAL result on the stack.
+
+    // ── Wrapping scope (Bug #1: so addLocal works even at scopeDepth == 0) ──
+    beginScope();
+
+    // ── Step 1: Create empty result dict ──
+    std::string resultName = "_dc" + std::to_string(dictCompCounter++);
+    emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 0);  // push {}
+    addLocal(resultName);
+    int resultSlot = resolveLocal(resultName);
+
+    // ── Step 2: For-in setup scope ──
+    beginScope();
+
+    // Compile iterable → _iter
+    expr.iterable->accept(*this);
+    addLocal("_iter");
+
+    // _i = 0
+    emitConstant(0.0);
+    addLocal("_i");
+
+    // _len = _vora_len(_iter)
+    int lenGlobalSlot = resolveGlobal("_vora_len");
+    emitGetGlobal(lenGlobalSlot);
+
+    int iterSlot = resolveLocal("_iter");
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(iterSlot));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+    addLocal("_len");
+
+    // ── Step 3: Loop structure ──
+    size_t loopStart = chunk.code.size();
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 3});
+
+    // Condition: _i < _len
+    int iSlot = resolveLocal("_i");
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(iSlot));
+
+    int lenLocalSlot = resolveLocal("_len");
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(lenLocalSlot));
+
+    emitByte(static_cast<uint8_t>(OpCode::OP_LESS));
+    size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+    // ── Step 4: Body scope ──
+    beginScope();
+
+    // var = _iter[_i]
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(iterSlot));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(iSlot));
+    emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+    addLocal(expr.variable);
+
+    // ── Step 5: Optional if condition (Bug #2: jump-over-pop pattern) ──
+    size_t skipAppendJump = 0;
+    size_t skipConditionPopJump = 0;
+    if (expr.condition) {
+        expr.condition->accept(*this);
+        skipAppendJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // pop condition when true
+    }
+
+    // ── Step 6: Merge one-pair dict: _dcN = _dcN + {keyExpr: valueExpr} ──
+    // Push _dcN and track it as temp _dx (Bug #3: prevents stack offset mismatch).
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(resultSlot));
+    std::string dxName = "_dx" + std::to_string(dictCompCounter++);
+    addLocal(dxName);
+
+    // Compile key and value, tracking both as temp locals. Without this,
+    // a nested comprehension in keyExpr or valueExpr would allocate locals
+    // at the wrong stack position (same Bug #3 root cause).
+    expr.keyExpr->accept(*this);              // push key (untracked)
+    std::string dkName = "_dk" + std::to_string(dictCompCounter++);
+    addLocal(dkName);                         // now tracked
+
+    expr.valueExpr->accept(*this);            // push value (untracked)
+    std::string dvName = "_dv" + std::to_string(dictCompCounter++);
+    addLocal(dvName);                         // now tracked
+
+    emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 1);  // consume _dv, _dk → {key: value}
+    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));       // consume _dx, {pair} → merge
+    emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+              static_cast<uint8_t>(resultSlot));          // update _dcN
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));       // discard merge result
+    // Remove _dv, _dk, _dx from tracking (OP_DICT + OP_ADD consumed their values).
+    assert(!locals.empty() && locals.back().name == dvName);
+    scopeLocalCounts.back()--;
+    locals.pop_back();  // _dv
+    assert(!locals.empty() && locals.back().name == dkName);
+    scopeLocalCounts.back()--;
+    locals.pop_back();  // _dk
+    assert(!locals.empty() && locals.back().name == dxName);
+    scopeLocalCounts.back()--;
+    locals.pop_back();  // _dx
+
+    // After append, skip over the condition-pop (only needed for false path)
+    if (expr.condition) {
+        skipConditionPopJump = emitJump(OpCode::OP_JUMP);
+        patchJump(skipAppendJump);             // false lands here
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));   // pop condition (false)
+        patchJump(skipConditionPopJump);       // true lands here (after skipping pop)
+    }
+
+    // ── Step 7: End body scope (pops loop variable) ──
+    endScope();
+
+    // ── Step 8: Increment _i ──
+    loopStack.back().continueTarget = chunk.code.size();
+
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(iSlot));
+    emitConstant(1.0);
+    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+              static_cast<uint8_t>(iSlot));
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+    // ── Step 9: Loop back ──
+    emitLoop(loopStart);
+
+    // Patch exit jump
+    patchJump(exitJump);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+    // Patch continue jumps
+    for (size_t jumpOffset : loopStack.back().continueJumps) {
+        size_t target = loopStack.back().continueTarget;
+        size_t jumpSize = target - jumpOffset - 2;
+        if (jumpSize > UINT16_MAX) jumpSize = UINT16_MAX;
+        chunk.writeAt(jumpOffset, static_cast<uint8_t>(jumpSize & 0xFF));
+        chunk.writeAt(jumpOffset + 1, static_cast<uint8_t>((jumpSize >> 8) & 0xFF));
+    }
+
+    // Save and patch break jumps
+    std::vector<size_t> savedBreakJumps = std::move(loopStack.back().breakJumps);
+    loopStack.pop_back();
+
+    // ── Step 10: End for-in scope (pops _iter, _i, _len) ──
+    endScope();
+
+    // Patch break jumps after endScope() (break already cleaned up 3 locals)
+    for (size_t jumpOffset : savedBreakJumps) {
+        patchJump(jumpOffset);
+    }
+
+    // ── Step 11: Manual wrapper cleanup (Bug #1: no OP_POPN, value stays) ──
+    int wrapperCount = scopeLocalCounts.back();
+    scopeLocalCounts.pop_back();
+    for (int i = 0; i < wrapperCount; i++) {
+        locals.pop_back();
+    }
+    scopeDepth--;
 }
 
 void Compiler::visitArrayExpr(const ArrayExpr& expr) {
@@ -562,8 +974,7 @@ void Compiler::visitThisExpr(const ThisExpr& expr) {
     } else {
         // Fall back to global (shouldn't happen in valid code)
         int slot = resolveGlobal("this");
-        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL),
-                  static_cast<uint8_t>(slot));
+        emitGetGlobal(slot);
     }
 }
 
@@ -637,8 +1048,7 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_UPVALUE),
                           static_cast<uint8_t>(upvalueIdx));
             } else {
-                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
-                          static_cast<uint8_t>(globalSlot));
+            emitSetGlobal(globalSlot);
             }
         } else {
             // Postfix: x++ → save old value (DUP), increment, store, pop new,
@@ -653,8 +1063,7 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
                 emitBytes(static_cast<uint8_t>(OpCode::OP_SET_UPVALUE),
                           static_cast<uint8_t>(upvalueIdx));
             } else {
-                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_GLOBAL),
-                          static_cast<uint8_t>(globalSlot));
+            emitSetGlobal(globalSlot);
             }
             emitByte(static_cast<uint8_t>(OpCode::OP_POP));
         }
@@ -696,6 +1105,16 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
         }
         return;
     }
+
+    // Index target: ++arr[i] / arr[i]++
+    // Full support requires stack manipulation opcodes (DUP2/SWAP).
+    // For now, report a clear error rather than silently miscompiling.
+    if (dynamic_cast<const IndexExpr*>(expr.target.get())) {
+        error("++/-- on index expressions (arr[i]) is not yet supported");
+        // Fall through: push null to keep stack balanced
+        emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+        return;
+    }
 }
 
 void Compiler::visitTernaryExpr(const TernaryExpr& expr) {
@@ -731,12 +1150,14 @@ void Compiler::visitMatchExpr(const MatchExpr& expr) {
     // 1. Compile scrutinee → value on TOS
     expr.scrutinee->accept(*this);
 
-    // Use unique global temp for scrutinee at any scope level.
-    // Static counter ensures uniqueness across all nested compilers.
-    static int globalMatchCounter = 0;
-    std::string tempName = "__m" + std::to_string(globalMatchCounter++);
+    // Use unique per-compilation-unit temp for scrutinee.
+    // Access counter from the root compiler so nested functions don't
+    // reset it and cause "__m0 already defined" conflicts.
+    Compiler* root = this;
+    while (root->enclosing) root = root->enclosing;
+    std::string tempName = "__m" + std::to_string(root->matchCounter++);
     int tempSlot = defineGlobal(tempName);
-    emitBytes(static_cast<uint8_t>(OpCode::OP_DEFINE_GLOBAL), static_cast<uint8_t>(tempSlot));
+    emitDefineGlobal(tempSlot);
 
     std::vector<size_t> endJumps;
 
@@ -758,7 +1179,7 @@ void Compiler::visitMatchExpr(const MatchExpr& expr) {
         }
 
         // Push scrutinee for comparison (stored in global temp)
-        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL), static_cast<uint8_t>(tempSlot));
+        emitGetGlobal(tempSlot);
 
         if (case_.patterns[0].kind == PatternKind::Literal) {
             emitConstant(case_.patterns[0].literal);
@@ -769,7 +1190,7 @@ void Compiler::visitMatchExpr(const MatchExpr& expr) {
             emitByte(static_cast<uint8_t>(OpCode::OP_GREATER_EQ_NN));
             size_t rangeLowFail = emitJump(OpCode::OP_JUMP_IF_FALSE);
             emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL), static_cast<uint8_t>(tempSlot));
+            emitGetGlobal(tempSlot);
             emitConstant(pat.rangeHigh);
             if (pat.rangeInclusive) {
                 emitByte(static_cast<uint8_t>(OpCode::OP_LESS_EQ_NN));
@@ -867,6 +1288,10 @@ void Compiler::visitYieldExpr(const YieldExpr& expr) {
 void Compiler::visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) {
     // Bare destructuring assignment: [a, b] = arr  or  {x, y} = obj
     // TODO: Implement full destructured assignment compilation.
+    // Currently only compiles the RHS value onto the stack; the binding
+    // pattern is not unpacked. This is a known limitation tracked as BUG-021.
+    // The `let`/`const` destructuring declarations (compileBindPattern) ARE
+    // fully implemented — only the standalone assignment form is missing.
     // For now, compile value and leave on stack.
     if (expr.value) {
         expr.value->accept(*this);
@@ -1001,11 +1426,29 @@ void Compiler::visitOptionalChainExpr(const OptionalChainExpr& expr) {
             break;
         }
         case OptionalChainExpr::Kind::CALL: {
+            // Detect spread in optional-chain call arguments.
+            bool hasSpread = false;
+            uint8_t fixedCount = 0;
             for (auto& arg : expr.arguments) {
-                arg->accept(*this);
+                if (dynamic_cast<SpreadExpr*>(arg.get())) {
+                    hasSpread = true;
+                } else {
+                    fixedCount++;
+                }
             }
-            emitBytes(static_cast<uint8_t>(OpCode::OP_CALL),
-                      static_cast<uint8_t>(expr.arguments.size()));
+            if (!hasSpread) {
+                for (auto& arg : expr.arguments) {
+                    arg->accept(*this);
+                }
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL),
+                          static_cast<uint8_t>(expr.arguments.size()));
+            } else {
+                emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_SPREAD));
+                for (auto& arg : expr.arguments) {
+                    arg->accept(*this);
+                }
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL_N), fixedCount);
+            }
             break;
         }
         case OptionalChainExpr::Kind::INDEX: {

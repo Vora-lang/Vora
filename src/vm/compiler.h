@@ -121,6 +121,9 @@ public:
                                     const Expr* initializer, bool isConst);
     void compileBindPattern(const BindingPattern& pattern,
                             int sourceSlot, bool isConst);
+    void visitSpreadExpr(const SpreadExpr& expr) override;
+    void visitListCompExpr(const ListCompExpr& expr) override;
+    void visitDictCompExpr(const DictCompExpr& expr) override;
     void visitOptionalChainExpr(const OptionalChainExpr& expr) override;
     void visitErrorExpr(const ErrorExpr& expr) override;
 
@@ -213,6 +216,9 @@ private:
     std::vector<int> scopeLocalCounts;  // #locals added per scope (parallel to scopes)
 
     int destructureTempCounter = 0;  // counter for unique temp names in destructuring
+    int listCompCounter = 0;        // counter for unique _lcN result-array names
+    int dictCompCounter = 0;        // counter for unique _dcN result-dict names
+    int matchCounter = 0;           // counter for unique __mN scrutinee names
 
     void beginScope();
     void endScope();
@@ -230,7 +236,8 @@ private:
         std::vector<size_t> breakJumps;     // OP_JUMP placeholders to patch (break)
         std::vector<size_t> continueJumps;  // OP_JUMP placeholders to patch (continue)
         int enclosingScopeDepth;            // scope depth at loop entry
-        int extraLocalsToPop = 0;           // for-in: auto-generated locals to pop on break
+        int extraLocalsToPopOnBreak = 0;    // auto-generated locals to pop on break
+        int extraLocalsToPopOnContinue = 0; // auto-generated locals to pop on continue
     };
     std::vector<LoopContext> loopStack;
 
@@ -279,6 +286,10 @@ private:
     // =========================================================================
     void emitByte(uint8_t byte);
     void emitBytes(uint8_t a, uint8_t b);
+    void emitShort(uint16_t value);   // emit 2-byte little-endian value
+    void emitGetGlobal(int slot);      // emits OP_GET_GLOBAL[_WIDE] based on slot
+    void emitSetGlobal(int slot);      // emits OP_SET_GLOBAL[_WIDE] based on slot
+    void emitDefineGlobal(int slot);   // emits OP_DEFINE_GLOBAL[_WIDE] based on slot
     void emitConstant(Value value);
     size_t emitJump(OpCode instruction);
     void patchJump(size_t operandOffset);

@@ -1,0 +1,31 @@
+// interpreter/test_tostring.va — toString() builtin tests (TEST-009)
+// Run: vora tests/interpreter/test_tostring.va
+
+print("=== toString() Tests ===")
+
+// Primitive types
+assert(toString(null) == "null", "toString(null)")
+assert(toString(true) == "true", "toString(true)")
+assert(toString(false) == "false", "toString(false)")
+assert(toString(42) == "42", "toString(int)")
+assert(toString(-1) == "-1", "toString(negative int)")
+assert(toString(0) == "0", "toString(zero)")
+
+// toString(float) — may include trailing zeros
+let sf = toString(3.14)
+assert(sf.startsWith("3.14"), "toString(float)")
+
+assert(toString("hello") == "hello", "toString(string)")
+
+// Array
+let arr = [1, 2, 3]
+let sa = toString(arr)
+assert(sa.startsWith("["), "toString(array) brackets")
+assert(sa.length > 0, "toString(array) non-empty")
+
+// Dict
+let d = {"a": 1}
+let sd = toString(d)
+assert(sd.length > 0, "toString(dict) non-empty")
+
+print("toString() tests: PASS")

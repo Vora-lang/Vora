@@ -129,6 +129,10 @@ void VM::resetStack() {
 }
 
 void VM::push(Value value) {
+    if (stackTopIndex >= stack.capacity()) {
+        runtimeError("Stack overflow");
+        return;
+    }
     if (stackTopIndex < stack.size())
         stack[stackTopIndex] = std::move(value);
     else
@@ -137,6 +141,10 @@ void VM::push(Value value) {
 }
 
 Value VM::pop() {
+    if (stackTopIndex == 0) {
+        runtimeError("Stack underflow");
+        return Value(nullptr);
+    }
     return std::move(stack[--stackTopIndex]);
 }
 
@@ -177,6 +185,12 @@ void decodeLineFromChunk(const Chunk& chunk, size_t offset, int& line, int& colu
         }
         pos += runLen;
     }
+    // Fallback: if offset is beyond the RLE range (shouldn't happen in correct
+    // bytecode, but can occur with a corrupted ip), use the last known line.
+    if (line == 0 && !rleLines.empty()) {
+        line = rleLines.back();
+    }
+
     pos = 0;
     const auto& rleCols = chunk.columns;
     for (size_t i = 0; i < rleCols.size(); i += 2) {
@@ -187,11 +201,23 @@ void decodeLineFromChunk(const Chunk& chunk, size_t offset, int& line, int& colu
         }
         pos += runLen;
     }
+    if (column == 0 && !rleCols.empty()) {
+        column = rleCols.back();
+    }
 }
 
 } // anonymous namespace
 
 void VM::runtimeError(const std::string& message) {
+    if (!currentChunk || currentChunk->code.empty()) {
+        std::cerr << "RuntimeError: " << message << "\n";
+        if (!lastErrorStackTrace.empty()) {
+            std::cerr << lastErrorStackTrace;
+            lastErrorStackTrace.clear();
+        }
+        return;
+    }
+
     size_t offset = ip - currentChunk->code.data();
     int line = 0, column = 0;
     decodeLineFromChunk(*currentChunk, offset, line, column);
@@ -439,6 +465,51 @@ void VM::adoptGlobals(const std::vector<std::string>& names,
     globalIndex = index;
 }
 
+void VM::copyGlobalsFrom(const VM& source) {
+    globalNames = source.globalNames;
+    globalValues = source.globalValues;
+    globalDefined = source.globalDefined;
+    globalIndex = source.globalIndex;
+    clearDirtyGlobals();
+}
+
+void VM::clearDirtyGlobals() {
+    dirtyGlobalSlots_.clear();
+}
+
+void VM::markGlobalDirty(int slot) {
+    // Grow flags vector if needed (should be rare — only when defining new globals)
+    if (static_cast<size_t>(slot) >= globalDirtyFlags_.size()) {
+        globalDirtyFlags_.resize(slot + 1, false);
+    }
+    if (!globalDirtyFlags_[slot]) {
+        globalDirtyFlags_[slot] = true;
+        dirtyGlobalSlots_.push_back(slot);
+    }
+}
+
+void VM::mergeGlobalsTo(VM& target) const {
+    for (int slot : dirtyGlobalSlots_) {
+        if (static_cast<size_t>(slot) >= globalNames.size()) continue;
+        if (!globalDefined[slot]) continue;
+
+        const auto& name = globalNames[slot];
+        auto it = target.globalIndex.find(name);
+        if (it == target.globalIndex.end()) {
+            // New global: add to target
+            int newSlot = static_cast<int>(target.globalValues.size());
+            target.globalNames.push_back(name);
+            target.globalValues.push_back(globalValues[slot]);
+            target.globalDefined.push_back(true);
+            target.globalIndex[name] = newSlot;
+        } else {
+            // Existing: update value
+            target.globalValues[it->second] = globalValues[slot];
+            target.globalDefined[it->second] = true;
+        }
+    }
+}
+
 // =========================================================================
 // Constructor execution (used by ClassConstructor)
 // =========================================================================
@@ -535,17 +606,18 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
             return true;
         }
 
-        // Class constructor: delegate to ClassConstructor::call() which
-        // creates an instance and runs the constructor chain in a temp VM.
+        // Class constructor: uses call(VM&, args) to sync globals from
+        // the calling VM, then merge mutations back.
         if (auto ctor = dynamic_cast<ClassConstructor*>(callable.get())) {
-            // Collect arguments from stack (in reverse)
             std::vector<Value> arguments(argCount);
             for (int i = argCount - 1; i >= 0; i--) {
                 arguments[static_cast<size_t>(i)] = pop();
             }
             pop(); // pop the callable itself
 
-            Value result = ctor->call(arguments);
+            // Uses Callable::call(VM&, args) — ClassConstructor override
+            // syncs globals, runs constructors, and merges back.
+            Value result = callable->call(*this, arguments);
             push(result);
             return true;
         }
@@ -760,6 +832,12 @@ InterpretResult VM::run() {
         return InterpretResult::RUNTIME_ERROR; \
     } while (false)
 
+    // Main bytecode dispatch loop.
+    // Uses `goto dispatch` (computed-goto style) instead of `continue` to
+    // jump back to the top of the switch. This is a deliberate performance
+    // optimization: it avoids re-evaluating the outer `for (;;)` condition
+    // and lets the compiler generate a direct jump table. The `for (;;)` is
+    // only entered once; all subsequent iterations go through `goto dispatch`.
     for (;;) {
         // Check for interrupt request (e.g. Ctrl+C in REPL).
         // The flag is set by a signal handler and is safe to read
@@ -1053,10 +1131,30 @@ InterpretResult VM::run() {
                 }
                 globalValues[slot] = pop();
                 globalDefined[slot] = true;
+                markGlobalDirty(slot);
+                break;
+            }
+            case OpCode::OP_DEFINE_GLOBAL_WIDE: {
+                uint16_t slot = READ_SHORT();
+                if (slot >= globalValues.size()) {
+                    RUNTIME_ERROR_OR_THROW("OP_DEFINE_GLOBAL_WIDE: slot out of range");
+                }
+                globalValues[slot] = pop();
+                globalDefined[slot] = true;
+                markGlobalDirty(slot);
                 break;
             }
             case OpCode::OP_GET_GLOBAL: {
                 uint8_t slot = READ_BYTE();
+                if (slot >= globalValues.size() || !globalDefined[slot]) {
+                    RUNTIME_ERROR_OR_THROW("Undefined variable '" +
+                        (slot < globalNames.size() ? globalNames[slot] : std::to_string(slot)) + "'");
+                }
+                push(globalValues[slot]);
+                break;
+            }
+            case OpCode::OP_GET_GLOBAL_WIDE: {
+                uint16_t slot = READ_SHORT();
                 if (slot >= globalValues.size() || !globalDefined[slot]) {
                     RUNTIME_ERROR_OR_THROW("Undefined variable '" +
                         (slot < globalNames.size() ? globalNames[slot] : std::to_string(slot)) + "'");
@@ -1084,6 +1182,17 @@ InterpretResult VM::run() {
                         (slot < globalNames.size() ? globalNames[slot] : std::to_string(slot)) + "'");
                 }
                 globalValues[slot] = peek(0);
+                markGlobalDirty(slot);
+                break;
+            }
+            case OpCode::OP_SET_GLOBAL_WIDE: {
+                uint16_t slot = READ_SHORT();
+                if (slot >= globalValues.size() || !globalDefined[slot]) {
+                    RUNTIME_ERROR_OR_THROW("Undefined variable '" +
+                        (slot < globalNames.size() ? globalNames[slot] : std::to_string(slot)) + "'");
+                }
+                globalValues[slot] = peek(0);
+                markGlobalDirty(slot);
                 break;
             }
 
@@ -1123,6 +1232,53 @@ InterpretResult VM::run() {
                 uint8_t argCount = READ_BYTE();
                 Value callee = peek(argCount);
                 if (!callValue(callee, argCount)) {
+                    return InterpretResult::RUNTIME_ERROR;
+                }
+                break;
+            }
+            case OpCode::OP_PUSH_SPREAD: {
+                // Initialise a new per-call spread counter.
+                spreadCountStack_.push_back(0);
+                break;
+            }
+            case OpCode::OP_SPREAD: {
+                // Pop an Array from the stack, push each element individually,
+                // and accumulate the element count in the current spread counter.
+                Value top = pop();
+                if (!std::holds_alternative<GcPtr<Array>>(top)) {
+                    runtimeErrorOrThrow("Spread operand must be an array");
+                    return InterpretResult::RUNTIME_ERROR;
+                }
+                auto& elements = std::get<GcPtr<Array>>(top)->elements;
+                int count = static_cast<int>(elements.size());
+                for (auto& elem : elements) {
+                    push(elem);
+                }
+                spreadCountStack_.back() += count;
+                break;
+            }
+            case OpCode::OP_CALL_N: {
+                // Call with dynamic argument count from spread expansion.
+                // operand = fixed (non-spread) argument count.
+                // totalArgs = fixedCount + accumulated spread element count.
+                if (GcHeap::instance().needsGC()) {
+                    collectGarbage();
+                }
+                if (spreadCountStack_.empty()) {
+                    runtimeErrorOrThrow("OP_CALL_N without matching OP_PUSH_SPREAD");
+                    return InterpretResult::RUNTIME_ERROR;
+                }
+                uint8_t fixedCount = READ_BYTE();
+                int spreadCount = spreadCountStack_.back();
+                spreadCountStack_.pop_back();
+                int totalArgs = fixedCount + spreadCount;
+                if (totalArgs > 255) {
+                    runtimeErrorOrThrow("Too many arguments: " +
+                                        std::to_string(totalArgs));
+                    return InterpretResult::RUNTIME_ERROR;
+                }
+                Value callee = peek(totalArgs);
+                if (!callValue(callee, static_cast<uint8_t>(totalArgs))) {
                     return InterpretResult::RUNTIME_ERROR;
                 }
                 break;
@@ -1221,9 +1377,100 @@ InterpretResult VM::run() {
                             push(nullptr);
                         }
                     }
+                } else if (auto bound = dynamic_cast<BoundMethod*>(callable.get())) {
+                    // BoundMethod tail call: reuse the current frame, just like
+                    // the VoraFunction path above. This avoids the broken
+                    // callValue() fallback which switches execution context
+                    // (new frame, chunk, ip) before the pop/restore code runs.
+                    const FunctionPrototype* proto = bound->getMethodProto();
+                    if (!proto) {
+                        RUNTIME_ERROR_OR_THROW("Bound method has no prototype");
+                    }
+
+                    int arity = proto->arity;
+                    int requiredArity = proto->requiredArity;
+
+                    // Check arity
+                    if (argCount < static_cast<uint8_t>(requiredArity) ||
+                        argCount > static_cast<uint8_t>(arity)) {
+                        std::string expected;
+                        if (requiredArity == arity) {
+                            expected = std::to_string(arity);
+                        } else {
+                            expected = std::to_string(requiredArity) + ".." +
+                                       std::to_string(arity);
+                        }
+                        RUNTIME_ERROR_OR_THROW("Wrong arity: expected " + expected +
+                            " but got " + std::to_string(argCount));
+                    }
+
+                    // Collect arguments from the stack
+                    std::vector<Value> arguments(argCount);
+                    for (int i = argCount - 1; i >= 0; i--) {
+                        arguments[static_cast<size_t>(i)] = pop();
+                    }
+                    pop(); // pop the callee (bound method) itself
+
+                    // Close open upvalues for the current frame
+                    for (auto it = openUpvalues.begin(); it != openUpvalues.end(); ) {
+                        if (it->first >= frameBaseIndex &&
+                            it->first < frameBaseIndex + MAX_LOCALS_PER_FRAME) {
+                            it->second->close();
+                            it = openUpvalues.erase(it);
+                        } else {
+                            ++it;
+                        }
+                    }
+
+                    // Clean up catch handlers
+                    while (!catchHandlers.empty() &&
+                           catchHandlers.back().frameCount > frames.size()) {
+                        catchHandlers.pop_back();
+                    }
+
+                    // Reset exception flag
+                    exceptionInFlight = false;
+
+                    // Reuse the current frame
+                    if (!frames.empty()) {
+                        frames.back().function = bound->getMethodFunc();
+                    } else {
+                        frames.push_back({ip, frameBaseIndex, currentChunk,
+                                          bound->getMethodFunc()});
+                    }
+
+                    // Switch to method's chunk
+                    currentChunk = &proto->chunk;
+                    ip = currentChunk->code.data();
+
+                    // Replace locals: push 'this' + arguments
+                    stackTopIndex = frameBaseIndex;
+                    currentArgCount = argCount;
+
+                    // Push 'this' (bound instance) as slot 0
+                    push(bound->getInstance());
+
+                    // Push method arguments (up to arity)
+                    for (size_t i = 0; i < static_cast<size_t>(arity); i++) {
+                        if (i < arguments.size()) {
+                            push(arguments[i]);
+                        } else {
+                            push(nullptr);
+                        }
+                    }
+
+                    // Push rest parameter if method has one
+                    if (proto->hasRest) {
+                        auto restArray = GcHeap::instance().alloc<Array>();
+                        for (size_t i = arity; i < arguments.size(); i++) {
+                            restArray->elements.push_back(arguments[i]);
+                        }
+                        push(Value(GcPtr<Array>(restArray)));
+                    }
                 } else {
-                    // Non-Vora callee: fall back to regular call.
-                    // callValue pops callee+args and pushes the result.
+                    // Non-Vora callee (NativeFunction / ClassConstructor):
+                    // fall back to regular call. callValue pops callee+args
+                    // and pushes the result, without switching execution context.
                     if (!callValue(callee, argCount)) {
                         return InterpretResult::RUNTIME_ERROR;
                     }
@@ -1553,12 +1800,16 @@ InterpretResult VM::run() {
                 Value indexVal = pop();
                 Value target = pop();
 
-                // Dict: string key lookup, or numeric index for for-in iteration
+                // Dict: string key lookup, or numeric index access.
+                // NOTE: Numeric index access via std::advance is O(n) for
+                // unordered_map. The compiler-generated for-in loop uses
+                // Iterator snapshots (O(1) per step) — this path is for
+                // manual dict[i] indexing by user code.
                 if (std::holds_alternative<GcPtr<Dict>>(target)) {
                     const auto& dpairs =
                         std::get<GcPtr<Dict>>(target)->pairs;
                     if (isNumeric(indexVal)) {
-                        // Numeric index: return Nth key (for for-in iteration)
+                        // Numeric index: return Nth key
                         size_t idx = static_cast<size_t>(toDouble(indexVal));
                         if (idx >= dpairs.size()) {
                             RUNTIME_ERROR_OR_THROW("Index out of bounds");
@@ -1954,9 +2205,9 @@ InterpretResult VM::run() {
                     cd->ctorProto.get());
 
                 // Create ClassConstructor — the clean, dedicated constructor callable.
+                // Globals are synced at call time via callInVM(), not snapshotted here.
                 auto ctorCallable = GcHeap::instance().alloc<ClassConstructor>(
-                    cd, ctorFn,
-                    globalNames, globalValues, globalDefined, globalIndex);
+                    cd, ctorFn);
 
                 push(ctorCallable);
                 break;
@@ -2073,6 +2324,9 @@ InterpretResult VM::run() {
     }
 
 #undef READ_BYTE
+#undef READ_SHORT
+#undef READ_LONG_CONSTANT
+#undef RUNTIME_ERROR_OR_THROW
 #undef READ_CONSTANT
     } catch (const std::runtime_error& e) {
         runtimeError(e.what());

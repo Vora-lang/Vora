@@ -41,6 +41,12 @@ class VM {
     std::vector<Value> globalValues;
     std::vector<bool> globalDefined;
     std::unordered_map<std::string, int> globalIndex;
+    // Track which global slots were modified since last clearDirtyGlobals().
+    // Used by mergeGlobalsTo() to iterate only dirty slots instead of O(n).
+    std::vector<int> dirtyGlobalSlots_;
+    std::vector<bool> globalDirtyFlags_;   // parallel to globalValues, grows on demand
+    void markGlobalDirty(int slot);
+    void clearDirtyGlobals();
     // Catch handler stack: { targetIp, targetFrameBase, targetSlot, chunk, frameCount }
     struct CatchHandler {
         const uint8_t* targetIp;
@@ -50,6 +56,12 @@ class VM {
         size_t frameCount;         // frames.size() when handler was registered
     };
     std::vector<CatchHandler> catchHandlers;
+
+    // Per-call spread element counters. Each OP_PUSH_SPREAD pushes 0 onto
+    // this stack; OP_SPREAD increments the back entry; OP_CALL_N pops it.
+    // A stack (not a single int) is needed to correctly handle nested calls
+    // like f(...g(...a)) where inner and outer spreads overlap.
+    std::vector<int> spreadCountStack_;
 
     // Number of arguments actually passed to the current function call.
     // Used by OP_DEFAULT_PARAM to determine whether a default value should
@@ -103,6 +115,13 @@ public:
                       const std::vector<Value>& values,
                       const std::vector<bool>& defined,
                       const std::unordered_map<std::string, int>& index);
+
+    // Copy globals from another VM (current snapshot, not stale).
+    void copyGlobalsFrom(const VM& source);
+
+    // Merge global mutations back to another VM. New definitions and
+    // value updates in this VM are propagated to the target.
+    void mergeGlobalsTo(VM& target) const;
 
     // Signal the VM to interrupt execution at the next safe point.
     // Thread-safe: may be called from a signal handler.

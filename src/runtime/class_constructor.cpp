@@ -9,27 +9,30 @@ namespace vora {
 
 ClassConstructor::ClassConstructor(
     GcPtr<ClassDefinition> classDef,
-    GcPtr<VoraFunction> ctorFn,
-    std::vector<std::string> globalNames,
-    std::vector<Value> globalValues,
-    std::vector<bool> globalDefined,
-    std::unordered_map<std::string, int> globalIndex)
+    GcPtr<VoraFunction> ctorFn)
     : classDef_(std::move(classDef)),
-      ctorFn_(std::move(ctorFn)),
-      globalNames_(std::move(globalNames)),
-      globalValues_(std::move(globalValues)),
-      globalDefined_(std::move(globalDefined)),
-      globalIndex_(std::move(globalIndex)) {
+      ctorFn_(std::move(ctorFn)) {
 }
 
 Value ClassConstructor::call(const std::vector<Value>& args) {
+    // Fallback path for direct calls (not through callValue).
+    // Create a minimal temp VM so constructors still run and the
+    // instance is properly initialized. Global mutations are discarded
+    // (no parent VM to merge into), which is the best we can do
+    // without a calling VM reference.
+    VM tempVm;
+    return call(tempVm, args);
+}
+
+Value ClassConstructor::call(VM& vm, const std::vector<Value>& args) {
     auto instance = GcHeap::instance().alloc<ObjectInstance>();
     instance->className = classDef_->name;
     instance->classDefinition = classDef_;
 
-    // Single temporary VM reused for all constructor runs.
+    // Single temporary VM for all constructor runs.
+    // Copy CURRENT globals from the calling VM (not a stale snapshot).
     VM tempVm;
-    tempVm.adoptGlobals(globalNames_, globalValues_, globalDefined_, globalIndex_);
+    tempVm.copyGlobalsFrom(vm);
 
     // Run parent constructors in reverse MRO order (most-base first, excluding self).
     // MRO is [self, P1, P2, ..., base]. Reverse → [base, ..., P2, P1].
@@ -45,6 +48,9 @@ Value ClassConstructor::call(const std::vector<Value>& args) {
     if (ctorFn_->getPrototype()) {
         tempVm.runConstructor(*ctorFn_->getPrototype(), instance, args);
     }
+
+    // Propagate any global mutations back to the calling VM.
+    tempVm.mergeGlobalsTo(vm);
 
     return instance;
 }

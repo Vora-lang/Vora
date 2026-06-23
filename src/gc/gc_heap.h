@@ -12,6 +12,9 @@ namespace vora {
 
 // =========================================================================
 // GcHeap — singleton mark-sweep garbage collector.
+// Single-threaded by design: the VM runs on one thread. If multi-threading
+// is added in the future, this singleton will need synchronization (mutex
+// around allocations and GC cycles) or a per-thread heap model.
 // =========================================================================
 
 class GcHeap {

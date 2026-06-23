@@ -1,0 +1,43 @@
+// parser/test_statements_ext.va — Extended statement parsing tests (TEST-013)
+// Run: vora tests/parser/test_statements_ext.va
+
+print("=== Parser: Extended Statement Tests ===")
+
+// --- Do-while ---
+let i = 0
+do {
+    i = i + 1
+} while (i < 3)
+assert(i == 3, "do-while executes body then checks")
+
+// Do-while runs at least once
+let j = 0
+do {
+    j = 10
+} while (false)
+assert(j == 10, "do-while runs once even with false condition")
+
+// --- Const ---
+const PI = 3.14159
+assert(PI == 3.14159, "const declaration")
+
+// --- Generator / yield ---
+func gen1() {
+    yield 1
+    yield 2
+}
+let g1 = gen1()
+assert(next(g1) == 1, "generator yield 1")
+assert(next(g1) == 2, "generator yield 2")
+
+// --- Defer (using accumulator pattern) ---
+func deferTest() {
+    let result = ""
+    defer result = result + "2"
+    defer result = result + "1"
+    return result
+}
+let dr = deferTest()
+assert(dr == "12", "defer LIFO order")
+
+print("Parser extended statement tests: PASS")

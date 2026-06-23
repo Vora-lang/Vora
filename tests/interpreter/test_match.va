@@ -1,0 +1,40 @@
+// interpreter/test_match.va — match expression tests (TEST-004)
+// Run: vora tests/interpreter/test_match.va
+
+print("=== Match Expression ===")
+
+// Basic literal matching
+let r1 = match 1 { 1 => "one", 2 => "two", _ => "other" }
+assert(r1 == "one", "match literal")
+
+let r2 = match 3 { 1 => "one", 2 => "two", _ => "other" }
+assert(r2 == "other", "match wildcard")
+
+// Matching strings
+let r3 = match "hello" {
+    "hello" => "greeting",
+    "bye" => "farewell",
+    _ => "unknown"
+}
+assert(r3 == "greeting", "match string")
+
+// Match with expressions in arms
+let r4 = match 5 { 5 => 5 * 2, _ => 0 }
+assert(r4 == 10, "match expression arm")
+
+// Range patterns (inclusive)
+let r5 = match 5 { 1..=3 => "low", 4..=6 => "mid", _ => "high" }
+assert(r5 == "mid", "range inclusive")
+
+// Range exclusive
+let r6 = match 3 { 1..5 => "low", _ => "high" }
+assert(r6 == "low", "range exclusive")
+
+let r7 = match 5 { 1..5 => "low", _ => "high" }
+assert(r7 == "high", "range exclusive boundary")
+
+// Match returning number
+let r8 = match 3 { 1 => 10, 2 => 20, 3 => 30, _ => 0 }
+assert(r8 == 30, "numeric result")
+
+print("Match expression tests: PASS")

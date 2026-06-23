@@ -35,6 +35,8 @@ const std::string& VoraFunction::name() const {
 void VoraFunction::trace(std::vector<GcObject*>& wl) {
     // Trace the prototype so it doesn't get collected while
     // this VoraFunction is reachable (via generators, closures, etc.)
+    // const_cast is safe here: GC tracing only reads the object to find
+    // further GcObject references — it never mutates the traced object.
     if (prototype_) wl.push_back(const_cast<FunctionPrototype*>(prototype_));
 }
 

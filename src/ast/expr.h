@@ -519,6 +519,89 @@ public:
     std::unique_ptr<Expr> value;
 };
 
+// SpreadExpr — call-site spread ...expr.
+// Wraps an expression that should be expanded into individual arguments at a call site.
+// Only valid inside CallExpr arguments; appearing elsewhere is a semantic error.
+// f(...arr) → compile arr, then OP_SPREAD to push each element individually.
+class SpreadExpr : public Expr {
+public:
+    SpreadExpr(std::unique_ptr<Expr> expr, Token dotDotDot)
+        : expr(std::move(expr)), dotDotDot(std::move(dotDotDot)) {}
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::unique_ptr<Expr> expr;
+    Token dotDotDot;  // for source position tracking
+};
+
+// ListCompExpr — list comprehension: [expr for var in iterable if cond]
+// Evaluates to a new Array. Desugared by the compiler into a for-in loop
+// that appends to a result array (via OP_ADD array concatenation).
+// condition is nullptr when no `if` guard is present.
+class ListCompExpr : public Expr {
+public:
+    ListCompExpr(
+        std::unique_ptr<Expr> resultExpr,
+        std::string variable,
+        std::unique_ptr<Expr> iterable,
+        std::unique_ptr<Expr> condition,
+        Token leftBracket
+    )
+        : resultExpr(std::move(resultExpr)),
+          variable(std::move(variable)),
+          iterable(std::move(iterable)),
+          condition(std::move(condition)),
+          leftBracket(std::move(leftBracket)) {}
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::unique_ptr<Expr> resultExpr;
+    std::string variable;
+    std::unique_ptr<Expr> iterable;
+    std::unique_ptr<Expr> condition;   // nullptr if no `if` guard
+    Token leftBracket;
+};
+
+// DictCompExpr — dict comprehension: {key: val for var in iterable if cond}
+// Evaluates to a new Dict. Desugared by the compiler into a for-in loop
+// that merges one-pair dicts (via OP_DICT 1 + OP_ADD merge).
+// condition is nullptr when no `if` guard is present.
+class DictCompExpr : public Expr {
+public:
+    DictCompExpr(
+        std::unique_ptr<Expr> keyExpr,
+        std::unique_ptr<Expr> valueExpr,
+        std::string variable,
+        std::unique_ptr<Expr> iterable,
+        std::unique_ptr<Expr> condition,
+        Token leftBrace
+    )
+        : keyExpr(std::move(keyExpr)),
+          valueExpr(std::move(valueExpr)),
+          variable(std::move(variable)),
+          iterable(std::move(iterable)),
+          condition(std::move(condition)),
+          leftBrace(std::move(leftBrace)) {}
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::unique_ptr<Expr> keyExpr;
+    std::unique_ptr<Expr> valueExpr;
+    std::string variable;
+    std::unique_ptr<Expr> iterable;
+    std::unique_ptr<Expr> condition;   // nullptr if no `if` guard
+    Token leftBrace;
+};
+
 // ErrorExpr — placeholder for a parse error in expression context.
 // Used by error-tolerant parsing to retain partial AST structure.
 // Has no meaningful value; visitors that execute code should treat it as null.

@@ -1,0 +1,23 @@
+// interpreter/test_interpolation.va — String interpolation tests (TEST-002)
+// Run: vora tests/interpreter/test_interpolation.va
+
+print("=== String Interpolation ===")
+
+let name = "World"
+let g = "Hello, ${name}!"
+assert(g == "Hello, World!", "basic interpolation")
+
+let x = 42
+let s = "Answer: ${x}"
+assert(s == "Answer: 42", "int interpolation")
+
+let pi = 3.14
+let f = "Pi = ${pi}"
+assert(f.startsWith("Pi = 3.14"), "float interpolation")
+
+// Simple expression interpolation
+let y = 6
+let e = "value: ${y}"
+assert(e == "value: 6", "simple expr interpolation")
+
+print("String interpolation tests: PASS")

@@ -245,6 +245,9 @@ public:
     void visitFuncExpr(const FuncExpr& expr) override;
     void visitYieldExpr(const YieldExpr& expr) override;
     void visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) override;
+    void visitSpreadExpr(const SpreadExpr& expr) override;
+    void visitListCompExpr(const ListCompExpr& expr) override;
+    void visitDictCompExpr(const DictCompExpr& expr) override;
     void visitOptionalChainExpr(const OptionalChainExpr& expr) override;
     void visitErrorExpr(const ErrorExpr& expr) override;
 

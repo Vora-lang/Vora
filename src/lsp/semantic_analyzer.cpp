@@ -843,6 +843,46 @@ void SemanticAnalyzer::visitDestructureAssignmentExpr(const DestructureAssignmen
     }
 }
 
+void SemanticAnalyzer::visitSpreadExpr(const SpreadExpr& expr) {
+    if (expr.expr) visitExpr(*expr.expr);
+}
+
+void SemanticAnalyzer::visitListCompExpr(const ListCompExpr& expr) {
+    // Push a scope for the loop variable
+    bool prev = pushScope();
+
+    // Register the loop variable
+    SymbolInfo forVar;
+    forVar.name = expr.variable;
+    forVar.kind = SymbolKind::ForVar;
+    forVar.declToken = expr.leftBracket;
+    addDecl(forVar);
+
+    // Visit inner expressions
+    if (expr.iterable) visitExpr(*expr.iterable);
+    if (expr.condition) visitExpr(*expr.condition);
+    if (expr.resultExpr) visitExpr(*expr.resultExpr);
+
+    popScope();
+}
+
+void SemanticAnalyzer::visitDictCompExpr(const DictCompExpr& expr) {
+    bool prev = pushScope();
+
+    SymbolInfo forVar;
+    forVar.name = expr.variable;
+    forVar.kind = SymbolKind::ForVar;
+    forVar.declToken = expr.leftBrace;
+    addDecl(forVar);
+
+    if (expr.iterable) visitExpr(*expr.iterable);
+    if (expr.condition) visitExpr(*expr.condition);
+    if (expr.keyExpr) visitExpr(*expr.keyExpr);
+    if (expr.valueExpr) visitExpr(*expr.valueExpr);
+
+    popScope();
+}
+
 void SemanticAnalyzer::visitOptionalChainExpr(const OptionalChainExpr& expr) {
     if (expr.object) visitExpr(*expr.object);
     if (expr.kind == OptionalChainExpr::Kind::INDEX && expr.index) {

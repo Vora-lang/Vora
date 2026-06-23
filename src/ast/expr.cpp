@@ -506,6 +506,79 @@ std::unique_ptr<Expr> DestructureAssignmentExpr::clone() const {
 }
 
 // =========================================================================
+// ListCompExpr
+// =========================================================================
+
+Value ListCompExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitListCompExpr(*this);
+}
+
+void ListCompExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitListCompExpr(*this);
+}
+
+std::string ListCompExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitListCompExpr(*this);
+}
+
+std::unique_ptr<Expr> ListCompExpr::clone() const {
+    return std::make_unique<ListCompExpr>(
+        resultExpr->clone(),
+        variable,
+        iterable->clone(),
+        condition ? condition->clone() : nullptr,
+        leftBracket
+    );
+}
+
+// =========================================================================
+// DictCompExpr
+// =========================================================================
+
+Value DictCompExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitDictCompExpr(*this);
+}
+
+void DictCompExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitDictCompExpr(*this);
+}
+
+std::string DictCompExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitDictCompExpr(*this);
+}
+
+std::unique_ptr<Expr> DictCompExpr::clone() const {
+    return std::make_unique<DictCompExpr>(
+        keyExpr->clone(),
+        valueExpr->clone(),
+        variable,
+        iterable->clone(),
+        condition ? condition->clone() : nullptr,
+        leftBrace
+    );
+}
+
+// =========================================================================
+// SpreadExpr
+// =========================================================================
+
+Value SpreadExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitSpreadExpr(*this);
+}
+
+void SpreadExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitSpreadExpr(*this);
+}
+
+std::string SpreadExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitSpreadExpr(*this);
+}
+
+std::unique_ptr<Expr> SpreadExpr::clone() const {
+    return std::make_unique<SpreadExpr>(expr->clone(), dotDotDot);
+}
+
+// =========================================================================
 // ErrorExpr
 // =========================================================================
 

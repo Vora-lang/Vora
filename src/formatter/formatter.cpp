@@ -553,6 +553,35 @@ std::string SourceFormatter::visitDestructureAssignmentExpr(const DestructureAss
     return result;
 }
 
+std::string SourceFormatter::visitSpreadExpr(const SpreadExpr& expr) {
+    return "..." + formatExpr(*expr.expr, PREC_CALL);
+}
+
+std::string SourceFormatter::visitListCompExpr(const ListCompExpr& expr) {
+    std::stringstream ss;
+    ss << "[" << formatExpr(*expr.resultExpr, 0);
+    ss << " for " << expr.variable << " in ";
+    ss << formatExpr(*expr.iterable, 0);
+    if (expr.condition) {
+        ss << " if " << formatExpr(*expr.condition, 0);
+    }
+    ss << "]";
+    return ss.str();
+}
+
+std::string SourceFormatter::visitDictCompExpr(const DictCompExpr& expr) {
+    std::stringstream ss;
+    ss << "{" << formatExpr(*expr.keyExpr, 0);
+    ss << ": " << formatExpr(*expr.valueExpr, 0);
+    ss << " for " << expr.variable << " in ";
+    ss << formatExpr(*expr.iterable, 0);
+    if (expr.condition) {
+        ss << " if " << formatExpr(*expr.condition, 0);
+    }
+    ss << "}";
+    return ss.str();
+}
+
 std::string SourceFormatter::visitOptionalChainExpr(const OptionalChainExpr& expr) {
     std::stringstream ss;
     ss << formatExpr(*expr.object, PREC_CALL);

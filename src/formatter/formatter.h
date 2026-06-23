@@ -99,6 +99,9 @@ private:
     std::string visitFuncExpr(const FuncExpr& expr) override;
     std::string visitYieldExpr(const YieldExpr& expr) override;
     std::string visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) override;
+    std::string visitSpreadExpr(const SpreadExpr& expr) override;
+    std::string visitListCompExpr(const ListCompExpr& expr) override;
+    std::string visitDictCompExpr(const DictCompExpr& expr) override;
     std::string visitOptionalChainExpr(const OptionalChainExpr& expr) override;
     std::string visitErrorExpr(const ErrorExpr& expr) override;
 

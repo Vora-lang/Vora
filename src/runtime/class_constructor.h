@@ -4,7 +4,6 @@
 #include "../gc/gc_ptr.h"
 
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace vora {
@@ -12,25 +11,29 @@ namespace vora {
 class VoraFunction;
 struct FunctionPrototype;
 struct ClassDefinition;
+class VM;
 
 // ClassConstructor — a callable that creates instances of a class.
-// Stores the class definition, the compiled constructor function, and
-// a snapshot of global state (for running parent constructors in a
-// temporary VM).
+// Stores the class definition and the compiled constructor function.
 //
-// Created by OP_CLASS at runtime.
+// Created by OP_CLASS at runtime. Constructor execution uses a temporary
+// VM that syncs globals from the calling VM at call time (no stale snapshot),
+// and merges mutations back afterward.
 class ClassConstructor : public Callable {
 public:
     ClassConstructor(GcPtr<ClassDefinition> classDef,
-                     GcPtr<VoraFunction> ctorFn,
-                     std::vector<std::string> globalNames,
-                     std::vector<Value> globalValues,
-                     std::vector<bool> globalDefined,
-                     std::unordered_map<std::string, int> globalIndex);
+                     GcPtr<VoraFunction> ctorFn);
 
+    // Legacy path: creates a minimal temp VM to run constructors.
+    // Prefer call(VM&, args) which has access to the real VM's globals.
     Value call(const std::vector<Value>& arguments) override;
 
+    // Primary path used by callValue(): runs constructors in a temp VM
+    // with globals synced from the calling VM, then merges mutations back.
+    Value call(VM& vm, const std::vector<Value>& args) override;
+
     GcPtr<ClassDefinition> getClassDef() const override { return classDef_; }
+    GcPtr<VoraFunction> getCtorFn() const { return ctorFn_; }
 
     void trace(std::vector<GcObject*>& wl) override;
     size_t gcSize() const override;
@@ -38,14 +41,6 @@ public:
 private:
     GcPtr<ClassDefinition> classDef_;
     GcPtr<VoraFunction> ctorFn_;
-
-    // Globals snapshot — needed by the temporary VM that runs parent
-    // and own constructors. This ensures the constructor can access
-    // global variables even when called from a different context.
-    std::vector<std::string> globalNames_;
-    std::vector<Value> globalValues_;
-    std::vector<bool> globalDefined_;
-    std::unordered_map<std::string, int> globalIndex_;
 };
 
 } // namespace vora

@@ -84,7 +84,13 @@ struct ObjectInstance : GcObject {
     GcPtr<ClassDefinition> classDefinition;
 
     void trace(std::vector<GcObject*>& wl) override;
-    size_t gcSize() const override { return sizeof(ObjectInstance); }
+    size_t gcSize() const override {
+        size_t sz = sizeof(ObjectInstance) + className.capacity();
+        for (const auto& [key, val] : properties) {
+            sz += key.capacity() + sizeof(Value);
+        }
+        return sz;
+    }
 };
 
 // Iterator — created by iter(), advanced by next().

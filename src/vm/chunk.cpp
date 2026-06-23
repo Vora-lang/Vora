@@ -47,6 +47,9 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_GET_GLOBAL:      return "OP_GET_GLOBAL";
         case OpCode::OP_SET_GLOBAL:      return "OP_SET_GLOBAL";
         case OpCode::OP_GET_GLOBAL_SAFE: return "OP_GET_GLOBAL_SAFE";
+        case OpCode::OP_DEFINE_GLOBAL_WIDE: return "OP_DEFINE_GLOBAL_WIDE";
+        case OpCode::OP_GET_GLOBAL_WIDE:    return "OP_GET_GLOBAL_WIDE";
+        case OpCode::OP_SET_GLOBAL_WIDE:    return "OP_SET_GLOBAL_WIDE";
         case OpCode::OP_JUMP:           return "OP_JUMP";
         case OpCode::OP_JUMP_IF_FALSE:  return "OP_JUMP_IF_FALSE";
         case OpCode::OP_LOOP:           return "OP_LOOP";
@@ -55,6 +58,9 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_CLOSURE:        return "OP_CLOSURE";
         case OpCode::OP_RETURN:         return "OP_RETURN";
         case OpCode::OP_YIELD:          return "OP_YIELD";
+        case OpCode::OP_PUSH_SPREAD:   return "OP_PUSH_SPREAD";
+        case OpCode::OP_SPREAD:        return "OP_SPREAD";
+        case OpCode::OP_CALL_N:        return "OP_CALL_N";
         case OpCode::OP_ARRAY:          return "OP_ARRAY";
         case OpCode::OP_DICT:           return "OP_DICT";
         case OpCode::OP_INDEX:          return "OP_INDEX";
@@ -312,6 +318,14 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             std::printf("%-16s slot %d\n", opcodeName(instruction), slot);
             return offset + 2;
         }
+        case OpCode::OP_DEFINE_GLOBAL_WIDE:
+        case OpCode::OP_GET_GLOBAL_WIDE:
+        case OpCode::OP_SET_GLOBAL_WIDE: {
+            uint16_t slot = static_cast<uint16_t>(code[offset + 1]) |
+                           (static_cast<uint16_t>(code[offset + 2]) << 8);
+            std::printf("%-16s slot %d\n", opcodeName(instruction), slot);
+            return offset + 3;
+        }
         case OpCode::OP_GET_PROPERTY:
         case OpCode::OP_SET_PROPERTY:
         case OpCode::OP_GET_SUPER: {
@@ -359,6 +373,7 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
         }
         case OpCode::OP_CALL:
         case OpCode::OP_TAIL_CALL:
+        case OpCode::OP_CALL_N:
         case OpCode::OP_ARRAY:
         case OpCode::OP_DICT: {
             uint8_t val = code[offset + 1];
