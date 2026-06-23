@@ -354,7 +354,7 @@ public:
 
 **Vora 用法**：`let x = 10`、`let x:int = 42`、`let y:float = 3.14`
 
-类型标注（`:int`/`:float`）当前仅作文档用途，运行时不强制校验。
+类型标注（`:int`/`:float`/`:bool`/`:str`/`:string`）在运行时会自动进行类型转换。
 
 ### BlockStmt — 代码块
 

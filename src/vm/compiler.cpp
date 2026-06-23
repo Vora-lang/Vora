@@ -57,6 +57,25 @@ void Compiler::emitDefineGlobal(int slot) {
     }
 }
 
+void Compiler::emitConvert(const std::string& typeAnnotation) {
+    // Map type annotation string to OP_CONVERT type tag.
+    // Supported annotations: float, int, bool, str, string
+    uint8_t tag;
+    if (typeAnnotation == "float") {
+        tag = 0;
+    } else if (typeAnnotation == "int") {
+        tag = 1;
+    } else if (typeAnnotation == "bool") {
+        tag = 2;
+    } else if (typeAnnotation == "str" || typeAnnotation == "string") {
+        tag = 3;
+    } else {
+        // Unknown type annotation — no conversion emitted.
+        return;
+    }
+    emitBytes(static_cast<uint8_t>(OpCode::OP_CONVERT), tag);
+}
+
 void Compiler::emitConstant(Value value) {
     chunk.writeConstant(value, currentLine, currentColumn);
 }

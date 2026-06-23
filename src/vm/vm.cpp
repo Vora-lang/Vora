@@ -966,6 +966,48 @@ InterpretResult VM::run() {
                 push(!isTruthy(pop()));
                 break;
             }
+            case OpCode::OP_CONVERT: {
+                // Convert top of stack to the annotated type.
+                // Operand: uint8_t type tag — 0=float, 1=int, 2=bool, 3=string
+                uint8_t typeTag = READ_BYTE();
+                Value v = pop();
+                switch (typeTag) {
+                    case 0: { // float
+                        if (std::holds_alternative<int64_t>(v))
+                            push(static_cast<double>(std::get<int64_t>(v)));
+                        else if (std::holds_alternative<double>(v))
+                            push(v);
+                        else if (std::holds_alternative<bool>(v))
+                            push(std::get<bool>(v) ? 1.0 : 0.0);
+                        else
+                            push(0.0);
+                        break;
+                    }
+                    case 1: { // int
+                        if (std::holds_alternative<int64_t>(v))
+                            push(v);
+                        else if (std::holds_alternative<double>(v))
+                            push(static_cast<int64_t>(std::trunc(std::get<double>(v))));
+                        else if (std::holds_alternative<bool>(v))
+                            push(std::get<bool>(v) ? static_cast<int64_t>(1) : static_cast<int64_t>(0));
+                        else
+                            push(static_cast<int64_t>(0));
+                        break;
+                    }
+                    case 2: { // bool
+                        push(isTruthy(v));
+                        break;
+                    }
+                    case 3: { // string
+                        push(GcHeap::instance().alloc<GcString>(valueToString(v)));
+                        break;
+                    }
+                    default:
+                        push(v);  // unknown tag — no conversion
+                        break;
+                }
+                break;
+            }
 
             // --- Arithmetic ---
             case OpCode::OP_ADD: {

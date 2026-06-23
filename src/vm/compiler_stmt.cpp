@@ -17,6 +17,7 @@ void Compiler::visitLetStmt(const LetStmt& stmt) {
     // Destructured binding: let [a, b] = expr  or  let {x, y} = expr
     if (stmt.binding) {
         compileDestructuredBinding(*stmt.binding, stmt.initializer.get(), stmt.isConst);
+        // TODO: apply typeAnnotation conversion to destructured bindings
         return;
     }
 
@@ -30,6 +31,11 @@ void Compiler::visitLetStmt(const LetStmt& stmt) {
             return;
         }
         emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+    }
+
+    // Apply type annotation conversion (let x:float = 1 → converts 1 to 1.0)
+    if (!stmt.typeAnnotation.empty()) {
+        emitConvert(stmt.typeAnnotation);
     }
 
     if (scopeDepth == 0) {

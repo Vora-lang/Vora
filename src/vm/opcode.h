@@ -110,6 +110,9 @@ enum class OpCode : uint8_t {
     OP_DEFINE_GLOBAL_WIDE,  // define global var (operand: uint16_t slot, LE)
     OP_GET_GLOBAL_WIDE,     // push global var (operand: uint16_t slot, LE)
     OP_SET_GLOBAL_WIDE,     // set global var, leave value on stack (operand: uint16_t slot, LE)
+
+    // Type conversion for annotated declarations (let x:float = ...)
+    OP_CONVERT,     // convert top of stack to type (operand: uint8_t type tag)
 };
 
 } // namespace vora

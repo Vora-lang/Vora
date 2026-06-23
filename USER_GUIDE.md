@@ -105,6 +105,20 @@ let x = 10          // 可变绑定
 const y = 42        // 不可变绑定，声明时必须初始化
 ```
 
+### 类型标注
+
+变量声明支持可选的类型标注（`:float`、`:int`、`:bool`、`:str` / `:string`）。标注后会**自动进行运行时类型转换**：
+
+```vora
+let a:float = 1         // 1.0 — int → float
+let b:int = 3.14        // 3   — float → int（截断）
+let c:bool = 1          // true
+let d:str = 42          // "42"
+const PI:float = 3      // 3.0 — const 同样支持
+```
+
+> `:str` 和 `:string` 等效。值通过 `valueToString()` 转换为字符串，与 `print()` 使用的转换逻辑一致。
+
 ### 赋值
 
 ```vora

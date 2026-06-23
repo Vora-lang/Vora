@@ -77,6 +77,7 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_FINALLY_END:    return "OP_FINALLY_END";
         case OpCode::OP_JUMP_IF_NULL:   return "OP_JUMP_IF_NULL";
         case OpCode::OP_IMPORT:         return "OP_IMPORT";
+        case OpCode::OP_CONVERT:       return "OP_CONVERT";
     }
     return "OP_UNKNOWN";
 }
@@ -411,6 +412,13 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             std::printf("%-16s %4d -> %zu\n", opcodeName(instruction),
                        loopOffset, offset + 3 - loopOffset);
             return offset + 3;
+        }
+        case OpCode::OP_CONVERT: {
+            uint8_t typeTag = code[offset + 1];
+            static const char* typeNames[] = {"float", "int", "bool", "str"};
+            const char* name = (typeTag < 4) ? typeNames[typeTag] : "?";
+            std::printf("%-16s %s\n", opcodeName(instruction), name);
+            return offset + 2;
         }
         default:
             std::printf("%s\n", opcodeName(instruction));

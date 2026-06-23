@@ -1,0 +1,59 @@
+// examples/54-type-annotations-usage.va
+// Demonstrates type annotations on let/const declarations.
+// :float, :int, :bool, :str annotations convert the initializer value.
+
+print("=== float annotation ===")
+let a:float = 1
+print(a, type(a))           // 1.000000 float
+
+let b:float = true
+print(b, type(b))           // 1.000000 float
+
+print("=== int annotation ===")
+let c:int = 3.14
+print(c, type(c))           // 3 int
+
+let d:int = false
+print(d, type(d))           // 0 int
+
+print("=== bool annotation ===")
+let e:bool = 1
+print(e, type(e))           // true boolean
+
+let f:bool = 0
+print(f, type(f))           // false boolean
+
+let g:bool = "hello"
+print(g, type(g))           // true boolean (non-empty string)
+
+print("=== str annotation ===")
+let h:str = 42
+print(h, type(h))           // 42 string
+
+let i:str = true
+print(i, type(i))           // true string
+
+let j:str = 3.14
+print(j, type(j))           // 3.140000 string
+
+print("=== string annotation (alias for str) ===")
+let k:string = 100
+print(k, type(k))           // 100 string
+
+print("=== const with annotation ===")
+const PI:float = 3
+print(PI, type(PI))         // 3.000000 float
+
+print("=== annotation in function ===")
+func demo() {
+    let x:float = 2
+    let y:int = 5.9
+    return x + y             // 2.0 + 5 = 7.0
+}
+print(demo())               // 7.000000
+
+print("=== without annotation (no conversion) ===")
+let z = 1
+print(z, type(z))           // 1 int (unchanged)
+
+print("PASS")

@@ -290,6 +290,7 @@ private:
     void emitGetGlobal(int slot);      // emits OP_GET_GLOBAL[_WIDE] based on slot
     void emitSetGlobal(int slot);      // emits OP_SET_GLOBAL[_WIDE] based on slot
     void emitDefineGlobal(int slot);   // emits OP_DEFINE_GLOBAL[_WIDE] based on slot
+    void emitConvert(const std::string& typeAnnotation);  // emits OP_CONVERT for type annotation
     void emitConstant(Value value);
     size_t emitJump(OpCode instruction);
     void patchJump(size_t operandOffset);
