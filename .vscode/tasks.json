@@ -1,0 +1,28 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--build", "build/windows-x64-debug", "--config", "Debug"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$msCompile"],
+            "detail": "Build Vora (Debug)"
+        },
+        {
+            "label": "run va",
+            "type": "shell",
+            "command": "${workspaceFolder}/build/windows-x64-debug/Debug/Vora.exe",
+            "args": ["${file}"],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "group": "test",
+            "detail": "Run current .va file"
+        }
+    ]
+}

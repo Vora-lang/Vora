@@ -553,6 +553,11 @@ InterpretResult VM::runConstructor(const FunctionPrototype& proto,
 // =========================================================================
 
 bool VM::callValue(const Value& callee, uint8_t argCount) {
+    if (frames.size() >= MAX_CALL_FRAMES) {
+        runtimeErrorOrThrow("Stack overflow: call depth limit reached");
+        return false;
+    }
+
     if (std::holds_alternative<GcPtr<Callable>>(callee)) {
         auto callable = std::get<GcPtr<Callable>>(callee);
 

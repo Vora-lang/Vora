@@ -6,6 +6,16 @@
 #include <stdexcept>
 #include <string>
 
+#ifdef _WIN32
+// Set console to UTF-8 without pulling in windows.h (avoid macro pollution).
+// Use extern "C" to declare only the two functions we need.
+extern "C" {
+    int __stdcall SetConsoleOutputCP(unsigned int);
+    int __stdcall SetConsoleCP(unsigned int);
+}
+#define CP_UTF8 65001
+#endif
+
 #include "common/error_reporter.h"
 #include "lexer/lexer.h"
 #include "parser/parser.h"
@@ -305,6 +315,13 @@ int main(
     int argc,
     char* argv[]
 ) {
+#ifdef _WIN32
+    // Set console to UTF-8 so Unicode box-drawing characters and
+    // Chinese text render correctly on Windows terminals.
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
+
     // Capture program args for std/os module
     setProgramArgs(argc, argv);
 

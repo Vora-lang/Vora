@@ -31,6 +31,7 @@ struct CallFrame {
 
 class VM {
     static constexpr int MAX_LOCALS_PER_FRAME = 256;
+    static constexpr int MAX_CALL_FRAMES = 10000;
 
     std::vector<Value> stack;
     size_t stackTopIndex = 0;
