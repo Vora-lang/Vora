@@ -30,7 +30,7 @@ from pathlib import Path
 # ── Paths ──────────────────────────────────────────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parent.parent
 USER_GUIDE = REPO_ROOT / "USER_GUIDE.md"
-WEBSITE_ROOT = Path("D:/Vora-lang.github.io")
+WEBSITE_ROOT = REPO_ROOT.parent / "Vora-lang.github.io"
 OUTPUT_FILE = WEBSITE_ROOT / "docs" / "language.html"
 
 # ── Vora syntax highlighting ───────────────────────────────────────────────
