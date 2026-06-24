@@ -603,6 +603,15 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
             ip = currentChunk->code.data();
             frameBaseIndex = newFrameBaseIndex;  // points to instance at slot 0
             currentArgCount = argCount;  // for OP_DEFAULT_PARAM in methods
+
+            // Set paramProvidedMask for the new frame
+            uint64_t providedMask = 0;
+            size_t pcount = std::min(static_cast<size_t>(argCount),
+                                     static_cast<size_t>(proto->arity));
+            for (size_t i = 0; i < pcount; i++) {
+                providedMask |= (1ULL << i);
+            }
+            frames.back().paramProvidedMask = providedMask;
             return true;
         }
 
@@ -728,8 +737,17 @@ InterpretResult VM::callVoraFunction(const GcPtr<VoraFunction>& func,
     ip = currentChunk->code.data();
     frameBaseIndex = stackTopIndex;  // locals start after the current stack top
 
-    // Store actual arg count for OP_DEFAULT_PARAM
+    // Store actual arg count for OP_DEFAULT_PARAM (legacy, kept for compatibility)
     currentArgCount = static_cast<uint8_t>(args.size());
+
+    // Set paramProvidedMask on the new frame: first N slots are provided
+    // where N = min(args.size(), func->arity()).
+    uint64_t providedMask = 0;
+    size_t providedCount = std::min(args.size(), static_cast<size_t>(func->arity()));
+    for (size_t i = 0; i < providedCount; i++) {
+        providedMask |= (1ULL << i);
+    }
+    frames.back().paramProvidedMask = providedMask;
 
     // Bind fixed parameters as locals at frameBase.
     // Pad with null up to total arity (default params will overwrite).
@@ -1325,6 +1343,191 @@ InterpretResult VM::run() {
                 }
                 break;
             }
+            case OpCode::OP_CALL_KW: {
+                // Call with keyword (named) arguments.
+                // The compiler pushes: callee, then positional args, then named arg values.
+                // Bytecode: OP_CALL_KW <posCount> <kwCount> <nameIdx...>
+                if (GcHeap::instance().needsGC()) {
+                    collectGarbage();
+                }
+
+                uint8_t posCount = READ_BYTE();
+                uint8_t kwCount = READ_BYTE();
+
+                // Read keyword name indices from bytecode
+                std::vector<uint8_t> kwNameIndices(kwCount);
+                for (uint8_t i = 0; i < kwCount; i++) {
+                    kwNameIndices[i] = READ_BYTE();
+                }
+
+                uint8_t totalArgs = posCount + kwCount;
+                Value callee = peek(totalArgs);
+
+                if (!std::holds_alternative<GcPtr<Callable>>(callee)) {
+                    RUNTIME_ERROR_OR_THROW("Can only call functions");
+                }
+
+                // Pop named arg values (in reverse), then positional args, then callee
+                std::vector<Value> kwValues(kwCount);
+                for (int i = kwCount - 1; i >= 0; i--) {
+                    kwValues[i] = pop();
+                }
+                std::vector<Value> posValues(posCount);
+                for (int i = posCount - 1; i >= 0; i--) {
+                    posValues[i] = pop();
+                }
+                pop(); // callee
+
+                auto callable = std::get<GcPtr<Callable>>(callee);
+
+                // Resolve the FunctionPrototype to get parameter names
+                FunctionPrototype const* proto = nullptr;
+                GcPtr<VoraFunction> voraFn;
+
+                if (auto vf = dynamic_cast<VoraFunction*>(callable.get())) {
+                    voraFn = GcPtr<VoraFunction>(vf);
+                    proto = vf->getPrototype();
+                } else if (auto bm = dynamic_cast<BoundMethod*>(callable.get())) {
+                    voraFn = bm->getMethodFunc();
+                    proto = bm->getMethodProto();
+                }
+
+                if (!proto || proto->paramNames.empty()) {
+                    runtimeErrorOrThrow(
+                        "Named arguments require a Vora function with parameter names");
+                    return InterpretResult::RUNTIME_ERROR;
+                }
+
+                // Build name→slot map
+                std::unordered_map<std::string, int> nameToSlot;
+                for (size_t i = 0; i < proto->paramNames.size(); i++) {
+                    nameToSlot[proto->paramNames[i]] = static_cast<int>(i);
+                }
+
+                // Build reordered args: fill positional into first unfilled slots,
+                // then overlay named args into name-matched slots.
+                std::vector<Value> args(proto->arity, nullptr);
+                uint64_t providedMask = 0;
+
+                // Fill positional args
+                size_t posIdx = 0;
+                for (int slot = 0; slot < proto->arity && posIdx < posCount; slot++) {
+                    // Skip slots that will be filled by named args
+                    bool filledByNamed = false;
+                    for (uint8_t k = 0; k < kwCount; k++) {
+                        uint8_t nameIdx = kwNameIndices[k];
+                        if (nameIdx < currentChunk->constants.size()) {
+                            const Value& nameVal = currentChunk->constants[nameIdx];
+                            if (std::holds_alternative<GcPtr<GcString>>(nameVal)) {
+                                const std::string& kwName =
+                                    std::get<GcPtr<GcString>>(nameVal)->value;
+                                auto it = nameToSlot.find(kwName);
+                                if (it != nameToSlot.end() && it->second == slot) {
+                                    filledByNamed = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!filledByNamed) {
+                        args[slot] = posValues[posIdx++];
+                        providedMask |= (1ULL << slot);
+                    }
+                }
+
+                // Fill named args
+                for (uint8_t k = 0; k < kwCount; k++) {
+                    uint8_t nameIdx = kwNameIndices[k];
+                    if (nameIdx >= currentChunk->constants.size()) {
+                        runtimeErrorOrThrow("Invalid keyword argument name index");
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                    const Value& nameVal = currentChunk->constants[nameIdx];
+                    if (!std::holds_alternative<GcPtr<GcString>>(nameVal)) {
+                        runtimeErrorOrThrow("Invalid keyword argument name");
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                    const std::string& kwName =
+                        std::get<GcPtr<GcString>>(nameVal)->value;
+                    auto it = nameToSlot.find(kwName);
+                    if (it == nameToSlot.end()) {
+                        runtimeErrorOrThrow("Unknown parameter name: " + kwName);
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                    int slot = it->second;
+                    if (providedMask & (1ULL << slot)) {
+                        runtimeErrorOrThrow(
+                            "Multiple values for parameter: " + kwName);
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                    args[slot] = kwValues[k];
+                    providedMask |= (1ULL << slot);
+                }
+
+                // Count provided args for arity check
+                int providedCount = 0;
+                for (size_t i = 0; i < args.size(); i++) {
+                    if (providedMask & (1ULL << i)) providedCount++;
+                }
+
+                // Arity check
+                if (proto->hasRest) {
+                    if (providedCount < proto->requiredArity) {
+                        runtimeErrorOrThrow("Wrong arity: expected at least " +
+                            std::to_string(proto->requiredArity) + " but got " +
+                            std::to_string(providedCount));
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                } else {
+                    if (providedCount < proto->requiredArity ||
+                        providedCount > proto->arity) {
+                        std::string expected;
+                        if (proto->requiredArity == proto->arity) {
+                            expected = std::to_string(proto->arity);
+                        } else {
+                            expected = std::to_string(proto->requiredArity) +
+                                       ".." + std::to_string(proto->arity);
+                        }
+                        runtimeErrorOrThrow("Wrong arity: expected " + expected +
+                            " but got " + std::to_string(providedCount));
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                }
+
+                // Handle BoundMethod: push instance as 'this' slot 0
+                // Then call callVoraFunction with the reordered args
+                if (auto bm = dynamic_cast<BoundMethod*>(callable.get())) {
+                    auto instance = bm->getInstance();
+
+                    // Push 'this' at frameBase
+                    size_t newFrameBaseIndex = stackTopIndex;
+                    push(instance);
+
+                    // Call the method function
+                    frames.push_back({nullptr, 0, nullptr, voraFn});
+                    auto result = callVoraFunction(voraFn, args);
+                    if (result != InterpretResult::OK) {
+                        return result;
+                    }
+                    // Fix frame — frameBase was set by callVoraFunction,
+                    // override to point at 'this'
+                    if (!frames.empty()) {
+                        frames.back().frameBase = newFrameBaseIndex;
+                        frames.back().paramProvidedMask = providedMask;
+                    }
+                    break;
+                }
+
+                // Direct VoraFunction call
+                auto result = callVoraFunction(voraFn, args);
+                if (result != InterpretResult::OK) {
+                    return result;
+                }
+                if (!frames.empty()) {
+                    frames.back().paramProvidedMask = providedMask;
+                }
+                break;
+            }
             case OpCode::OP_TAIL_CALL: {
                 // Tail call optimization: reuse the current call frame
                 // instead of pushing a new one. This enables infinite
@@ -1412,6 +1615,14 @@ InterpretResult VM::run() {
                     // Replace locals with new arguments
                     stackTopIndex = frameBaseIndex;
                     currentArgCount = argCount;
+                    // Update paramProvidedMask for the reused frame
+                    {
+                        uint64_t mask = 0;
+                        size_t n = std::min(static_cast<size_t>(argCount),
+                                           static_cast<size_t>(voraFn->arity()));
+                        for (size_t i = 0; i < n; i++) mask |= (1ULL << i);
+                        if (!frames.empty()) frames.back().paramProvidedMask = mask;
+                    }
                     for (size_t i = 0; i < static_cast<size_t>(voraFn->arity()); i++) {
                         if (i < arguments.size()) {
                             push(arguments[i]);
@@ -1488,6 +1699,14 @@ InterpretResult VM::run() {
                     // Replace locals: push 'this' + arguments
                     stackTopIndex = frameBaseIndex;
                     currentArgCount = argCount;
+                    // Update paramProvidedMask for the reused frame
+                    {
+                        uint64_t mask = 0;
+                        size_t n = std::min(static_cast<size_t>(argCount),
+                                           static_cast<size_t>(arity));
+                        for (size_t i = 0; i < n; i++) mask |= (1ULL << i);
+                        if (!frames.empty()) frames.back().paramProvidedMask = mask;
+                    }
 
                     // Push 'this' (bound instance) as slot 0
                     push(bound->getInstance());
@@ -1762,11 +1981,18 @@ InterpretResult VM::run() {
             case OpCode::OP_DEFAULT_PARAM: {
                 uint8_t slot = READ_BYTE();
                 uint16_t skipOffset = readShort();
-                if (slot < currentArgCount) {
-                    // Arg was provided by caller — skip the default eval code
+                // Check per-slot mask first (set by OP_CALL_KW and callVoraFunction).
+                // Fall back to currentArgCount for paths that don't set the mask
+                // (e.g. ClassConstructor inline execution, top-level code).
+                bool provided = false;
+                if (!frames.empty() && frames.back().paramProvidedMask != 0) {
+                    provided = (frames.back().paramProvidedMask & (1ULL << slot)) != 0;
+                } else {
+                    provided = (slot < currentArgCount);
+                }
+                if (provided) {
                     ip += skipOffset;
                 }
-                // else: fall through to evaluate default expression
                 break;
             }
 

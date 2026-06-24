@@ -128,8 +128,8 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 | **`do-while` 循环** | ✅ 已完成 | 基础控制流缺口。先执行后判断的场景（如输入验证）需要它。 | 1 天 |
 | **调用端展开 `...expr`** | ✅ 已完成 | 与 rest 参数对称，解锁函数式模式。成本极低。 | 1-2 天 |
 | **列表/Dict 推导式** | ❌ 待实现 | 一行替代多层循环，数据处理核心体验。JS/Python 风格。 | 1 周 |
-| **命名参数** | ❌ 待实现 | `func(name="Vora", age=18)` 自文档化，减少参数顺序错误。 | 2-3 天 |
-| **访问控制 `private`** | ❌ 待实现 | 所有成员公开 = 对象只是命名空间。封装是 OOP 的基础。 | 1 周 |
+| **命名参数** | ✅ 已完成 | `func(name="Vora", age=18)` 自文档化，减少参数顺序错误。 | 2-3 天 |
+| **访问控制 `private`** | ❌ 已排除 | `import`/`export` 已提供模块级封装，类级 `private` 非必需。 | — |
 
 ### 3.3 🟡 中优先级 — 完善 OOP + 性能
 
@@ -197,11 +197,11 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 语法糖
 ├── ✅ 列表推导式 [x for x in arr if cond]
 ├── ✅ Dict 推导式 {k: v for k, v in pairs}
-├── 命名参数 func(name="Vora", age=18)
+├── ✅ 命名参数 func(name="Vora", age=18)
 └── 参数解构 func f({x, y})
 
 OOP 完善
-├── 访问控制 private/public
+├── ~~访问控制 private/public~~ (已排除：import/export 提供模块级封装)
 ├── 静态方法 / 类方法
 └── 对象 rest 解构 {x, ...rest}
 

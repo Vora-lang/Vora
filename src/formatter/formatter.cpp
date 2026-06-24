@@ -336,6 +336,9 @@ std::string SourceFormatter::visitCallExpr(const CallExpr& expr) {
         if (i > 0) {
             ss << ", ";
         }
+        if (!expr.argumentNames.empty() && !expr.argumentNames[i].empty()) {
+            ss << expr.argumentNames[i] << " = ";
+        }
         ss << formatExpr(*expr.arguments[i], 0);
     }
     ss << ")";
@@ -594,6 +597,9 @@ std::string SourceFormatter::visitOptionalChainExpr(const OptionalChainExpr& exp
             ss << "(";
             for (size_t i = 0; i < expr.arguments.size(); ++i) {
                 if (i > 0) ss << ", ";
+                if (!expr.argumentNames.empty() && !expr.argumentNames[i].empty()) {
+                    ss << expr.argumentNames[i] << " = ";
+                }
                 ss << formatExpr(*expr.arguments[i], 0);
             }
             ss << ")";

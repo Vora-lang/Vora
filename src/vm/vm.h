@@ -26,6 +26,7 @@ struct CallFrame {
     size_t frameBase;            // base of this frame's locals on the stack (index)
     const Chunk* callerChunk;    // chunk to restore on return
     GcPtr<VoraFunction> function;  // executing function (for upvalue access)
+    uint64_t paramProvidedMask = 0;  // bit i=1 if param slot i has caller-provided value
 };
 
 class VM {

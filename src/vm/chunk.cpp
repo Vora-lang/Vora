@@ -61,6 +61,7 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_PUSH_SPREAD:   return "OP_PUSH_SPREAD";
         case OpCode::OP_SPREAD:        return "OP_SPREAD";
         case OpCode::OP_CALL_N:        return "OP_CALL_N";
+        case OpCode::OP_CALL_KW:      return "OP_CALL_KW";
         case OpCode::OP_ARRAY:          return "OP_ARRAY";
         case OpCode::OP_DICT:           return "OP_DICT";
         case OpCode::OP_INDEX:          return "OP_INDEX";
@@ -397,6 +398,18 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             uint8_t val = code[offset + 1];
             std::printf("%-16s %4d\n", opcodeName(instruction), val);
             return offset + 2;
+        }
+        case OpCode::OP_CALL_KW: {
+            uint8_t posCount = code[offset + 1];
+            uint8_t kwCount = code[offset + 2];
+            std::printf("%-16s %4d pos, %d kw", opcodeName(instruction),
+                       posCount, kwCount);
+            for (int i = 0; i < kwCount; i++) {
+                uint8_t nameIdx = code[offset + 3 + i];
+                std::printf(" %d", nameIdx);
+            }
+            std::printf("\n");
+            return offset + 3 + kwCount;
         }
         case OpCode::OP_DEFAULT_PARAM: {
             uint8_t slot = code[offset + 1];

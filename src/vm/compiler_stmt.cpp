@@ -749,6 +749,10 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     proto.upvalues = std::move(fnCompiler.upvalues);
     proto.chunk = std::move(fnCompiler.chunk);
     proto.isGenerator = fnCompiler.isGenerator;
+    for (const auto& param : stmt.params) {
+        if (param.isRest) break;
+        proto.paramNames.push_back(param.name);
+    }
 
     // Store prototype in constant pool
     uint8_t protoIndex = addFunctionPrototype(std::move(proto));
@@ -873,6 +877,10 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
             proto->requiredArity = mRequiredArity;
             proto->hasRest = mHasRest;
             proto->chunk = std::move(methodCompiler.chunk);
+            for (const auto& param : funcStmt->params) {
+                if (param.isRest) break;
+                proto->paramNames.push_back(param.name);
+            }
             methodProtos.push_back(proto);
         }
     }
@@ -953,11 +961,12 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     ctorProto->hasRest = ctorHasRest;
     ctorProto->chunk = std::move(ctorCompiler.chunk);
 
-    // Extract param names for ClassDefinition
+    // Extract param names for ClassDefinition and FunctionPrototype
     std::vector<std::string> paramNames;
     for (const auto& p : stmt.params) {
         paramNames.push_back(p.name);
     }
+    ctorProto->paramNames = paramNames;
 
     // Store class definition in constant pool
     auto classDef = GcHeap::instance().alloc<ClassDefinition>();

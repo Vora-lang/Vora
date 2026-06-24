@@ -508,8 +508,14 @@ void Compiler::visitCallExpr(const CallExpr& expr) {
         }
     }
 
-    if (!hasSpread) {
-        // Fast path: no spread — existing behaviour unchanged.
+    // Detect if any argument is named (keyword).
+    bool hasNamed = false;
+    for (const auto& name : expr.argumentNames) {
+        if (!name.empty()) { hasNamed = true; break; }
+    }
+
+    if (!hasSpread && !hasNamed) {
+        // Fast path: no spread, no named args — existing behaviour unchanged.
         expr.callee->accept(*this);
         for (const auto& arg : expr.arguments) {
             arg->accept(*this);
@@ -519,13 +525,63 @@ void Compiler::visitCallExpr(const CallExpr& expr) {
         return;
     }
 
-    // Spread path: push a counter entry, compile callee + args, emit OP_CALL_N.
-    emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_SPREAD));
-    expr.callee->accept(*this);
-    for (const auto& arg : expr.arguments) {
-        arg->accept(*this);
+    if (hasSpread && !hasNamed) {
+        // Spread path: push a counter entry, compile callee + args, emit OP_CALL_N.
+        emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_SPREAD));
+        expr.callee->accept(*this);
+        for (const auto& arg : expr.arguments) {
+            arg->accept(*this);
+        }
+        emitBytes(static_cast<uint8_t>(OpCode::OP_CALL_N), fixedCount);
+        return;
     }
-    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL_N), fixedCount);
+
+    if (hasSpread && hasNamed) {
+        error("Cannot mix named arguments with spread (...expr)");
+        // Fall through: still compile as best-effort named call
+    }
+
+    // Named args path: compile callee, then positional args, then named args.
+    // Stack layout: [callee] [posArg0..] [kwVal0..]
+    expr.callee->accept(*this);
+
+    // Count positional vs named args
+    uint8_t posCount = 0;
+    uint8_t kwCount = 0;
+    std::vector<uint8_t> kwNameIndices;
+
+    for (size_t i = 0; i < expr.arguments.size(); i++) {
+        if (!expr.argumentNames[i].empty()) {
+            kwCount++;
+            kwNameIndices.push_back(identifierConstant(expr.argumentNames[i]));
+        } else {
+            posCount++;
+        }
+    }
+
+    if (posCount > 255 || kwCount > 255) {
+        error("Too many arguments");
+        return;
+    }
+
+    // Compile positional args first, then named args (interleaved on stack)
+    for (size_t i = 0; i < expr.arguments.size(); i++) {
+        if (expr.argumentNames[i].empty()) {
+            expr.arguments[i]->accept(*this);
+        }
+    }
+    for (size_t i = 0; i < expr.arguments.size(); i++) {
+        if (!expr.argumentNames[i].empty()) {
+            expr.arguments[i]->accept(*this);
+        }
+    }
+
+    // Emit OP_CALL_KW with metadata
+    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL_KW), posCount);
+    emitByte(kwCount);
+    for (uint8_t idx : kwNameIndices) {
+        emitByte(idx);
+    }
 }
 
 void Compiler::visitSpreadExpr(const SpreadExpr& expr) {
@@ -1388,6 +1444,10 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
     proto.upvalues = std::move(fnCompiler.upvalues);
     proto.chunk = std::move(fnCompiler.chunk);
     proto.isGenerator = fnCompiler.isGenerator;
+    for (const auto& param : expr.params) {
+        if (param.isRest) break;
+        proto.paramNames.push_back(param.name);
+    }
 
     uint8_t protoIndex = addFunctionPrototype(std::move(proto));
 
@@ -1426,7 +1486,7 @@ void Compiler::visitOptionalChainExpr(const OptionalChainExpr& expr) {
             break;
         }
         case OptionalChainExpr::Kind::CALL: {
-            // Detect spread in optional-chain call arguments.
+            // Detect spread and named args in optional-chain call arguments.
             bool hasSpread = false;
             uint8_t fixedCount = 0;
             for (auto& arg : expr.arguments) {
@@ -1436,18 +1496,57 @@ void Compiler::visitOptionalChainExpr(const OptionalChainExpr& expr) {
                     fixedCount++;
                 }
             }
-            if (!hasSpread) {
+            bool hasNamed = false;
+            for (const auto& name : expr.argumentNames) {
+                if (!name.empty()) { hasNamed = true; break; }
+            }
+
+            if (!hasSpread && !hasNamed) {
+                // Fast path: positional only
                 for (auto& arg : expr.arguments) {
                     arg->accept(*this);
                 }
                 emitBytes(static_cast<uint8_t>(OpCode::OP_CALL),
                           static_cast<uint8_t>(expr.arguments.size()));
-            } else {
+            } else if (hasSpread && !hasNamed) {
                 emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_SPREAD));
                 for (auto& arg : expr.arguments) {
                     arg->accept(*this);
                 }
                 emitBytes(static_cast<uint8_t>(OpCode::OP_CALL_N), fixedCount);
+            } else {
+                // Named args path (spread + named = error, per visitCallExpr)
+                if (hasSpread && hasNamed) {
+                    error("Cannot mix named arguments with spread (...expr)");
+                }
+                uint8_t posCount = 0;
+                uint8_t kwCount = 0;
+                std::vector<uint8_t> kwNameIndices;
+                for (size_t i = 0; i < expr.arguments.size(); i++) {
+                    if (!expr.argumentNames[i].empty()) {
+                        kwCount++;
+                        kwNameIndices.push_back(
+                            identifierConstant(expr.argumentNames[i]));
+                    } else {
+                        posCount++;
+                    }
+                }
+                // Compile positional first, then named
+                for (size_t i = 0; i < expr.arguments.size(); i++) {
+                    if (expr.argumentNames[i].empty()) {
+                        expr.arguments[i]->accept(*this);
+                    }
+                }
+                for (size_t i = 0; i < expr.arguments.size(); i++) {
+                    if (!expr.argumentNames[i].empty()) {
+                        expr.arguments[i]->accept(*this);
+                    }
+                }
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL_KW), posCount);
+                emitByte(kwCount);
+                for (uint8_t idx : kwNameIndices) {
+                    emitByte(idx);
+                }
             }
             break;
         }

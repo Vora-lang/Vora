@@ -1787,6 +1787,7 @@ std::unique_ptr<Expr> Parser::finishCall(
 ) {
 
     std::vector<std::unique_ptr<Expr>> arguments;
+    std::vector<std::string> argumentNames;
 
     if (!check(TokenType::RIGHT_PAREN)) {
 
@@ -1800,6 +1801,24 @@ std::unique_ptr<Expr> Parser::finishCall(
                 }
                 arguments.push_back(std::make_unique<SpreadExpr>(
                     std::move(spreadExpr), previous()));
+                argumentNames.push_back("");
+            }
+            // Check for named argument: name = expr
+            // 2-token lookahead: IDENTIFIER followed by EQUALS inside a call
+            // argument list means a named argument, not an assignment expression.
+            else if (check(TokenType::IDENTIFIER) &&
+                     tokens.size() > 1 &&
+                     static_cast<size_t>(current + 1) < tokens.size() &&
+                     tokens[current + 1].type == TokenType::EQUAL) {
+                std::string name = advance().lexeme;  // consume IDENTIFIER
+                advance();                             // consume =
+                auto value = expression();
+                if (!value) {
+                    value = std::make_unique<ErrorExpr>(
+                        "Expected expression after =", peek());
+                }
+                arguments.push_back(std::move(value));
+                argumentNames.push_back(name);
             } else {
                 auto argument = expression();
 
@@ -1811,9 +1830,20 @@ std::unique_ptr<Expr> Parser::finishCall(
                 arguments.push_back(
                     std::move(argument)
                 );
+                argumentNames.push_back("");
             }
         }
         while (match(TokenType::COMMA));
+    }
+
+    // Validate: positional arguments must precede named arguments.
+    bool seenNamed = false;
+    for (size_t i = 0; i < argumentNames.size(); i++) {
+        if (!argumentNames[i].empty()) {
+            seenNamed = true;
+        } else if (seenNamed) {
+            error("Positional argument cannot follow named argument");
+        }
     }
 
     if (!match(TokenType::RIGHT_PAREN)) {
@@ -1824,14 +1854,16 @@ std::unique_ptr<Expr> Parser::finishCall(
         return std::make_unique<CallExpr>(
             std::move(callee),
             std::move(arguments),
-            previous()
+            previous(),
+            std::move(argumentNames)
         );
     }
 
     return std::make_unique<CallExpr>(
         std::move(callee),
         std::move(arguments),
-        previous()
+        previous(),
+        std::move(argumentNames)
     );
 }
 
@@ -1938,9 +1970,23 @@ std::unique_ptr<Expr> Parser::call() {
                 );
                 if (!check(TokenType::RIGHT_PAREN)) {
                     do {
-                        auto arg = expression();
-                        if (!arg) arg = std::make_unique<ErrorExpr>("Expected argument expression", peek());
-                        chain->arguments.push_back(std::move(arg));
+                        // Named argument: name = expr (same detection as finishCall)
+                        if (check(TokenType::IDENTIFIER) &&
+                            tokens.size() > 1 &&
+                            static_cast<size_t>(current + 1) < tokens.size() &&
+                            tokens[current + 1].type == TokenType::EQUAL) {
+                            std::string name = advance().lexeme;
+                            advance();
+                            auto arg = expression();
+                            if (!arg) arg = std::make_unique<ErrorExpr>("Expected expression after =", peek());
+                            chain->arguments.push_back(std::move(arg));
+                            chain->argumentNames.push_back(name);
+                        } else {
+                            auto arg = expression();
+                            if (!arg) arg = std::make_unique<ErrorExpr>("Expected argument expression", peek());
+                            chain->arguments.push_back(std::move(arg));
+                            chain->argumentNames.push_back("");
+                        }
                     } while (match(TokenType::COMMA));
                 }
                 if (!match(TokenType::RIGHT_PAREN)) {

@@ -62,6 +62,8 @@ enum class OpCode : uint8_t {
     // Functions
     OP_CALL,           // call function (operand: uint8_t argCount)
     OP_TAIL_CALL,      // tail call — reuses current frame (operand: uint8_t argCount)
+    OP_CALL_KW,        // call with keyword (named) arguments
+                       // Format: OP_CALL_KW <posCount:u8> <kwCount:u8> <nameIdx:u8>...
     OP_CLOSURE,        // create closure from function prototype (operand: uint8_t constIndex, then N upvalue pairs)
     OP_RETURN,         // return from function
 

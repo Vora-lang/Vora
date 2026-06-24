@@ -1,0 +1,47 @@
+// 55-named-params.va — Named parameter usage examples
+
+print("=== Named Parameters ===")
+
+// Named arguments let you pass values by parameter name
+// instead of by position. This makes calls self-documenting
+// and reduces errors from argument order mistakes.
+
+func greet(name, greeting = "Hello") {
+    return greeting + ", " + name + "!"
+}
+
+// All positional (traditional)
+print(greet("Vora"))                    // "Hello, Vora!"
+
+// Named argument
+print(greet(name="World"))              // "Hello, World!"
+
+// Named arguments in any order
+print(greet(greeting="Bonjour", name="Paris"))  // "Bonjour, Paris!"
+
+// Default parameters work naturally with named arguments
+// — only specify the ones you want to override.
+
+func configure(host, port, debug) {
+    print("  host=" + host + " port=" + port + " debug=" + debug)
+}
+
+configure("localhost", "8080", "false")
+configure(port="3000", host="0.0.0.0", debug="true")
+
+// Mixed positional + named: positional args come first
+func draw(x, y, color, size) {
+    print("  draw(" + x + "," + y + ") color=" + color + " size=" + size)
+}
+
+draw("10", "20", color="red", size="3")
+draw("10", "20", size="5", color="blue")
+
+// Required parameters can also be passed by name
+func divide(dividend, divisor) {
+    return dividend / divisor
+}
+print(divide(dividend=100, divisor=4))  // 25
+print(divide(divisor=2, dividend=50))   // 25
+
+print("Named parameters example: PASS")

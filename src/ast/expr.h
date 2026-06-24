@@ -181,11 +181,13 @@ public:
     CallExpr(
         std::unique_ptr<Expr> callee,
         std::vector<std::unique_ptr<Expr>> arguments,
-        Token paren
+        Token paren,
+        std::vector<std::string> argumentNames = {}
     )
         : callee(std::move(callee)),
           arguments(std::move(arguments)),
-          paren(std::move(paren)) {
+          paren(std::move(paren)),
+          argumentNames(std::move(argumentNames)) {
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
@@ -198,6 +200,9 @@ public:
     std::vector<std::unique_ptr<Expr>> arguments;
 
     Token paren;
+
+    // Parallel to arguments; empty string = positional arg, non-empty = named arg.
+    std::vector<std::string> argumentNames;
 };
 
 class ArrayExpr : public Expr {
@@ -652,6 +657,9 @@ public:
     // Kind::CALL
     std::vector<std::unique_ptr<Expr>> arguments;
     Token closeParen;    // )
+
+    // Parallel to arguments for Kind::CALL; empty = positional, non-empty = named.
+    std::vector<std::string> argumentNames;
 
     // Kind::INDEX
     std::unique_ptr<Expr> index;

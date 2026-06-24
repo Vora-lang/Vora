@@ -172,7 +172,7 @@ std::unique_ptr<Expr> CallExpr::clone() const {
         clonedArgs.push_back(arg->clone());
     }
     return std::make_unique<CallExpr>(
-        callee->clone(), std::move(clonedArgs), paren
+        callee->clone(), std::move(clonedArgs), paren, argumentNames
     );
 }
 
@@ -621,6 +621,7 @@ std::unique_ptr<Expr> OptionalChainExpr::clone() const {
     copy->property = property;
     copy->closeParen = closeParen;
     copy->closeBracket = closeBracket;
+    copy->argumentNames = argumentNames;
     if (index) copy->index = index->clone();
     for (auto& arg : arguments) {
         copy->arguments.push_back(arg->clone());

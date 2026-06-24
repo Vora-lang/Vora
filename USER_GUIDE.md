@@ -460,9 +460,47 @@ greet("Hey", "A", "B")     // ["Hey", ["A", "B"]]
 - 剩余参数**不能有默认值**
 - 适用于普通函数、匿名函数、对象构造函数和方法
 
-### 调用端展开 (Call-Site Spread)
+### 命名参数 (Named Arguments)
 
-> 引入版本: v0.25
+> 引入版本: v0.26
+
+调用端展开允许将数组展开为独立实参。命名参数允许按名称而非位置传递参数。
+
+**基本用法：**
+
+```vora
+func greet(name, greeting = "Hello") {
+    print(greeting + ", " + name + "!")
+}
+greet("World")                    // "Hello, World!"
+greet(name="Vora")                // "Hello, Vora!"
+
+// 命名参数可以按任意顺序出现
+greet(greeting="Hi", name="Vora")   // "Hi, Vora!"
+
+// 与默认参数组合使用——只覆盖你想覆盖的参数
+func configure(host = "localhost", port = 8080, debug = false) {
+    print("host=" + host + " port=" + str(port) + " debug=" + str(debug))
+}
+configure()
+configure(port=3000)
+configure(debug=true, host="0.0.0.0")
+
+// 位置参数必须在命名参数之前
+func draw(x, y, color = "black", size = 1) {
+    print("draw(" + str(x) + "," + str(y) + ") color=" + color + " size=" + str(size))
+}
+
+draw(10, 20)
+draw(10, 20, color="red")
+draw(10, 20, size=3, color="blue")
+
+// 必需参数也可以按名称传递
+func divide(dividend, divisor) { return dividend / divisor }
+print(divide(dividend=100, divisor=4))  // 25
+print(divide(divisor=2, dividend=50))   // 25
+
+print("命名参数示例: PASS")
 
 与剩余参数对称——将数组**展开**为独立的函数实参：
 

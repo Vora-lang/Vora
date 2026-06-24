@@ -137,9 +137,12 @@ std::string ASTPrinter::visitCallExpr(const CallExpr& expr) {
     ss << "(call ";
     ss << print(expr.callee.get());
 
-    for (const auto& argument : expr.arguments) {
+    for (size_t i = 0; i < expr.arguments.size(); ++i) {
         ss << " ";
-        ss << print(argument.get());
+        if (!expr.argumentNames.empty() && !expr.argumentNames[i].empty()) {
+            ss << expr.argumentNames[i] << "= ";
+        }
+        ss << print(expr.arguments[i].get());
     }
 
     ss << ")";
@@ -328,8 +331,12 @@ std::string ASTPrinter::visitOptionalChainExpr(const OptionalChainExpr& expr) {
             break;
         case OptionalChainExpr::Kind::CALL:
             result += " (call";
-            for (const auto& arg : expr.arguments) {
-                result += " " + arg->accept(*this);
+            for (size_t i = 0; i < expr.arguments.size(); ++i) {
+                result += " ";
+                if (!expr.argumentNames.empty() && !expr.argumentNames[i].empty()) {
+                    result += expr.argumentNames[i] + "= ";
+                }
+                result += expr.arguments[i]->accept(*this);
             }
             result += ")";
             break;
