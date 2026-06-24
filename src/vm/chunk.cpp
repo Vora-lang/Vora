@@ -357,6 +357,19 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             }
             return offset + 2;
         }
+        case OpCode::OP_GET_PROPERTY_WIDE:
+        case OpCode::OP_SET_PROPERTY_WIDE:
+        case OpCode::OP_GET_SUPER_WIDE: {
+            uint16_t index = static_cast<uint16_t>(code[offset + 1]) |
+                            (static_cast<uint16_t>(code[offset + 2]) << 8);
+            std::printf("%-16s %4d ", opcodeName(instruction), index);
+            if (index < constants.size()) {
+                std::printf("'%s'\n", constantToString(constants[index]).c_str());
+            } else {
+                std::printf("'<invalid index %d>'\n", index);
+            }
+            return offset + 3;
+        }
         case OpCode::OP_GET_GLOBAL_SAFE: {
             uint8_t slot = code[offset + 1];
             uint8_t fallbackIndex = code[offset + 2];
@@ -368,6 +381,19 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             std::printf("\n");
             return offset + 3;
         }
+        case OpCode::OP_GET_GLOBAL_SAFE_WIDE: {
+            uint16_t slot = static_cast<uint16_t>(code[offset + 1]) |
+                           (static_cast<uint16_t>(code[offset + 2]) << 8);
+            uint16_t fallbackIndex = static_cast<uint16_t>(code[offset + 3]) |
+                                    (static_cast<uint16_t>(code[offset + 4]) << 8);
+            std::printf("%-16s slot %d fallback=%d", opcodeName(instruction),
+                       slot, fallbackIndex);
+            if (fallbackIndex < constants.size()) {
+                std::printf(" -> '%s'", constantToString(constants[fallbackIndex]).c_str());
+            }
+            std::printf("\n");
+            return offset + 5;
+        }
         case OpCode::OP_CLOSURE: {
             uint8_t protoIndex = code[offset + 1];
             uint8_t upvalueCount = code[offset + 2];
@@ -376,8 +402,18 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
                 std::printf(" %s", constantToString(constants[protoIndex]).c_str());
             }
             std::printf("\n");
-            // Skip protoIndex + upvalueCount + upvalue descriptors (2 bytes each)
             return offset + 2 + 1 + static_cast<size_t>(upvalueCount) * 2;
+        }
+        case OpCode::OP_CLOSURE_WIDE: {
+            uint16_t protoIndex = static_cast<uint16_t>(code[offset + 1]) |
+                                 (static_cast<uint16_t>(code[offset + 2]) << 8);
+            uint8_t upvalueCount = code[offset + 3];
+            std::printf("%-16s %4d upvalues=%d", opcodeName(instruction), protoIndex, upvalueCount);
+            if (protoIndex < constants.size()) {
+                std::printf(" %s", constantToString(constants[protoIndex]).c_str());
+            }
+            std::printf("\n");
+            return offset + 3 + 1 + static_cast<size_t>(upvalueCount) * 2;
         }
         case OpCode::OP_CLASS: {
             uint8_t classIndex = code[offset + 1];
@@ -387,8 +423,18 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
                 std::printf(" %s", constantToString(constants[classIndex]).c_str());
             }
             std::printf("\n");
-            // Skip classIndex + methodCount + method indices
             return offset + 2 + 1 + static_cast<size_t>(methodCount);
+        }
+        case OpCode::OP_CLASS_WIDE: {
+            uint16_t classIndex = static_cast<uint16_t>(code[offset + 1]) |
+                                 (static_cast<uint16_t>(code[offset + 2]) << 8);
+            uint8_t methodCount = code[offset + 3];
+            std::printf("%-16s %4d methods=%d", opcodeName(instruction), classIndex, methodCount);
+            if (classIndex < constants.size()) {
+                std::printf(" %s", constantToString(constants[classIndex]).c_str());
+            }
+            std::printf("\n");
+            return offset + 3 + 1 + static_cast<size_t>(methodCount);
         }
         case OpCode::OP_CALL:
         case OpCode::OP_TAIL_CALL:
@@ -410,6 +456,19 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             }
             std::printf("\n");
             return offset + 3 + kwCount;
+        }
+        case OpCode::OP_CALL_KW_WIDE: {
+            uint8_t posCount = code[offset + 1];
+            uint8_t kwCount = code[offset + 2];
+            std::printf("%-16s %4d pos, %d kw", opcodeName(instruction),
+                       posCount, kwCount);
+            for (int i = 0; i < kwCount; i++) {
+                uint16_t nameIdx = static_cast<uint16_t>(code[offset + 3 + i * 2]) |
+                                 (static_cast<uint16_t>(code[offset + 4 + i * 2]) << 8);
+                std::printf(" %d", nameIdx);
+            }
+            std::printf("\n");
+            return offset + 3 + kwCount * 2;
         }
         case OpCode::OP_DEFAULT_PARAM: {
             uint8_t slot = code[offset + 1];
@@ -442,6 +501,20 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             std::printf("%-16s %4d -> %zu\n", opcodeName(instruction),
                        loopOffset, offset + 3 - loopOffset);
             return offset + 3;
+        }
+        case OpCode::OP_IMPORT: {
+            uint8_t pathIdx = code[offset + 1];
+            uint8_t nameIdx = code[offset + 2];
+            std::printf("%-16s path=%-4d name=%-4d\n", opcodeName(instruction), pathIdx, nameIdx);
+            return offset + 3;
+        }
+        case OpCode::OP_IMPORT_WIDE: {
+            uint16_t pathIdx = static_cast<uint16_t>(code[offset + 1]) |
+                              (static_cast<uint16_t>(code[offset + 2]) << 8);
+            uint16_t nameIdx = static_cast<uint16_t>(code[offset + 3]) |
+                              (static_cast<uint16_t>(code[offset + 4]) << 8);
+            std::printf("%-16s path=%-4d name=%-4d\n", opcodeName(instruction), pathIdx, nameIdx);
+            return offset + 5;
         }
         case OpCode::OP_CONVERT: {
             uint8_t typeTag = code[offset + 1];

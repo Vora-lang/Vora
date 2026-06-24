@@ -1235,6 +1235,19 @@ InterpretResult VM::run() {
                 }
                 break;
             }
+            case OpCode::OP_GET_GLOBAL_SAFE_WIDE: {
+                uint16_t slot = READ_SHORT();
+                uint16_t fallbackIndex = READ_SHORT();
+                if (fallbackIndex >= currentChunk->constants.size()) {
+                    RUNTIME_ERROR_OR_THROW("OP_GET_GLOBAL_SAFE: constant index out of bounds");
+                }
+                if (slot < globalValues.size() && globalDefined[slot]) {
+                    push(globalValues[slot]);
+                } else {
+                    push(currentChunk->constants[fallbackIndex]);
+                }
+                break;
+            }
             case OpCode::OP_SET_GLOBAL: {
                 uint8_t slot = READ_BYTE();
                 if (slot >= globalValues.size() || !globalDefined[slot]) {
@@ -1528,6 +1541,113 @@ InterpretResult VM::run() {
                 }
                 break;
             }
+            case OpCode::OP_CALL_KW_WIDE: {
+                // Named-arg call with 16-bit name indices.
+                if (GcHeap::instance().needsGC()) { collectGarbage(); }
+                uint8_t posCount = READ_BYTE();
+                uint8_t kwCount = READ_BYTE();
+                std::vector<uint16_t> kwNameIndices(kwCount);
+                for (uint8_t i = 0; i < kwCount; i++) {
+                    kwNameIndices[i] = READ_SHORT();
+                }
+                uint8_t totalArgs = posCount + kwCount;
+                Value callee = peek(totalArgs);
+                if (!std::holds_alternative<GcPtr<Callable>>(callee)) {
+                    RUNTIME_ERROR_OR_THROW("Can only call functions");
+                }
+                std::vector<Value> kwValues(kwCount);
+                for (int i = kwCount - 1; i >= 0; i--) { kwValues[i] = pop(); }
+                std::vector<Value> posValues(posCount);
+                for (int i = posCount - 1; i >= 0; i--) { posValues[i] = pop(); }
+                pop();
+                auto callable = std::get<GcPtr<Callable>>(callee);
+                FunctionPrototype const* proto = nullptr;
+                GcPtr<VoraFunction> voraFn;
+                if (auto vf = dynamic_cast<VoraFunction*>(callable.get())) {
+                    voraFn = GcPtr<VoraFunction>(vf); proto = vf->getPrototype();
+                } else if (auto bm = dynamic_cast<BoundMethod*>(callable.get())) {
+                    voraFn = bm->getMethodFunc(); proto = bm->getMethodProto();
+                }
+                if (!proto || proto->paramNames.empty()) {
+                    runtimeErrorOrThrow("Named arguments require a Vora function with parameter names");
+                    return InterpretResult::RUNTIME_ERROR;
+                }
+                std::unordered_map<std::string, int> nameToSlot;
+                for (size_t i = 0; i < proto->paramNames.size(); i++) {
+                    nameToSlot[proto->paramNames[i]] = static_cast<int>(i);
+                }
+                std::vector<Value> args(proto->arity, nullptr);
+                uint64_t providedMask = 0;
+                size_t posIdx = 0;
+                for (int slot = 0; slot < proto->arity && posIdx < posCount; slot++) {
+                    bool filledByNamed = false;
+                    for (uint8_t k = 0; k < kwCount; k++) {
+                        uint16_t nameIdx = kwNameIndices[k];
+                        if (nameIdx < currentChunk->constants.size()) {
+                            const Value& nameVal = currentChunk->constants[nameIdx];
+                            if (std::holds_alternative<GcPtr<GcString>>(nameVal)) {
+                                const std::string& kwName = std::get<GcPtr<GcString>>(nameVal)->value;
+                                auto it = nameToSlot.find(kwName);
+                                if (it != nameToSlot.end() && it->second == slot) { filledByNamed = true; break; }
+                            }
+                        }
+                    }
+                    if (!filledByNamed) { args[slot] = posValues[posIdx++]; providedMask |= (1ULL << slot); }
+                }
+                for (uint8_t k = 0; k < kwCount; k++) {
+                    uint16_t nameIdx = kwNameIndices[k];
+                    if (nameIdx >= currentChunk->constants.size() ||
+                        !std::holds_alternative<GcPtr<GcString>>(currentChunk->constants[nameIdx])) {
+                        runtimeErrorOrThrow("Invalid keyword argument name");
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                    const std::string& kwName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIdx])->value;
+                    auto it = nameToSlot.find(kwName);
+                    if (it == nameToSlot.end()) {
+                        runtimeErrorOrThrow("Unknown parameter name: " + kwName);
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                    int slot = it->second;
+                    if (providedMask & (1ULL << slot)) {
+                        runtimeErrorOrThrow("Multiple values for parameter: " + kwName);
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                    args[slot] = kwValues[k]; providedMask |= (1ULL << slot);
+                }
+                int providedCount = 0;
+                for (size_t i = 0; i < args.size(); i++) { if (providedMask & (1ULL << i)) providedCount++; }
+                if (proto->hasRest) {
+                    if (providedCount < proto->requiredArity) {
+                        runtimeErrorOrThrow("Wrong arity: expected at least " + std::to_string(proto->requiredArity) + " but got " + std::to_string(providedCount));
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                } else {
+                    if (providedCount < proto->requiredArity || providedCount > proto->arity) {
+                        std::string expected;
+                        if (proto->requiredArity == proto->arity) expected = std::to_string(proto->arity);
+                        else expected = std::to_string(proto->requiredArity) + ".." + std::to_string(proto->arity);
+                        runtimeErrorOrThrow("Wrong arity: expected " + expected + " but got " + std::to_string(providedCount));
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                }
+                if (auto bm = dynamic_cast<BoundMethod*>(callable.get())) {
+                    auto instance = bm->getInstance();
+                    size_t newFrameBaseIndex = stackTopIndex;
+                    push(instance);
+                    frames.push_back({nullptr, 0, nullptr, voraFn});
+                    auto result = callVoraFunction(voraFn, args);
+                    if (result != InterpretResult::OK) return result;
+                    if (!frames.empty()) {
+                        frames.back().frameBase = newFrameBaseIndex;
+                        frames.back().paramProvidedMask = providedMask;
+                    }
+                    break;
+                }
+                auto result = callVoraFunction(voraFn, args);
+                if (result != InterpretResult::OK) return result;
+                if (!frames.empty()) { frames.back().paramProvidedMask = providedMask; }
+                break;
+            }
             case OpCode::OP_TAIL_CALL: {
                 // Tail call optimization: reuse the current call frame
                 // instead of pushing a new one. This enables infinite
@@ -1817,6 +1937,42 @@ InterpretResult VM::run() {
                     }
                 }
 
+                push(function);
+                break;
+            }
+            case OpCode::OP_CLOSURE_WIDE: {
+                uint16_t constIndex = READ_SHORT();
+                Value protoVal = currentChunk->constants[constIndex];
+                if (!std::holds_alternative<GcPtr<FunctionPrototype>>(protoVal)) {
+                    RUNTIME_ERROR_OR_THROW("OP_CLOSURE_WIDE: expected function prototype");
+                }
+                auto protoPtr = std::get<GcPtr<FunctionPrototype>>(protoVal);
+                auto function = GcHeap::instance().alloc<VoraFunction>(
+                    protoPtr->name, protoPtr->arity,
+                    protoPtr->requiredArity, protoPtr->hasRest, protoPtr.get());
+                uint8_t upvalueCount = READ_BYTE();
+                for (uint8_t u = 0; u < upvalueCount; u++) {
+                    uint8_t isLocal = READ_BYTE();
+                    uint8_t index = READ_BYTE();
+                    if (isLocal) {
+                        function->upvalues.push_back(captureUpvalue(frameBaseIndex + index));
+                    } else {
+                        if (!frames.empty()) {
+                            auto& encFn = frames.back().function;
+                            if (encFn && index < encFn->upvalues.size()) {
+                                function->upvalues.push_back(encFn->upvalues[index]);
+                            } else {
+                                auto fb = std::make_shared<Upvalue>();
+                                fb->isClosed = true; fb->closed = nullptr;
+                                function->upvalues.push_back(fb);
+                            }
+                        } else {
+                            auto fb = std::make_shared<Upvalue>();
+                            fb->isClosed = true; fb->closed = nullptr;
+                            function->upvalues.push_back(fb);
+                        }
+                    }
+                }
                 push(function);
                 break;
             }
@@ -2230,8 +2386,13 @@ InterpretResult VM::run() {
             }
 
             // --- Objects ---
-            case OpCode::OP_GET_PROPERTY: {
-                uint8_t nameIndex = READ_BYTE();
+            uint16_t nameIndex;
+            case OpCode::OP_GET_PROPERTY_WIDE:
+                nameIndex = READ_SHORT();
+                goto get_property_body;
+            case OpCode::OP_GET_PROPERTY:
+                nameIndex = READ_BYTE();
+                get_property_body: {
                 std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
                 Value obj = pop();
 
@@ -2337,8 +2498,12 @@ InterpretResult VM::run() {
                 }
                 break;
             }
-            case OpCode::OP_SET_PROPERTY: {
-                uint8_t nameIndex = READ_BYTE();
+            case OpCode::OP_SET_PROPERTY_WIDE:
+                nameIndex = READ_SHORT();
+                goto set_property_body;
+            case OpCode::OP_SET_PROPERTY:
+                nameIndex = READ_BYTE();
+                set_property_body: {
                 std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
                 Value value = pop();
                 Value obj = pop();
@@ -2352,8 +2517,12 @@ InterpretResult VM::run() {
                 }
                 break;
             }
-            case OpCode::OP_GET_SUPER: {
-                uint8_t nameIndex = READ_BYTE();
+            case OpCode::OP_GET_SUPER_WIDE:
+                nameIndex = READ_SHORT();
+                goto get_super_body;
+            case OpCode::OP_GET_SUPER:
+                nameIndex = READ_BYTE();
+                get_super_body: {
                 std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
 
                 // Get 'this' from local slot 0 (must be in a method)
@@ -2420,8 +2589,13 @@ InterpretResult VM::run() {
                 }
                 break;
             }
-            case OpCode::OP_CLASS: {
-                uint8_t classIndex = READ_BYTE();
+            uint16_t classIndex;
+            case OpCode::OP_CLASS_WIDE:
+                classIndex = READ_SHORT();
+                goto class_body;
+            case OpCode::OP_CLASS:
+                classIndex = READ_BYTE();
+                class_body: {
                 Value classDefVal = currentChunk->constants[classIndex];
 
                 if (!std::holds_alternative<GcPtr<ClassDefinition>>(classDefVal)) {
@@ -2513,12 +2687,16 @@ InterpretResult VM::run() {
                 }
                 goto dispatch;
             }
-            case OpCode::OP_IMPORT: {
-                // OP_IMPORT <pathConstIndex> <nameConstIndex>
-                uint8_t pathIndex = READ_BYTE();
-                uint8_t nameIndex = READ_BYTE();
-
-                Value pathVal = currentChunk->constants[pathIndex];
+            uint16_t importPathIndex, importNameIndex;
+            case OpCode::OP_IMPORT_WIDE:
+                importPathIndex = READ_SHORT();
+                importNameIndex = READ_SHORT();
+                goto import_body;
+            case OpCode::OP_IMPORT:
+                importPathIndex = READ_BYTE();
+                importNameIndex = READ_BYTE();
+                import_body: {
+                Value pathVal = currentChunk->constants[importPathIndex];
                 if (!std::holds_alternative<GcPtr<GcString>>(pathVal)) {
                     RUNTIME_ERROR_OR_THROW("OP_IMPORT: expected string constant for path");
                     break;

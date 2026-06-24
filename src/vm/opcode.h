@@ -115,6 +115,17 @@ enum class OpCode : uint8_t {
 
     // Type conversion for annotated declarations (let x:float = ...)
     OP_CONVERT,     // convert top of stack to type (operand: uint8_t type tag)
+
+    // ── Wide (16-bit constant pool index) variants ──────────────────────────
+    // Placed at end to avoid shifting existing opcode values.
+    OP_GET_PROPERTY_WIDE,   // property access (operand: uint16_t nameIndex, LE)
+    OP_SET_PROPERTY_WIDE,   // property assignment (operand: uint16_t nameIndex, LE)
+    OP_GET_SUPER_WIDE,      // super.method (operand: uint16_t nameIndex, LE)
+    OP_CLOSURE_WIDE,        // closure from prototype (operand: uint16_t protoIndex, LE, then N upvalue pairs)
+    OP_CLASS_WIDE,          // class from prototype (operand: uint16_t classIndex, LE)
+    OP_IMPORT_WIDE,         // import module (operand: uint16_t pathIndex LE, uint16_t nameIndex LE)
+    OP_GET_GLOBAL_SAFE_WIDE,// safe global get (operand: uint16_t slot LE, uint16_t fallbackIndex LE)
+    OP_CALL_KW_WIDE,        // named-arg call (operand: u8 posCount, u8 kwCount, uint16_t nameIdx... LE)
 };
 
 } // namespace vora

@@ -276,7 +276,7 @@ private:
     // Defer tracking (per-function LIFO execution at return)
     // =========================================================================
     struct DeferredCall {
-        uint8_t protoIndex;
+        size_t protoIndex;
         std::vector<UpvalueDescriptor> upvalues;
     };
     std::vector<DeferredCall> deferredProtos;
@@ -296,9 +296,24 @@ private:
     size_t emitJump(OpCode instruction);
     void patchJump(size_t operandOffset);
     void emitLoop(size_t loopStart);
-    uint8_t makeConstant(Value value);
-    uint8_t identifierConstant(const std::string& name);
-    uint8_t addFunctionPrototype(FunctionPrototype proto);
+    size_t makeConstant(Value value);
+    size_t identifierConstant(const std::string& name);
+    size_t addFunctionPrototype(FunctionPrototype proto);
+
+    // ── Emitter helpers that auto-select narrow/wide based on index ────
+    void emitGetProperty(size_t nameIndex);       // OP_GET_PROPERTY or _WIDE
+    void emitSetProperty(size_t nameIndex);       // OP_SET_PROPERTY or _WIDE
+    void emitGetSuper(size_t nameIndex);          // OP_GET_SUPER or _WIDE
+    void emitClosure(size_t protoIndex,           // OP_CLOSURE or _WIDE
+                     const std::vector<UpvalueDescriptor>& upvalues);
+    void emitClass(size_t classIndex,             // OP_CLASS or _WIDE
+                   uint8_t methodCount);
+    void emitImport(size_t pathIndex,             // OP_IMPORT or _WIDE
+                    size_t nameIndex);
+    void emitGetGlobalSafe(int slot,              // OP_GET_GLOBAL_SAFE or _WIDE
+                           size_t fallbackIndex);
+    void emitCallKw(uint8_t posCount, uint8_t kwCount,  // OP_CALL_KW or _WIDE
+                    const std::vector<size_t>& kwNameIndices);
 
     // Compile an expression (convenience)
     void compileExpr(const Expr& expr);

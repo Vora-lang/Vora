@@ -123,10 +123,8 @@ void Compiler::compileVariableOrPropertyRef(const std::string& name) {
             // Simple global: use safe lookup with fallback to literal text.
             int slot = resolveGlobal(base);
             std::string fallback = "${" + name + "}";
-            uint8_t fallbackIndex = identifierConstant(fallback);
-            emitByte(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL_SAFE));
-            emitByte(static_cast<uint8_t>(slot));
-            emitByte(fallbackIndex);
+            size_t fallbackIndex = identifierConstant(fallback);
+            emitGetGlobalSafe(slot, fallbackIndex);
             return;  // no property chain to walk
         }
     }
@@ -137,8 +135,8 @@ void Compiler::compileVariableOrPropertyRef(const std::string& name) {
         dot = name.find('.', start);
         std::string prop = name.substr(start, (dot == std::string::npos)
             ? std::string::npos : dot - start);
-        uint8_t propIndex = identifierConstant(prop);
-        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIndex);
+        size_t propIndex = identifierConstant(prop);
+        emitGetProperty(propIndex);
     }
 }
 
@@ -461,14 +459,14 @@ void Compiler::visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) {
         // Compile property read: clone object + GET_PROPERTY
         auto objClone = prop->object->clone();
         objClone->accept(*this);
-        uint8_t nameIndex = identifierConstant(prop->property);
-        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), nameIndex);
+        size_t nameIndex = identifierConstant(prop->property);
+        emitGetProperty(nameIndex);
         // Compile RHS
         expr.value->accept(*this);
         // Binary op
         emitByte(binOp);
         // Store back
-        emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), nameIndex);
+        emitSetProperty(nameIndex);
         return;
     }
 
@@ -548,7 +546,7 @@ void Compiler::visitCallExpr(const CallExpr& expr) {
     // Count positional vs named args
     uint8_t posCount = 0;
     uint8_t kwCount = 0;
-    std::vector<uint8_t> kwNameIndices;
+    std::vector<size_t> kwNameIndices;
 
     for (size_t i = 0; i < expr.arguments.size(); i++) {
         if (!expr.argumentNames[i].empty()) {
@@ -577,11 +575,7 @@ void Compiler::visitCallExpr(const CallExpr& expr) {
     }
 
     // Emit OP_CALL_KW with metadata
-    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL_KW), posCount);
-    emitByte(kwCount);
-    for (uint8_t idx : kwNameIndices) {
-        emitByte(idx);
-    }
+    emitCallKw(posCount, kwCount, kwNameIndices);
 }
 
 void Compiler::visitSpreadExpr(const SpreadExpr& expr) {
@@ -991,14 +985,14 @@ void Compiler::visitPropertyExpr(const PropertyExpr& expr) {
 
     // super.method → emit OP_GET_SUPER instead of OP_GET_PROPERTY
     if (dynamic_cast<const SuperExpr*>(expr.object.get())) {
-        uint8_t nameIndex = identifierConstant(expr.property);
-        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_SUPER), nameIndex);
+        size_t nameIndex = identifierConstant(expr.property);
+        emitGetSuper(nameIndex);
         return;
     }
 
     expr.object->accept(*this);
-    uint8_t nameIndex = identifierConstant(expr.property);
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), nameIndex);
+    size_t nameIndex = identifierConstant(expr.property);
+    emitGetProperty(nameIndex);
 }
 
 void Compiler::visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) {
@@ -1006,8 +1000,8 @@ void Compiler::visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) {
     currentColumn = expr.dot.column;
     expr.object->accept(*this);
     expr.value->accept(*this);
-    uint8_t nameIndex = identifierConstant(expr.property);
-    emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), nameIndex);
+    size_t nameIndex = identifierConstant(expr.property);
+    emitSetProperty(nameIndex);
 }
 
 void Compiler::visitIndexAssignmentExpr(const IndexAssignmentExpr& expr) {
@@ -1128,31 +1122,24 @@ void Compiler::visitIncDecExpr(const IncDecExpr& expr) {
 
     // Property target: ++obj.prop / obj.prop++
     if (auto prop = dynamic_cast<const PropertyExpr*>(expr.target.get())) {
-        uint8_t propIndex = identifierConstant(prop->property);
+        size_t propIndex = identifierConstant(prop->property);
 
         if (expr.isPrefix) {
             // Prefix: ++obj.prop → dup obj, get old, inc, set, leave new.
             prop->object->accept(*this);
             emitByte(static_cast<uint8_t>(OpCode::OP_DUP));
-            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIndex);
+            emitGetProperty(propIndex);
             emitConstant(delta);
             emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
-            emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), propIndex);
+            emitSetProperty(propIndex);
         } else {
             // Postfix: obj.prop++ → return old value, store new value.
-            // Evaluate obj once (DUP) to avoid double-executing side effects.
-            // Stack sequence (delta = ±1):
-            //   obj → DUP → [obj, obj]
-            //   GET_PROPERTY → [obj, old]
-            //   ADD delta → [obj, new]
-            //   SET_PROPERTY → [new]          (stores obj.prop = new)
-            //   ADD (-delta) → [old]           (result: new - delta = old)
             prop->object->accept(*this);
             emitByte(static_cast<uint8_t>(OpCode::OP_DUP));
-            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIndex);
+            emitGetProperty(propIndex);
             emitConstant(delta);
             emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
-            emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY), propIndex);
+            emitSetProperty(propIndex);
             Value negDelta = (expr.op.type == TokenType::PLUS_PLUS)
                 ? Value(static_cast<int64_t>(-1))
                 : Value(static_cast<int64_t>(1));
@@ -1449,15 +1436,10 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
         proto.paramNames.push_back(param.name);
     }
 
-    uint8_t protoIndex = addFunctionPrototype(std::move(proto));
+    size_t protoIndex = addFunctionPrototype(std::move(proto));
 
     // Emit OP_CLOSURE to create the VoraFunction at runtime
-    emitBytes(static_cast<uint8_t>(OpCode::OP_CLOSURE), protoIndex);
-    emitByte(static_cast<uint8_t>(capturedUpvalues.size()));
-    for (const auto& uv : capturedUpvalues) {
-        emitByte(uv.isLocal ? 1 : 0);
-        emitByte(uv.index);
-    }
+    emitClosure(protoIndex, capturedUpvalues);
     // The closure is now on the stack — caller can assign, call, etc.
 }
 
@@ -1481,8 +1463,8 @@ void Compiler::visitOptionalChainExpr(const OptionalChainExpr& expr) {
 
     switch (expr.kind) {
         case OptionalChainExpr::Kind::PROPERTY: {
-            uint8_t propIndex = identifierConstant(expr.property);
-            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIndex);
+            size_t propIndex = identifierConstant(expr.property);
+            emitGetProperty(propIndex);
             break;
         }
         case OptionalChainExpr::Kind::CALL: {
@@ -1521,7 +1503,7 @@ void Compiler::visitOptionalChainExpr(const OptionalChainExpr& expr) {
                 }
                 uint8_t posCount = 0;
                 uint8_t kwCount = 0;
-                std::vector<uint8_t> kwNameIndices;
+                std::vector<size_t> kwNameIndices;
                 for (size_t i = 0; i < expr.arguments.size(); i++) {
                     if (!expr.argumentNames[i].empty()) {
                         kwCount++;
@@ -1542,11 +1524,7 @@ void Compiler::visitOptionalChainExpr(const OptionalChainExpr& expr) {
                         expr.arguments[i]->accept(*this);
                     }
                 }
-                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL_KW), posCount);
-                emitByte(kwCount);
-                for (uint8_t idx : kwNameIndices) {
-                    emitByte(idx);
-                }
+                emitCallKw(posCount, kwCount, kwNameIndices);
             }
             break;
         }

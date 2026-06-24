@@ -120,28 +120,126 @@ void Compiler::emitLoop(size_t loopStart) {
     emitByte(static_cast<uint8_t>((offset >> 8) & 0xFF));
 }
 
-uint8_t Compiler::makeConstant(Value value) {
+size_t Compiler::makeConstant(Value value) {
     if (hadError) return 0;
-    size_t index = chunk.addConstant(value);
-    // Guard against constant pool overflow (> 256) for 8-bit operand opcodes
-    // (e.g. property names, closure/class indices). OP_CONSTANT_LONG handles
-    // value constants with 16-bit indices — see Chunk::writeConstant().
-    if (index > UINT8_MAX) {
-        error("Constant pool overflow (" + std::to_string(index) +
-              " entries, max 256).");
-        return 0;
-    }
-    return static_cast<uint8_t>(index);
+    return chunk.addConstant(value);
 }
 
-uint8_t Compiler::identifierConstant(const std::string& name) {
+size_t Compiler::identifierConstant(const std::string& name) {
     return makeConstant(GcHeap::instance().alloc<GcString>(name));
 }
 
-uint8_t Compiler::addFunctionPrototype(FunctionPrototype proto) {
-    // Store as a shared_ptr in the constant pool
+size_t Compiler::addFunctionPrototype(FunctionPrototype proto) {
     auto ptr = GcHeap::instance().alloc<FunctionPrototype>(std::move(proto));
     return makeConstant(ptr);
+}
+
+// ── Wide-aware emitter helpers ───────────────────────────────────────────────
+
+static bool needsWide(size_t index) { return index > UINT8_MAX; }
+
+void Compiler::emitGetProperty(size_t nameIndex) {
+    if (needsWide(nameIndex)) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY_WIDE));
+        emitShort(static_cast<uint16_t>(nameIndex));
+    } else {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY),
+                  static_cast<uint8_t>(nameIndex));
+    }
+}
+
+void Compiler::emitSetProperty(size_t nameIndex) {
+    if (needsWide(nameIndex)) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY_WIDE));
+        emitShort(static_cast<uint16_t>(nameIndex));
+    } else {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY),
+                  static_cast<uint8_t>(nameIndex));
+    }
+}
+
+void Compiler::emitGetSuper(size_t nameIndex) {
+    if (needsWide(nameIndex)) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_GET_SUPER_WIDE));
+        emitShort(static_cast<uint16_t>(nameIndex));
+    } else {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_SUPER),
+                  static_cast<uint8_t>(nameIndex));
+    }
+}
+
+void Compiler::emitClosure(size_t protoIndex,
+                           const std::vector<UpvalueDescriptor>& upvalues) {
+    if (needsWide(protoIndex)) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_CLOSURE_WIDE));
+        emitShort(static_cast<uint16_t>(protoIndex));
+    } else {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_CLOSURE),
+                  static_cast<uint8_t>(protoIndex));
+    }
+    emitByte(static_cast<uint8_t>(upvalues.size()));
+    for (auto& uv : upvalues) {
+        emitByte(static_cast<uint8_t>(uv.isLocal ? 1 : 0));
+        emitByte(uv.index);
+    }
+}
+
+void Compiler::emitClass(size_t classIndex, uint8_t /*methodCount*/) {
+    (void)0; // methodCount is stored in ClassDefinition::methodProtos
+    if (needsWide(classIndex)) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_CLASS_WIDE));
+        emitShort(static_cast<uint16_t>(classIndex));
+    } else {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_CLASS),
+                  static_cast<uint8_t>(classIndex));
+    }
+}
+
+void Compiler::emitImport(size_t pathIndex, size_t nameIndex) {
+    if (needsWide(pathIndex) || needsWide(nameIndex)) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_IMPORT_WIDE));
+        emitShort(static_cast<uint16_t>(pathIndex));
+        emitShort(static_cast<uint16_t>(nameIndex));
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_IMPORT));
+        emitByte(static_cast<uint8_t>(pathIndex));
+        emitByte(static_cast<uint8_t>(nameIndex));
+    }
+}
+
+void Compiler::emitGetGlobalSafe(int slot, size_t fallbackIndex) {
+    if (slot > UINT8_MAX || needsWide(fallbackIndex)) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL_SAFE_WIDE));
+        emitShort(static_cast<uint16_t>(slot));
+        emitShort(static_cast<uint16_t>(fallbackIndex));
+    } else {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL_SAFE),
+                  static_cast<uint8_t>(slot));
+        emitByte(static_cast<uint8_t>(fallbackIndex));
+    }
+}
+
+void Compiler::emitCallKw(uint8_t posCount, uint8_t kwCount,
+                          const std::vector<size_t>& kwNameIndices) {
+    bool hasWide = false;
+    for (auto idx : kwNameIndices) {
+        if (needsWide(idx)) { hasWide = true; break; }
+    }
+    if (hasWide) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_CALL_KW_WIDE));
+        emitByte(posCount);
+        emitByte(kwCount);
+        for (auto idx : kwNameIndices) {
+            emitShort(static_cast<uint16_t>(idx));
+        }
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_CALL_KW));
+        emitByte(posCount);
+        emitByte(kwCount);
+        for (auto idx : kwNameIndices) {
+            emitByte(static_cast<uint8_t>(idx));
+        }
+    }
 }
 
 void Compiler::compileExpr(const Expr& expr) {
@@ -416,12 +514,7 @@ void Compiler::emitDeferCalls() {
     //             OP_CALL 0
     //             OP_POP  (discard the defer's return value)
     for (auto it = deferredProtos.rbegin(); it != deferredProtos.rend(); ++it) {
-        emitBytes(static_cast<uint8_t>(OpCode::OP_CLOSURE), it->protoIndex);
-        emitByte(static_cast<uint8_t>(it->upvalues.size()));
-        for (const auto& uv : it->upvalues) {
-            emitByte(uv.isLocal ? 1 : 0);
-            emitByte(uv.index);
-        }
+        emitClosure(it->protoIndex, it->upvalues);
         emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 0);
         emitByte(static_cast<uint8_t>(OpCode::OP_POP));
     }

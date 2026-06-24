@@ -1,2 +1,803 @@
-let lrt:float = 1
-print("lrt = ", lrt) // lrt = 1.00
+// ═══════════════════════════════════════════════════════════════════════════
+// Vora 全特性演示 — 覆盖全部语法、类型、内置函数、集合方法、标准库
+// 运行: vora examples/main.va
+//
+// 注释中以 [WISH] 标记期望支持但尚未实现的语法。
+// 每条 WISH 附对比和优缺点分析。
+// ═══════════════════════════════════════════════════════════════════════════
+
+print("══════════════════════════════════")
+print("  Vora 语言全特性演示")
+print("══════════════════════════════════")
+
+let ok = 0
+let ng = 0
+func T(cond) {
+    if (cond) { ok = ok + 1 } else { ng = ng + 1 }
+}
+
+
+// [WISH] 数组 / Dict 结构相等
+// 现状: [1,2] == [1,2] → false (引用相等)
+// 期望: [1,2] == [1,2] → true  (值相等)
+// 现状优点: 语义简单, O(1), 无歧义
+// 现状缺点: 每次需手写遍历比较, 嵌套时更繁琐
+// 期望优点: 符合直觉, 减少样板代码
+// 期望缺点: 深层嵌套时性能开销大; 循环引用需处理
+func eqArr(a, b) {
+    if (len(a) != len(b)) return false
+    for (let i = 0; i < len(a); i = i + 1) {
+        if (a[i] != b[i]) return false
+    }
+    return true
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1. 类型系统 — 12 种类型 + Truthy/Falsy + 进制
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 1. 类型系统 ──")
+
+T(type(null)    == "null")
+T(type(true)    == "boolean")
+T(type(42)      == "int")
+T(type(3.14)    == "float")
+T(type("vora")  == "string")
+T(type([1,2])   == "array")
+T(type({a:1})   == "dict")
+T(type(func(){})== "function")
+T(type(Set())   == "set")
+T(type(Map())   == "map")
+Obj Dummy() {}
+T(type(Dummy()) == "object")
+
+T(!null && !false && !0 && !0.0 && !"" && ![] && !{})
+T(1 && "hi" && [1] && {a:1})
+
+T(0xFF == 255)
+T(0o77 == 63)
+T(0b101 == 5)
+
+// [WISH] bigint 任意精度整数
+// 期望: let x = 12345678901234567890n
+// 现状优点: 简单, 无类型膨胀; 64-bit 覆盖大多数场景
+// 现状缺点: 大整数溢出回绕; 密码/金融场景不可用
+// 期望优点: 精确计算, 安全
+// 期望缺点: 运行时开销; 字面量后缀 n 增加认知负担
+
+// [WISH] 单字符类型 char
+// 期望: let c = 'x'  (不同于字符串 "x")
+// 现状优点: 类型少, 学习成本低
+// 现状缺点: 字符和单字符字符串语义相同但内存开销不同
+// 期望优点: 节省内存; 与 C 互操作友好
+// 期望缺点: 增加类型复杂度; JS/Python/Lua 都没有, 非必须
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. 变量 — let / const / 类型注解
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 2. 变量 ──")
+
+let x:int = 1
+x = 2
+T(x == 2)
+
+const K = 42
+T(K == 42)
+
+// [WISH] :int / :float 类型注解正确转换值
+// 现状: let a: int = "42" → a == 0   (bug: 恒为默认值)
+// 期望: let a: int = "42" → a == 42  (正确解析并转换)
+// 现状优点: (无 — 这是 bug)
+// 现状缺点: 静默产生错误值, 极易导致隐蔽 bug
+// 期望优点: 与 :bool / :str 行为一致, 符合用户预期
+// 期望缺点: 转换失败时的错误处理需定义 (抛异常? 回退?)
+
+// [WISH] 多变量声明
+// 现状: let a = 1; let b = 2
+// 期望: let a, b = 1, 2
+// 现状优点: 每行语义独立, 解析器实现简单
+// 现状缺点: 相关变量分散多行, 视觉噪音大
+// 期望优点: 紧凑, 类似 Python/Go; 方便交换 a, b = b, a
+// 期望缺点: 右值数量 ≠ 左值时的语义需定义; 解构歧义
+
+// [WISH] const 深度不可变
+// 现状: const arr = [1,2]; arr[0] = 99  // 允许修改元素
+// 期望: const arr = [1,2]; arr[0] = 99  // 报错或静默失败
+// 现状优点: 实现简单, 无冻结开销
+// 现状缺点: const 名不副实; 无法防止意外修改
+// 期望优点: 真正的不可变保证, 利于并发和推理
+// 期望缺点: 需运行时冻结或编译期检查; 深层对象性能开销
+
+let c: bool = "true"
+T(type(c) == "boolean" && c == true)
+
+let d: str = 123
+T(type(d) == "string" && d == "123")
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 3. 运算符 — 算术 / 逻辑 / 三元 / 复合 / ?? / ?.
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 3. 运算符 ──")
+
+T(2 + 3 == 5)
+T(15 / 3 == 5.0)
+T(17 % 5 == 2)
+T(2 ** 10 == 1024)
+
+// [WISH] 位运算符 & | ^ ~ << >>
+// 期望: let flags = READ | WRITE; if (flags & READ) { ... }
+// 现状优点: 语言精简; 脚本语言多数场景不需要位运算
+// 现状缺点: 底层/二进制协议/性能优化场景缺失; 需用除法+取模模拟
+// 期望优点: 标准位操作, 二进制/编码/flag 场景必备
+// 期望缺点: 与逻辑运算符 &&/|| 同形异义, 初学者混淆
+
+// [WISH] 整数除法 //
+// 现状: 3 / 2   → 1.5  (始终返回 float)
+// 期望: 3 // 2  → 1    (返回 int)
+// 现状优点: 语义统一, 不区分 int/float 除法
+// 现状缺点: 需要整数结果时必须手动 int(n / m), 不精确且冗长
+// 期望优点: Python 兼容; 整数算法精确; 性能略好
+// 期望缺点: 增加运算符; JS 社区习惯 Math.floor(n/m)
+
+// [WISH] 管道运算符 |>
+// 期望: data |> filter(fn) |> map(fn) |> sum
+// 现状: sum(map(filter(data, fn1), fn2))  — 从内向外读
+// 现状优点: 经典函数调用, 无需新语法
+// 现状缺点: 深层嵌套时从内向外读反直觉
+// 期望优点: 从左到右读, 数据流清晰; Elixir/OCaml/F# 已验证
+// 期望缺点: 语法糖, 非必须; 需 IDE 良好支持才实用
+
+let ca = 10
+ca += 5
+T(ca == 15)
+
+let cs = "a"
+cs += "b"
+T(cs == "ab")
+
+T((null ?? "x") == "x")
+T(("ok" ?? "x") == "ok")
+
+let o = {a: {b: 42}}
+T(o?.a?.b == 42)
+
+// [WISH] o?.x 对未知 dict key 返回 null
+// 现状: o?.x     → 抛 "Unknown dict key: x"
+// 期望: o?.x     → null
+// 现状优点: 显式报错, 帮助发现拼写错误
+// 现状缺点: ?. 的语义是"安全访问", 抛异常违背了 ?. 的设计意图
+// 期望优点: 语义一致; 深层 JSON 遍历安全; JS/TS 行为一致
+// 期望缺点: 会掩盖真正的拼写错误, 调试更难
+
+let inc = 0
+inc = inc + 1
+inc = inc + 1
+T(inc == 2)
+
+// [WISH] ++ / -- 前缀后缀运算符
+// 现状: inc = inc + 1
+// 期望: inc++  或  ++inc
+// 现状优点: 无前缀/后缀歧义; 语义完全显式; 无"先加后赋值"的心智负担
+// 现状缺点: 冗长, 尤其是数组索引 arr[i++] 需拆成两行
+// 期望优点: 紧凑, C/Java/JS 习惯; 表达式内自增方便
+// 期望缺点: ++i vs i++ 是经典陷阱; 一行多副作用降低可读性
+
+let i2 = 42
+T(i2 > 40 ? "big" : "small" == "big")
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4. 控制流 — if / while / do-while / for-in / c-for / break / continue / match
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 4. 控制流 ──")
+
+let g = 85
+let L = "?"
+if (g >= 90) { L = "A" } else if (g >= 80) { L = "B" } else { L = "C" }
+T(L == "B")
+
+// [WISH] unless 关键字
+// 现状: if (!cond) { ... }
+// 期望: unless (cond) { ... }
+// 现状优点: 少一个关键字; !cond 足够清晰
+// 现状缺点: 多层取反嵌套时 !!cond 难读
+// 期望优点: 语义自文档; Ruby/Perl 用户熟悉
+// 期望缺点: 增加关键字; if+! 已能表达, 不必要
+
+let ws = 0
+let wi = 1
+while (wi <= 10) { ws = ws + wi; wi = wi + 1 }
+T(ws == 55)
+
+let dw0 = false
+let dw1 = 0
+do { dw0 = true; dw1 = dw1 + 1 } while (dw1 < 1)
+T(dw0 && dw1 == 1)
+
+let fs = 0
+for it in [1,2,3,4,5] { fs = fs + it }
+T(fs == 15)
+
+let fc = ""
+for ch in "V" { fc = fc + ch }
+T(fc == "V")
+
+// [WISH] for-in 支持 generator
+// 现状: for v in myGenerator() { ... }  → 不消费任何值
+// 期望: for v in myGenerator() { ... }  → 逐个 yield 值
+// 现状优点: (无 — 功能缺陷)
+// 现状缺点: generator 无法用 for-in 消费, 只能 iter/next 手动循环
+// 期望优点: Python 行为一致; generator 真正可用
+// 期望缺点: 需修改 VM 的 for-in 迭代协议
+
+// [WISH] for-in 带索引
+// 现状: let i = 0; for item in arr { ...; i = i + 1 }
+// 期望: for item, index in arr { ... }
+// 现状优点: 显式, 无歧义; 不需要索引时零开销
+// 现状缺点: 需要索引时手动维护计数器, 冗长且易错
+// 期望优点: Python enumerate 风格; 一行解决
+// 期望缺点: 语法糖; 多返回值解构需编译器支持
+
+let brk = 0
+for z in range(10) { if (z == 3) break; brk = brk + z }
+T(brk == 3)
+
+let cnt = 0
+for z in range(5) { if (z % 2 == 0) continue; cnt = cnt + z }
+T(cnt == 4)
+
+let cf = 0
+for (let ci = 1; ci <= 5; ci = ci + 1) { cf = cf + ci }
+T(cf == 15)
+
+func grade(n) {
+    return match n {
+        0 => "low"
+        1 => "mid"
+        _ => "high"
+    }
+}
+T(grade(0) == "low")
+T(grade(1) == "mid")
+T(grade(99) == "high")
+
+// [WISH] match 多模式 |
+// 现状: 1 => "a"; 2 => "a"; 3 => "a"   — 重复三行
+// 期望: 1 | 2 | 3 => "a"
+// 现状优点: 每条分支独立, 无多模式语义歧义
+// 现状缺点: 等价分支冗长重复; 修改时需逐行改
+// 期望优点: 紧凑; Rust/Swift 标准; 减少重复
+// 期望缺点: | 与位或/逻辑或混淆风险; 解析器需处理运算符
+
+// [WISH] match 守卫条件 (guard)
+// 现状: 需在 => 右侧用 if 表达式:  x => if (x > 0) "pos" else continue matching
+// 期望: x if x > 0 => "positive"
+// 现状优点: 简单, 无额外语法
+// 现状缺点: 守卫逻辑在右侧, 不自然; 无法 fall-through
+// 期望优点: 守卫在左侧, 语义清晰; Haskell/Rust/Swift 标准
+// 期望缺点: 增加解析复杂度; 守卫条件过多时代码难读
+
+// [WISH] match 解构模式
+// 期望: {x, y} => x + y  或  [a, b] => a + b
+// 现状优点: 简单模式已够用; 解构可在 match 外手动完成
+// 现状缺点: 嵌套数据结构需手动提取字段, 模式匹配的核心优势未发挥
+// 期望优点: 表达力质变; 嵌套 JSON/树结构处理极简
+// 期望缺点: 实现复杂度高; 编译期模式编译为条件链
+
+match 1 { 1 => { T(true) } _ => { T(false) } }
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5. 函数 — 默认参数 / 剩余参数 / 命名参数 / 闭包 / 递归 / 高阶 / 展开
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 5. 函数 ──")
+
+func hi(name, g2 = "Hello") {
+    return g2 + ", " + name + "!"
+}
+T(hi("Vora") == "Hello, Vora!")
+T(hi("Vora", "Hi") == "Hi, Vora!")
+
+// [WISH] 箭头函数
+// 现状: let twice = func(x) { return x * 2 }
+// 期望: let twice = (x) => x * 2
+// 现状优点: 语法统一, func 关键字明确表达"函数"
+// 现状缺点: 简单映射回调过于冗长; JS/TS 开发者不适
+// 期望优点: 短回调极紧凑; arr.map(x => x * 2) 表达力强
+// 期望缺点: this 绑定语义需定义; 与 Obj 方法语法可能冲突
+
+func sumAll(...ns) {
+    let t = 0
+    for n in ns { t = t + n }
+    return t
+}
+T(sumAll(1,2,3,4) == 10)
+
+func div(dividend, divisor) { return dividend / divisor }
+T(div(dividend=100, divisor=4) == 25)
+T(div(divisor=2, dividend=50) == 25)
+
+// [WISH] 命名参数更宽松的顺序（位置参数可出现在命名参数之后）
+// 现状: func(1, 2, name=val)      — 必须位置在前
+// 期望: func(name=val, 1, 2)      — 命名在前, 位置在后
+// 现状优点: 规则简单; 符合 Python 约定
+// 现状缺点: 有时想先写关键命名参数, 被迫调顺序
+// 期望优点: 更灵活; Swift/Ruby 支持
+// 期望缺点: 规则更复杂; 混合时语义边界模糊
+
+// [WISH] 尾调用优化 (TCO)
+// 期望: 尾递归函数不增长调用栈, 无限递归也不会爆栈
+// 现状优点: 实现简单; 爆栈时会显式报错而非静默慢
+// 现状缺点: 递归算法受限; 深度遍历/状态机需改为循环
+// 期望优点: 递归风格安全; 函数式编程模式可用
+// 期望缺点: 实现复杂; 调试时调用栈消失; 可能掩盖无限递归 bug
+
+func mkCounter() {
+    let n = 0
+    return func() { n = n + 1; return n }
+}
+let c1 = mkCounter()
+let c2 = mkCounter()
+T(c1() == 1 && c1() == 2 && c2() == 1)
+
+func fact(n) { if (n <= 1) return 1; return n * fact(n-1) }
+T(fact(5) == 120)
+
+func applyFn(fn, x, y) { return fn(x, y) }
+func add2(a1, b1) { return a1 + b1 }
+T(applyFn(add2, 10, 20) == 30)
+
+func three(a2,b2,c2) { return a2+b2+c2 }
+T(three(...[1,2,3]) == 6)
+
+// [WISH] 部分应用 (currying)
+// 期望: func add(a)(b) { return a + b }; let add5 = add(5); add5(3) → 8
+// 现状优点: 函数签名清晰, 所有参数一次性提供
+// 现状缺点: 无法"预填"部分参数, 需手动写闭包包装
+// 期望优点: 函数工厂极简; FP 风格自然
+// 期望缺点: 多参数函数的柯里化顺序有争议; 增加 VM 复杂度
+
+// [WISH] 函数组合运算符
+// 期望: let h = f >> g  等价于  func(x) { return g(f(x)) }
+// 现状优点: 显式组合, 无隐式魔法
+// 现状缺点: 多层嵌套调用括号堆积
+// 期望优点: 数据流从左到右; F#/Elm 风格
+// 期望缺点: 语法糖; 不熟悉 FP 的用户困惑
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 6. 生成器 & 迭代器 — yield, iter, next
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 6. 生成器 ──")
+
+func countTo(n) {
+    for (let j = 1; j <= n; j = j + 1) { yield j }
+}
+// [WISH] for-in 消费 generator
+// 现状: for v in countTo(3) {}  → 循环体不执行
+// 期望: for v in countTo(3) {}  → v=1,2,3
+// 现状优点: (无 — 这是缺陷)
+// 现状缺点: generator 无法用 for-in, 需 iter/next 手动模式
+// 期望优点: Python 行为; 生成器与数组/字符串迭代方式统一
+// 期望缺点: 需修改迭代协议
+
+let mi = iter([7,8,9])
+T(next(mi) == 7)
+T(next(mi) == 8)
+T(next(mi) == 9)
+
+// [WISH] yield* 委托
+// 期望: yield* otherGenerator()  — 将迭代委托给另一个 generator
+// 现状优点: 简单
+// 现状缺点: 组合 generator 需手动 for-in + yield, 冗长
+// 期望优点: 生成器组合自然; JS/Python 惯例
+// 期望缺点: 语义细节多 (异常传播, return 值)
+
+// [WISH] generator 表达式
+// 期望: let squares = (x*x for x in range(10))  — 惰性生成器而非立即求值数组
+// 现状优点: 列表推导已覆盖; 生成器表达式是额外语法
+// 现状缺点: 大数据集时列表推导内存爆炸
+// 期望优点: 惰性, O(1) 内存; Python 兼容
+// 期望缺点: 语法与列表推导高度相似, 易混; 增加概念
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 7. 对象 & 继承 — Obj / 构造器 / 方法 / super / C3 MRO
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 7. 对象 ──")
+
+Obj Pet(name) {
+    this.name = name
+    func who() { return this.name }
+}
+Obj Puppy : Pet(name, toy) {
+    this.toy = toy
+    func play() { return this.name + " plays " + this.toy }
+}
+let p = Puppy("Max", "ball")
+T(p.name == "Max")
+T(p.toy == "ball")
+T(p.who() == "Max")
+T(p.play() == "Max plays ball")
+
+// [WISH] 静态方法 / 类方法
+// 期望: Obj Math { static func square(x) { return x*x } }; Math.square(3) → 9
+// 现状优点: 简单; 用普通函数 + 模块替代
+// 现状缺点: 无法在类型上组织工具函数; 缺少"属于这个类的函数"语义
+// 期望优点: 命名空间自然; 工厂方法模式必备; JS/Python/C# 惯例
+// 期望缺点: 增加 Obj 语法复杂度; static 关键字增加解析负担
+
+// [WISH] getter / setter
+// 期望: func get fullName() { return this.first + " " + this.last }
+// 现状优点: 方法调用语义明确; 无隐式副作用
+// 现状缺点: obj.fullName() vs obj.fullName — 属性与方法风格不统一
+// 期望优点: 计算属性像普通属性一样访问; 封装字段验证
+// 期望缺点: getter 中副作用难以追踪; 调试器需特殊处理
+
+// [WISH] 运算符重载
+// 期望: Obj Vec2 { func +(other) { return Vec2(x+other.x, y+other.y) } }
+// 现状优点: 语义完全透明; 无隐式操作
+// 现状缺点: 数学/向量对象不能用 + ; 只能用 .add() 方法
+// 期望优点: 数学类型用自然语法; C++/Python/Kotlin 模式
+// 期望缺点: 滥用导致代码不可读; 编译/运行开销
+
+Obj A() { func tag() { return "A" } }
+Obj B : A() { func tag() { return "B" } }
+Obj C : A() {}
+Obj D2 : B, C() {}
+let dd = D2()
+T(dd.tag() == "B")  // C3 MRO
+
+// [WISH] 原型委托 (prototype) 作为 Obj 之外的轻量选择
+// 期望: let child = {__proto__: parent, ownKey: 42}
+// 现状优点: Obj 是唯一对象模型, 语义统一; 无原型链污染风险
+// 现状缺点: 简单委托场景也需完整 Obj 声明; 缺少轻量对象关联
+// 期望优点: 灵活; JS/Lua 用户熟悉; 适合配置合并/默认值模式
+// 期望缺点: 原型链查找性能; __proto__ 被认为是 JS 设计错误
+
+Obj Ctr(init) {
+    this.v = init
+    func up() { this.v = this.v + 1; return this.v }
+    func dn() { this.v = this.v - 1; return this.v }
+}
+let ct = Ctr(10)
+T(ct.up() == 11)
+T(ct.dn() == 10)
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 8. 异常处理 — try/catch/finally + throw + defer
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 8. 异常 ──")
+
+let msg = ""
+try { throw "err" } catch(e) { msg = e }
+T(msg == "err")
+
+// [WISH] catch 按类型捕获
+// 现状: catch(e) { ... }  — 捕获所有
+// 期望: catch TypeError(e) { ... } catch (e) { ... }
+// 现状优点: 极简; 动态语言类型错误不常见
+// 现状缺点: 无法区分异常类型; 只能解析字符串 message
+// 期望优点: 分层错误处理; Java/C#/JS 惯例
+// 期望缺点: 需错误类型层级; 动态语言中类型检查开销
+
+// [WISH] 结构化错误对象
+// 期望: throw Error("msg", code=42, data={...})
+// 现状优点: throw "string" 简单直接
+// 现状缺点: 只能传字符串; 无 code/stack/data 等结构化信息
+// 期望优点: 错误可携带上下文; 调用者可编程处理
+// 期望缺点: Error 类型需设计; 增加运行时开销
+
+// [WISH] defer 在异常抛出时也执行
+// 现状: defer 仅在正常 return 时执行, throw 时跳过
+// 期望: defer 在 throw 时也执行 (RAII 语义)
+// 现状优点: 简单; 异常路径不触发额外代码
+// 现状缺点: 资源清理代码在异常时不执行; defer 的核心价值丧失
+// 期望优点: 真正的 RAII; Go/Rust 风格保证资源释放
+// 期望缺点: 异常路径执行 defer 可能抛出二次异常
+
+let fr = false
+try { let y = 1 } finally { fr = true }
+T(fr)
+
+let dl = []
+func td() {
+    defer func() { dl.add("2") }()
+    defer func() { dl.add("1") }()
+    dl.add("0")
+}
+td()
+T(dl[0] == "0")
+T(dl[1] == "1")
+T(dl[2] == "2")
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. 集合方法 — Array / String / Dict / Set / Map
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 9. 集合 ──")
+
+// Array
+let ar = [1,2,3]
+ar.add(4)
+T(ar.length == 4 && ar.pop() == 4)
+ar.insert(0,0)
+T(ar.indexOf(0) == 0)
+ar.remove(0)
+T(ar.length == 3)
+ar.clear()
+T(ar.length == 0)
+
+// [WISH] Array 高阶方法 map/filter/reduce/sort
+// 期望:
+//   arr.map(func(x) { return x * 2 })           — 映射
+//   arr.filter(func(x) { return x > 0 })         — 过滤
+//   arr.reduce(func(acc, x) { return acc + x }, 0) — 归约
+//   arr.sort() / arr.sort(func(a,b) { return a - b })
+// 现状优点: 手动循环显式, 无闭包分配开销
+// 现状缺点: 每次写 for 循环样板, 意图隐于实现
+// 期望优点: 声明式, 链式调用; JS/Python/Rust 标准
+// 期望缺点: 闭包分配开销; 需稳定 API 设计
+
+let arrConcat = [1,2] + [3,4]
+T(eqArr(arrConcat, [1,2,3,4]))
+
+// [WISH] arr.slice(start, end) / arr.splice(start, count, ...items)
+// 期望: arr.slice(1, 3) → 子数组; arr.splice(1, 2, "x") → 删除并插入
+// 现状优点: insert/remove 已覆盖基本需求
+// 现状缺点: 无法提取子数组; 批量替换麻烦
+// 期望优点: JS 标准; 切片和拼接是最常用数组操作
+// 期望缺点: 多个方法增加 API 面积
+
+// String
+T(" hello ".trim() == "hello")
+T("HI".lower() == "hi")
+T("hi".upper() == "HI")
+T("abc".include("b"))
+T("abc".startsWith("a"))
+T("abc".endsWith("c"))
+T("ab".substring(0,1) == "a")
+T("a-b".replace("-",".") == "a.b")
+
+// [WISH] str.repeat(n) / str.padStart(n, pad) / str.padEnd(n, pad)
+// 期望: "*".repeat(5) → "*****"; "42".padStart(4, "0") → "0042"
+// 现状优点: for 循环 + 拼接已可实现
+// 现状缺点: repeat 需循环; pad 需手动计算长度+拼接
+// 期望优点: 简洁; JS/Python 标准方法
+// 期望缺点: 非核心, 可实现
+
+let splitResult = "a,b".split(",")
+T(splitResult[0] == "a" && splitResult[1] == "b")
+
+// Dict
+let dc = {x:1, y:2}
+T(dc.has("x"))
+T(dc.keys().length == 2)
+dc.remove("x")
+T(!dc.has("x"))
+
+// [WISH] Dict 非字符串键
+// 现状: 键只能是字符串
+// 期望: let m = {[1]: "one", [true]: "yes"}  或  Map 替代
+// 现状优点: 实现简单; 字符串键兼容 JSON
+// 现状缺点: 无法用 int/bool/object 做直接键; 必须 toString 转换
+// 期望优点: 真正的哈希表; Python dict/JS Map 兼容
+// 期望缺点: 键相等语义复杂 (NaN, 对象引用 vs 值); GC 需处理
+
+// [WISH] Dict 合并运算符
+// 期望: let merged = {...a, ...b}
+// 现状优点: for-in 手动合并显式
+// 现状缺点: 每次写循环; 合并是极常见操作
+// 期望优点: 简洁; JS spread 惯例
+// 期望缺点: 重复键处理需定义 (后者覆盖?)
+
+// Set
+let st = Set()
+st.add("a")
+st.add("b")
+st.add("a")
+T(st.has("a") && st.has("b"))
+T(st.size == 2)
+st.remove("a")
+T(!st.has("a"))
+
+// Map
+let mp = Map()
+mp.set("k", 99)
+T(mp.get("k") == 99)
+mp.remove("k")
+T(!mp.has("k") && mp.size == 0)
+
+// [WISH] Set/Map 字面量语法
+// 期望: let s = #{1, 2, 3}  或  set{1, 2, 3}
+//        let m = #{"a": 1, "b": 2}  或  map{"a": 1}
+// 现状优点: Set() / Map() 构造器显式; 无歧义
+// 现状缺点: 每次 Set().add().add() 链冗长
+// 期望优点: 紧凑; 声明式
+// 期望缺点: 增加字面量语法; 与 Dict {} 易混淆
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 10. 推导式 — 列表推导 + 字典推导
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 10. 推导式 ──")
+
+let sq = [x*x for x in range(1,5)]
+T(eqArr(sq, [1,4,9,16]))
+
+let ev = [x for x in range(10) if x % 2 == 0]
+T(ev.length == 5)
+T(ev[0] == 0)
+
+let dc2 = {k: k.upper() for k in ["a","bb"] if k.length > 1}
+T(dc2["bb"] == "BB")
+
+// [WISH] Set 推导式
+// 期望: {x for x in arr}  或  set{...}
+// 现状优点: 手动循环 + Set.add 已可实现
+// 现状缺点: 声明式转为命令式
+// 期望优点: 与 list/dict 推导式家族完整
+// 期望缺点: 语法与 dict 推导式 {k: v for ...} 易混淆
+
+// [WISH] 推导式多循环
+// 期望: [a + b for a in [1,2] for b in [10,20]] → [11,21,12,22]
+// 现状优点: 嵌套推导式或嵌套循环已可实现
+// 现状缺点: 笛卡尔积/展开嵌套需嵌套推导式
+// 期望优点: Python 兼容; 笛卡尔积极自然
+// 期望缺点: 多循环顺序有歧义 (左深 vs 右深)
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 11. 字符串插值
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 11. 字符串插值 ──")
+
+let who = "Vora"
+T("${who} v24" == "Vora v24")
+
+// [WISH] ${expression} 表达式插值
+// 现状: "${var}"      — 仅变量
+// 期望: "${2+3}"      → "5"
+//        "${name.upper()}" → 方法调用结果
+// 现状优点: 实现简单; 变量插值覆盖多数场景
+// 现状缺点: 任何计算都需先赋给临时变量
+// 期望优点: JS template literal 兼容; 无需临时变量
+// 期望缺点: 表达式可能复杂降低可读性; 安全性 (注入)
+
+// [WISH] 多行字符串 / raw string
+// 期望: """line1\nline2"""  或  r"C:\path\to\file"
+// 现状优点: 简单
+// 现状缺点: 长文本需 \n 拼接; 正则/路径需 \\ 转义
+// 期望优点: 模板/嵌入文本自然; Python/JS/Rust 惯例
+// 期望缺点: 缩进处理是经典难题; 增加词法复杂度
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 12. 内建函数 — 类型转换 / 工具 / 进制 / 数学 / 迭代器
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 12. 内建函数 ──")
+
+T(int(3.14) == 3)
+T(float(42) == 42.0)
+T(toString(42) == "42")
+T(len([1,2,3]) == 3)
+T(len("ab") == 2)
+T(bin(42) == "0b101010")
+T(hex(255) == "0xff")
+T(abs(-5) == 5)
+T(sqrt(16) == 4.0)
+T(sin(0) == 0.0)
+T(cos(0) == 1.0)
+T(min([3,1,2]) == 1)
+T(max([3,1,2]) == 3)
+
+// [WISH] 更多数学函数
+// 期望: pow(base,exp), log(n), log10(n), floor(n), ceil(n), round(n, decimals)
+// 现状优点: math 模块已有 sqrt/sin/cos/abs
+// 现状缺点: 常用函数需 import math; pow 只能用 ** 运算符
+// 期望优点: 常用运算开箱即用; Python builtins 对齐
+// 期望缺点: 内建函数膨胀; 作用域污染
+
+// [WISH] 统计/聚合函数
+// 期望: sum(arr), avg(arr), median(arr), prod(arr)
+// 现状优点: for 循环显式
+// 现状缺点: 每次写 sum 循环; 统计意图淹没
+// 期望优点: 一行完成常见聚合
+// 期望缺点: 大数据性能需考虑; 非核心功能
+
+// [WISH] 迭代器工具
+// 期望: zip(a,b), enumerate(arr), reverse(arr)
+// 现状优点: 手动索引+循环可完成
+// 现状缺点: 并行迭代/逆序需手写
+// 期望优点: Python 标准; 函数式数据处理基础
+// 期望缺点: 惰性 vs 立即求值需决定
+
+// [WISH] 类型测试函数
+// 期望: isInt(v), isFloat(v), isString(v), isArray(v)
+// 现状: type(v) == "int"  — 字符串比较
+// 现状优点: type() 返回字符串, 足够用
+// 现状缺点: 字符串比较脆弱; type() 返回值改变时所有调用点静默失效
+// 期望优点: 类型安全; 更高效 (可直接返回 bool)
+// 期望缺点: 增加 API 面积
+
+let rng3 = range(3)
+T(eqArr(rng3, [0,1,2]))
+let rng14 = range(1,4)
+T(eqArr(rng14, [1,2,3]))
+let rng09 = range(0,9,3)
+T(eqArr(rng09, [0,3,6]))
+
+let ri = random_int(1,10)
+T(ri >= 1 && ri <= 10)
+
+// [WISH] 随机工具
+// 期望: random_choice(arr), random_shuffle(arr), random_seed(n)
+// 现状优点: random_int/float 覆盖基本需求
+// 现状缺点: 选元素/洗牌需手写
+// 期望优点: 常见随机操作开箱即用
+// 期望缺点: 可seed的随机需全局状态管理
+
+let jd = {ok:true, n:42}
+let js = jsonStringify(jd)
+let jb = jsonParse(js)
+T(jb.ok == true && jb.n == 42)
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 13. 标准库 — math + json
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 13. 标准库 ──")
+
+// import "math"
+// T(math.PI > 3.14 && math.PI < 3.15)
+// T(math.abs(-10) == 10)
+// T(math.sqrt(25) == 5.0)
+// T(math.min([5,3,9]) == 3)
+// T(math.max([5,3,9]) == 9)
+
+// import "json"
+// T(json.parse("42") == 42)
+// let parsedArr = json.parse("[1,2]")
+// T(eqArr(parsedArr, [1,2]))
+// T(json.stringify({a:1}) == '{"a":1}')
+
+// [WISH] 标准库完善
+// 期望: std/fs, std/os, std/datetime, std/array, std/string, std/regex
+//       全部稳定, 文档齐全
+// 现状优点: math + json 稳定可用
+// 现状缺点: 大量模块虽有实现但未稳定/文档缺失
+// 期望优点: 标准库即工具包, 开箱即用
+// 期望缺点: 维护负担; 需保持向后兼容
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 14. 杂项 — 链式调用 / 索引赋值 / 嵌套字典
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n── 14. 杂项 ──")
+
+T(" x ".trim().upper() == "X")
+
+let ia = [1,2,3]
+ia[1] = 99
+T(ia[1] == 99)
+
+// [WISH] 属性简写 (shorthand property)
+// 期望: let name = "Vora"; let obj = {name}  → {name: "Vora"}
+// 现状优点: 显式 {name: name} 无歧义
+// 现状缺点: 变量名=属性名时重复写两遍
+// 期望优点: 紧凑; JS/TS 标准
+// 期望缺点: 语法糖; 初学者可能困惑 {name} 是变量还是字符串键
+
+let nd = {user: {name: "V", tags: ["x"]}}
+T(nd.user.name == "V")
+T(nd.user.tags[0] == "x")
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+print("\n══════════════════════════════════")
+print("  " + toString(ok) + " passed, " + toString(ng) + " failed")
+print("══════════════════════════════════")
+if (ng == 0) { print("ALL OK") } else { print("SOME FAILED") }

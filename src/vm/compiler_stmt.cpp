@@ -242,8 +242,8 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
                 emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
                           static_cast<uint8_t>(srcSlot));         // load object
             }
-            uint8_t keyIndex = identifierConstant(prop.key);
-            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), keyIndex);
+            size_t keyIndex = identifierConstant(prop.key);
+            emitGetProperty(keyIndex);
             compileBindPattern(*prop.pattern, -1, isConst);
         }
 
@@ -755,16 +755,10 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     }
 
     // Store prototype in constant pool
-    uint8_t protoIndex = addFunctionPrototype(std::move(proto));
+    size_t protoIndex = addFunctionPrototype(std::move(proto));
 
     // Emit OP_CLOSURE to create the runtime VoraFunction
-    // Format: OP_CLOSURE <protoIndex> <upvalueCount> {<isLocal> <index>}*
-    emitBytes(static_cast<uint8_t>(OpCode::OP_CLOSURE), protoIndex);
-    emitByte(static_cast<uint8_t>(capturedUpvalues.size()));
-    for (const auto& uv : capturedUpvalues) {
-        emitByte(uv.isLocal ? 1 : 0);
-        emitByte(uv.index);
-    }
+    emitClosure(protoIndex, capturedUpvalues);
 
     // Bind to name
     if (scopeDepth == 0) {
@@ -976,10 +970,10 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     classDef->ctorProto = ctorProto;
     classDef->methodProtos = methodProtos;
 
-    uint8_t classIndex = makeConstant(classDef);
+    size_t classIndex = makeConstant(classDef);
 
     // Emit OP_CLASS to create the class constructor callable
-    emitBytes(static_cast<uint8_t>(OpCode::OP_CLASS), classIndex);
+    emitClass(classIndex, static_cast<uint8_t>(methodProtos.size()));
 
     // Bind to name
     if (scopeDepth == 0) {
@@ -1237,12 +1231,11 @@ void Compiler::visitImportStmt(const ImportStmt& stmt) {
     // --- from "path" import a, b, c ---
     if (!stmt.importNames.empty()) {
         // Emit OP_IMPORT with the path and a dummy name (not used for binding).
-        uint8_t pathIndex = makeConstant(
+        size_t pathIndex = makeConstant(
             GcHeap::instance().alloc<GcString>(stmt.modulePath));
-        uint8_t nameIndex = makeConstant(
+        size_t nameIndex = makeConstant(
             GcHeap::instance().alloc<GcString>(""));
-        emitBytes(static_cast<uint8_t>(OpCode::OP_IMPORT), pathIndex);
-        emitByte(nameIndex);
+        emitImport(pathIndex, nameIndex);
         // Stack: [moduleDict]
 
         for (size_t i = 0; i < stmt.importNames.size(); i++) {
@@ -1254,9 +1247,9 @@ void Compiler::visitImportStmt(const ImportStmt& stmt) {
                 emitByte(static_cast<uint8_t>(OpCode::OP_DUP));
             }
             // OP_GET_PROPERTY pops the dict, looks up `name`, pushes the value.
-            uint8_t propIdx = makeConstant(
+            size_t propIdx = makeConstant(
                 GcHeap::instance().alloc<GcString>(name));
-            emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY), propIdx);
+            emitGetProperty(propIdx);
             // Stack: [moduleDict (or gone if last), value]
 
             // Bind the extracted value.
@@ -1296,12 +1289,11 @@ void Compiler::visitImportStmt(const ImportStmt& stmt) {
     }
 
     // Emit OP_IMPORT with path and variable name as constants
-    uint8_t pathIndex = makeConstant(
+    size_t pathIndex = makeConstant(
         GcHeap::instance().alloc<GcString>(stmt.modulePath));
-    uint8_t nameIndex = makeConstant(
+    size_t nameIndex = makeConstant(
         GcHeap::instance().alloc<GcString>(varName));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_IMPORT), pathIndex);
-    emitByte(nameIndex);
+    emitImport(pathIndex, nameIndex);
 
     // OP_IMPORT pushes the module dict onto the stack.
     if (scopeDepth > 0) {
