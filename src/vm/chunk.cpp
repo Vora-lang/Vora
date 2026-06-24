@@ -173,36 +173,49 @@ void Chunk::writeAt(size_t offset, uint8_t byte) {
 }
 
 size_t Chunk::addConstant(Value value) {
-    // Fast path: O(1) hash lookup for string constants (most expensive to compare).
+    // O(1) hash lookup for string constants.
     if (auto* s = std::get_if<GcPtr<GcString>>(&value)) {
         auto it = stringConstantIndices_.find((*s)->value);
         if (it != stringConstantIndices_.end()) return it->second;
     }
 
-    // Fast path: O(1) hash lookup for int constants (very common).
+    // O(1) hash lookup for int64_t constants (very common).
     if (auto* iv = std::get_if<int64_t>(&value)) {
         auto it = intConstantIndices_.find(*iv);
         if (it != intConstantIndices_.end()) return it->second;
     }
 
-    // Linear scan for remaining types (null, bool, double, GcPtr<Callable>,
-    // GcPtr<Array>, GcPtr<Dict>, GcPtr<ObjectInstance>, GcPtr<FunctionPrototype>,
-    // GcPtr<ClassDefinition>). These are typically few and comparison is cheap.
-    for (size_t i = 0; i < constants.size(); i++) {
-        const auto& existing = constants[i];
-        if (existing.index() != value.index()) continue;
-
-        if (std::holds_alternative<std::nullptr_t>(value)) {
-            return i;
+    // O(1) hash lookup for double constants.
+    // NaN is excluded — NaN != NaN per IEEE 754, so it can never be a duplicate.
+    if (auto* dv = std::get_if<double>(&value)) {
+        if (!std::isnan(*dv)) {
+            auto it = doubleConstantIndices_.find(*dv);
+            if (it != doubleConstantIndices_.end()) return it->second;
         }
-        if (std::holds_alternative<bool>(value) && std::get<bool>(existing) == std::get<bool>(value)) return i;
-        // int64_t handled above via hash map — but re-check in case hash wasn't populated
-        if (std::holds_alternative<int64_t>(value) && std::holds_alternative<int64_t>(existing) && std::get<int64_t>(existing) == std::get<int64_t>(value)) return i;
-        if (std::holds_alternative<double>(value) && std::holds_alternative<double>(existing) && std::get<double>(existing) == std::get<double>(value)) return i;
-        // GcString handled above via hash map
     }
 
-    // Insert into constants and update hash indices.
+    // Linear scan only for nullptr_t and bool — these are at most 1 null + 2
+    // bools total, so O(n) is bounded by a tiny constant. GcPtr types (except
+    // GcString handled above) are pointer-unique by nature — no two distinct
+    // FunctionPrototype/ClassDefinition/etc. objects will ever compare equal,
+    // so the linear scan would waste cycles without ever finding a match.
+    // double and int64_t are handled exclusively by their hash maps above.
+    if (value.index() <= 3) {  // nullptr_t(0), double(1), int64_t(2), bool(3)
+        for (size_t i = 0; i < constants.size(); i++) {
+            const auto& existing = constants[i];
+            if (existing.index() != value.index()) continue;
+
+            if (std::holds_alternative<std::nullptr_t>(value)) {
+                return i;
+            }
+            if (std::holds_alternative<bool>(value) &&
+                std::get<bool>(existing) == std::get<bool>(value)) {
+                return i;
+            }
+        }
+    }
+
+    // Insert and update hash indices.
     size_t idx = constants.size();
     constants.push_back(value);
 
@@ -210,6 +223,10 @@ size_t Chunk::addConstant(Value value) {
         stringConstantIndices_[(*s)->value] = idx;
     } else if (auto* iv = std::get_if<int64_t>(&constants[idx])) {
         intConstantIndices_[*iv] = idx;
+    } else if (auto* dv = std::get_if<double>(&constants[idx])) {
+        if (!std::isnan(*dv)) {
+            doubleConstantIndices_[*dv] = idx;
+        }
     }
 
     return idx;

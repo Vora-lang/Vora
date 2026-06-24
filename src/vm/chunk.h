@@ -63,6 +63,10 @@ private:
     // O(1) dedup for int64_t (very common as small loop bounds / literals).
     std::unordered_map<int64_t, size_t> intConstantIndices_;
 
+    // O(1) dedup for double (frequent in numeric-heavy code).
+    // NaN is excluded — NaN != NaN per IEEE 754, so it can never be a duplicate.
+    std::unordered_map<double, size_t> doubleConstantIndices_;
+
 public:
 
 private:

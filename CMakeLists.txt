@@ -152,8 +152,14 @@ foreach(test_file ${TEST_LEXER} ${TEST_PARSER} ${TEST_RUNTIME} ${TEST_INTERPRETE
     if(rel_path MATCHES "^${CMAKE_CURRENT_SOURCE_DIR}")
         string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/" "" rel_path "${rel_path}")
     endif()
+
+    # Include parent directory in test name to avoid conflicts when test files
+    # have the same basename in different subdirectories (e.g. interpreter/ and
+    # runtime/ both have test_defer.va, test_match.va, test_set_map.va).
+    get_filename_component(test_dir "${rel_path}" DIRECTORY)
+    get_filename_component(test_dir_name "${test_dir}" NAME)
     add_test(
-        NAME "vm-${test_name}"
+        NAME "vm-${test_dir_name}-${test_name}"
         COMMAND Vora "${rel_path}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )

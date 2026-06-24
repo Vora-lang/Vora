@@ -118,7 +118,7 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 | **`std/fs` + `std/os` 标准库** | ✅ 已完成 | 无文件 I/O 无法做任何实际任务。这是从"玩具"到"工具"的质变。 | 1-2 周 |
 | **`std/regex` 正则表达式** | ✅ 已完成 | 脚本语言的字符串处理核心能力。 | 1 周 |
 | **空安全 `?.` + `??`** | ✅ 已完成 | 现代语言标配，消除 null 检查嵌套，代码量 -30%。JS 语法天然适配。 | 1 周 |
-| **错误类型层级 + `catch (e if Type)`** | ❌ 待实现 | catch 无法按类型过滤 = 错误处理盲抓。Error 基类是 OOP 语言标配。 | 1 周 |
+| **错误类型层级 + `catch (e if Type)`** | ❌ 已排除 | Vora 保持动态类型的简洁性，不引入错误类型层级。 | — |
 
 ### 3.2 🟠 高优先级 — 提升语言体验
 
@@ -166,7 +166,7 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 ### Phase 1: 2026 Q3 (7-9月) — 标准库 + 核心语法补全 🔴
 
 > 目标：让 Vora 能做实际工作（文件操作、正则匹配、空安全）
-> 进度：✅ std/fs ✅ std/os ✅ std/datetime ✅ std/array ✅ std/string ✅ std/regex ✅ ?. + ?? ✅ defer ✅ do-while ✅ ...expr ❌ Error 类型层级 ❌ 常量池去重
+> 进度：✅ std/fs ✅ std/os ✅ std/datetime ✅ std/array ✅ std/string ✅ std/regex ✅ ?. + ?? ✅ defer ✅ do-while ✅ ...expr ✅ 常量池去重
 
 ```
 标准库（最高优先级）
@@ -180,10 +180,9 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 核心语法
 ├── ✅ 空安全 ?. + ??                    ← 消除 null 检查嵌套
 ├── ✅ defer 延迟执行                    ← Go 风格资源释放（编译期实现）
-├── ❌ 错误类型层级 + catch (e if Type)   ← Error 基类 + 按类型过滤
 ├── ✅ do-while 循环                     ← 基础控制流补全
 ├── ✅ 调用端展开 ...expr                ← 与 rest 参数对称
-└── ❌ 常量池去重优化（编译期）            ← 编译速度提升
+└── ✅ 常量池去重优化（编译期）            ← 编译速度提升
 ```
 
 **为什么标准库排第一**：没有 `std/fs` 和 `std/os`，Vora 无法读写文件、获取环境变量、执行系统命令。这限制了它作为脚本语言的基本能力。一个不能读文件的脚本语言，语法再好也没用。**（已补齐：fs/os/datetime/array/string/regex 共 6 个模块，全部完成。）**
