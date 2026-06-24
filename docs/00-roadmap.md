@@ -127,7 +127,7 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 | **`std/datetime` + `std/array` + `std/string`** | ✅ 已完成 | 日期处理、数组工具、字符串增强——日常脚本必备。 | 1-2 周 |
 | **`do-while` 循环** | ✅ 已完成 | 基础控制流缺口。先执行后判断的场景（如输入验证）需要它。 | 1 天 |
 | **调用端展开 `...expr`** | ✅ 已完成 | 与 rest 参数对称，解锁函数式模式。成本极低。 | 1-2 天 |
-| **列表/Dict 推导式** | ❌ 待实现 | 一行替代多层循环，数据处理核心体验。JS/Python 风格。 | 1 周 |
+| **列表/Dict 推导式** | ✅ 已完成 | 一行替代多层循环，数据处理核心体验。JS/Python 风格。 | 1 周 |
 | **命名参数** | ✅ 已完成 | `func(name="Vora", age=18)` 自文档化，减少参数顺序错误。 | 2-3 天 |
 | **访问控制 `private`** | ❌ 已排除 | `import`/`export` 已提供模块级封装，类级 `private` 非必需。 | — |
 
@@ -163,10 +163,10 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 
 ---
 
-### Phase 1: 2026 Q3 (7-9月) — 标准库 + 核心语法补全 🔴
+### Phase 1: 2026 Q3 (7-9月) — 标准库 + 核心语法补全 🔴 ✅ 已完成
 
 > 目标：让 Vora 能做实际工作（文件操作、正则匹配、空安全）
-> 进度：✅ std/fs ✅ std/os ✅ std/datetime ✅ std/array ✅ std/string ✅ std/regex ✅ ?. + ?? ✅ defer ✅ do-while ✅ ...expr ✅ 常量池去重
+> 进度：✅ 全部完成（std/fs, std/os, std/datetime, std/array, std/string, std/regex, ?. + ??, defer, do-while, ...expr, 常量池去重）
 
 ```
 标准库（最高优先级）
@@ -209,7 +209,7 @@ OOP 完善
 └── NaN-boxing — Value 8 字节瘦身
 ```
 
-**为什么 OOP 排在这里**：Vora 的 Obj 系统已经很强（多继承 + super），但缺少 private 和 static 方法。这些是 OOP 的基础安全机制，没有它们对象只是命名空间。
+**为什么 OOP 排在这里**：Vora 的 Obj 系统已经很强（多继承 + super），但缺少静态方法。`import`/`export` 已提供模块级封装，类级 `private` 不再需要。
 
 ---
 
@@ -268,7 +268,7 @@ OOP 完善
 
 | 缺口 | 严重度 | 说明 |
 |------|--------|------|
-| **无 `Array.sort` / 内建排序** | 🟡 中 | 每次排序必须手写。可通过 `std/array` 模块添加。 |
+| **无 `Array.sort` / 内建排序** | ✅ 已修复 | `std/array.sort()` 已提供排序。 |
 | **字符串拼接低效** | 🟡 中 | 每次 `+` 都重新分配。可引入 StringBuilder 减少 GC 压力。 |
 | **`Value` 类型不可扩展** | 🟡 中 | `std::variant` 封闭了类型集合。用户无法注册新类型。但这是设计权衡——封闭 variant 更安全、更快。 |
 
