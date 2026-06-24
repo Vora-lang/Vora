@@ -40,21 +40,9 @@ void SymbolTable::pushScope() {
     Scope scope;
     scope.level = currentLevel_;
     scope.parentIndex = static_cast<int>(scopes_.size()) - 1;  // previous scope
-    scopes_.push_back(std::move(scope));
+    scopes_.push_back(scope);
+    scopeHistory_.push_back(scope);  // persistent copy for post-analysis queries
     currentLevel_++;
-}
-
-void SymbolTable::popScope() {
-    if (!scopes_.empty()) {
-        scopes_.pop_back();
-    }
-    if (currentLevel_ > 0) {
-        currentLevel_--;
-    }
-    // Ensure there's always at least the global scope.
-    if (scopes_.empty()) {
-        pushScope();
-    }
 }
 
 int SymbolTable::addSymbol(SymbolInfo sym,
@@ -90,10 +78,44 @@ int SymbolTable::addSymbol(SymbolInfo sym,
     symbols_.push_back(std::move(sym));
 
     if (!scopes_.empty()) {
+        int scopeIdx = static_cast<int>(scopes_.size()) - 1;
         scopes_.back().symbolIndices.push_back(index);
+        // Track scope line range on both active and history scopes.
+        const auto& s = symbols_.back();
+        if (s.declToken.line > 0) {
+            auto updateRange = [&](Scope& scope) {
+                if (s.declToken.line < scope.startLine) scope.startLine = s.declToken.line;
+                if (s.declToken.line > scope.endLine) scope.endLine = s.declToken.line;
+            };
+            updateRange(scopes_.back());
+            if (scopeIdx < static_cast<int>(scopeHistory_.size())) {
+                updateRange(scopeHistory_[scopeIdx]);
+            }
+        }
     }
 
     return index;
+}
+
+void SymbolTable::popScope() {
+    if (!scopes_.empty()) {
+        // Propagate endLine to parent scope before popping.
+        int endingLine = scopes_.back().endLine;
+        int parentIdx = scopes_.back().parentIndex;
+        scopes_.pop_back();
+        if (parentIdx >= 0 && parentIdx < static_cast<int>(scopes_.size())) {
+            if (endingLine > scopes_[parentIdx].endLine) {
+                scopes_[parentIdx].endLine = endingLine;
+            }
+        }
+    }
+    if (currentLevel_ > 0) {
+        currentLevel_--;
+    }
+    // Ensure there's always at least the global scope.
+    if (scopes_.empty()) {
+        pushScope();
+    }
 }
 
 const SymbolInfo* SymbolTable::resolve(const std::string& name) const {
@@ -972,31 +994,64 @@ std::vector<SymbolRef> SemanticAnalyzer::findReferencesTo(int line, int col) con
 }
 
 std::vector<const SymbolInfo*> SemanticAnalyzer::getVisibleSymbols(int line, int col) const {
-    // Return all symbols declared at or before the cursor position.
-    // Uses allSymbols() (not visibleSymbols()) because scopes may have
-    // been popped during analysis; the complete symbol list is preserved.
-    // A more sophisticated implementation would determine which scope
-    // the cursor is in based on scope ranges and only include symbols
-    // visible from that scope.
+    // Return symbols visible at the cursor position, respecting scope boundaries.
+    //
+    // Strategy: determine which scope chain the cursor belongs to by finding
+    // the innermost scope whose startLine ≤ cursor line. Then include only
+    // symbols whose scope is in that chain (or global).
+    //
+    // This correctly excludes symbols from closed scopes (e.g., variables
+    // declared inside a different function body that has already ended).
 
     const auto& allSyms = table_.allSymbols();
+    // Use scopeHistory_ (never popped) instead of scopes_ (popped during analysis).
+    const auto& allScopes = table_.allScopesHistory();
     std::vector<const SymbolInfo*> result;
     result.reserve(allSyms.size());
 
+    // ── Determine the cursor's scope chain ────────────────────────────────
+    int cursorScopeIdx = 0;  // default to global (scope 0)
+    for (size_t si = 0; si < allScopes.size(); si++) {
+        const auto& scope = allScopes[si];
+        if (scope.startLine > 0 && scope.startLine <= line) {
+            // This scope starts at or before the cursor — it's a candidate.
+            // Keep the deepest (innermost) one.
+            cursorScopeIdx = static_cast<int>(si);
+        }
+    }
+
+    // Walk up from cursorScopeIdx to global, collecting visible scope indices.
+    std::vector<bool> visibleScopeChain(allScopes.size(), false);
+    int idx = cursorScopeIdx;
+    while (idx >= 0 && idx < static_cast<int>(allScopes.size())) {
+        visibleScopeChain[idx] = true;
+        idx = allScopes[idx].parentIndex;
+    }
+
+    // ── Filter symbols ────────────────────────────────────────────────────
     for (auto& sym : allSyms) {
-        // Skip symbols with no position info and those declared after cursor.
-        if (sym.declToken.line > 0 && sym.declToken.line <= line) {
-            // If same line, check column.
-            if (sym.declToken.line == line &&
-                sym.declToken.column > col) {
-                continue;  // declared after cursor on same line
-            }
+        // No position info (e.g., catch var, lambda param) — include.
+        if (sym.declToken.line == 0) {
             result.push_back(&sym);
-        } else if (sym.declToken.line == 0) {
-            // No position info (e.g., catch var, lambda param) — include.
+            continue;
+        }
+
+        // Declared after cursor — exclude.
+        if (sym.declToken.line > line) continue;
+        if (sym.declToken.line == line && sym.declToken.column > col) continue;
+
+        // Global scope (level 0) — always visible.
+        if (sym.scopeLevel == 0) {
+            result.push_back(&sym);
+            continue;
+        }
+
+        // Non-global: only visible if in the cursor's scope chain.
+        if (sym.scopeIndex >= 0 &&
+            sym.scopeIndex < static_cast<int>(visibleScopeChain.size()) &&
+            visibleScopeChain[sym.scopeIndex]) {
             result.push_back(&sym);
         }
-        // Symbols declared after the cursor line are excluded.
     }
 
     return result;

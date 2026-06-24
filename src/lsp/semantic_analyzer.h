@@ -33,6 +33,7 @@
 #include "ast/stmt_visitor.h"
 #include "lexer/token.h"
 
+#include <climits>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -106,6 +107,8 @@ struct Scope {
     int level = 0;                       // nesting depth (0 = global)
     int parentIndex = -1;                // index of enclosing scope (-1 for global)
     std::vector<int> symbolIndices;      // indices into the master symbol list
+    int startLine = INT_MAX;             // earliest declaration line in this scope
+    int endLine = 0;                     // latest declaration line (set at pop)
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -137,12 +140,14 @@ public:
     // ── Accessors ─────────────────────────────────────────────────────
     const std::vector<SymbolInfo>& allSymbols() const { return symbols_; }
     const std::vector<Scope>& allScopes() const { return scopes_; }
+    const std::vector<Scope>& allScopesHistory() const { return scopeHistory_; }
     int currentLevel() const { return currentLevel_; }
     int currentScopeIndex() const { return static_cast<int>(scopes_.size()) - 1; }
 
 private:
     std::vector<SymbolInfo> symbols_;
     std::vector<Scope> scopes_;
+    std::vector<Scope> scopeHistory_;  // never popped — full scope tree
     int currentLevel_ = 0;
 };
 
