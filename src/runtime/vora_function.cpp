@@ -1,7 +1,7 @@
 #include "vora_function.h"
 
-#include <cassert>
 #include "../vm/compiler.h"  // for FunctionPrototype
+#include "runtime_error.h"
 
 namespace vora {
 
@@ -24,8 +24,8 @@ Value VoraFunction::call(const std::vector<Value>& /*arguments*/) {
     // the VM dispatches it directly via callVoraFunction() which sets
     // up call frames and upvalues. If this stub is ever reached, it
     // indicates a bug in the VM dispatch.
-    assert(false && "VoraFunction::call() should never be invoked directly");
-    return nullptr;
+    throw RuntimeError("Internal error: VoraFunction::call() should never be invoked directly",
+                       Token());
 }
 
 const std::string& VoraFunction::name() const {

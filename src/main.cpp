@@ -268,42 +268,48 @@ static void runREPL() {
         std::string source = std::move(accumulated);
         accumulated.clear();
 
-        StderrErrorReporter reporter(source);
-        Lexer lexer(source, reporter);
-        auto tokens = lexer.scanTokens();
-        Parser parser(tokens, reporter);
-        parser.setSource(source);
-        auto program = parser.parse();
+        try {
+            StderrErrorReporter reporter(source);
+            Lexer lexer(source, reporter);
+            auto tokens = lexer.scanTokens();
+            Parser parser(tokens, reporter);
+            parser.setSource(source);
+            auto program = parser.parse();
 
-        if (parser.hasError()) {
-            // Skip execution of errored input in REPL.
-            continue;
-        }
+            if (parser.hasError()) {
+                // Skip execution of errored input in REPL.
+                continue;
+            }
 
-        Compiler compiler(reporter);
-        compiler.setSource(source);
-        compiler.replMode = true;  // print expression results in REPL
+            Compiler compiler(reporter);
+            compiler.setSource(source);
+            compiler.replMode = true;  // print expression results in REPL
 
-        // Seed the compiler with the VM's current global table so that
-        // slot assignments match. Without this, a `let x = 5` line and
-        // a later `print(x)` line would disagree on slot numbers.
-        compiler.seedGlobals(vm.getGlobalNames());
+            // Seed the compiler with the VM's current global table so that
+            // slot assignments match. Without this, a `let x = 5` line and
+            // a later `print(x)` line would disagree on slot numbers.
+            compiler.seedGlobals(vm.getGlobalNames());
 
-        Chunk chunk = compiler.compile(program.get());
+            Chunk chunk = compiler.compile(program.get());
 
-        if (compiler.hadError) {
-            continue;  // error already printed, skip interpretation
-        }
+            if (compiler.hadError) {
+                continue;  // error already printed, skip interpretation
+            }
 
-        // Merge any new globals into the VM (idempotent — existing
-        // globals and their values are preserved).
-        vm.initGlobals(compiler.getGlobalNames());
+            // Merge any new globals into the VM (idempotent — existing
+            // globals and their values are preserved).
+            vm.initGlobals(compiler.getGlobalNames());
 
-        InterpretResult result = vm.interpret(chunk);
-        if (result == InterpretResult::RUNTIME_ERROR) {
-            // Error already printed by runtimeError(); continue REPL.
-            // (Interrupted runs also return RUNTIME_ERROR — "Interrupted"
-            //  is printed by the VM before returning.)
+            InterpretResult result = vm.interpret(chunk);
+            if (result == InterpretResult::RUNTIME_ERROR) {
+                // Error already printed by runtimeError(); continue REPL.
+                // (Interrupted runs also return RUNTIME_ERROR — "Interrupted"
+                //  is printed by the VM before returning.)
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "REPL internal error: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "REPL internal error (unknown exception)" << std::endl;
         }
     }
 
@@ -430,6 +436,14 @@ int main(
             std::cerr << error.what() << std::endl;
             return 1;
         }
+        catch (const std::exception& error) {
+            std::cerr << "Internal error: " << error.what() << std::endl;
+            return 2;
+        }
+        catch (...) {
+            std::cerr << "Internal error (unknown exception)" << std::endl;
+            return 2;
+        }
     }
 
     if (repl) {
@@ -469,6 +483,14 @@ int main(
     catch (const std::runtime_error& error) {
         std::cerr << error.what() << std::endl;
         return 1;
+    }
+    catch (const std::exception& error) {
+        std::cerr << "Internal error: " << error.what() << std::endl;
+        return 2;
+    }
+    catch (...) {
+        std::cerr << "Internal error (unknown exception)" << std::endl;
+        return 2;
     }
 
     return 0;

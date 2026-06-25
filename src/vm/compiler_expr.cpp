@@ -699,7 +699,10 @@ void Compiler::visitListCompExpr(const ListCompExpr& expr) {
     // _lx must be the last entry in locals — resultExpr compilation must
     // not leave any locals in the current scope (nested comprehensions
     // clean up their own locals via beginScope/endScope or manual cleanup).
-    assert(!locals.empty() && locals.back().name == tmpName);
+    if (locals.empty() || locals.back().name != tmpName) {
+        error("Internal compiler error: list comprehension temp local mismatch");
+        return;
+    }
     scopeLocalCounts.back()--;
     locals.pop_back();
 
@@ -881,13 +884,22 @@ void Compiler::visitDictCompExpr(const DictCompExpr& expr) {
               static_cast<uint8_t>(resultSlot));          // update _dcN
     emitByte(static_cast<uint8_t>(OpCode::OP_POP));       // discard merge result
     // Remove _dv, _dk, _dx from tracking (OP_DICT + OP_ADD consumed their values).
-    assert(!locals.empty() && locals.back().name == dvName);
+    if (locals.empty() || locals.back().name != dvName) {
+        error("Internal compiler error: dict comprehension temp local mismatch (_dv)");
+        return;
+    }
     scopeLocalCounts.back()--;
     locals.pop_back();  // _dv
-    assert(!locals.empty() && locals.back().name == dkName);
+    if (locals.empty() || locals.back().name != dkName) {
+        error("Internal compiler error: dict comprehension temp local mismatch (_dk)");
+        return;
+    }
     scopeLocalCounts.back()--;
     locals.pop_back();  // _dk
-    assert(!locals.empty() && locals.back().name == dxName);
+    if (locals.empty() || locals.back().name != dxName) {
+        error("Internal compiler error: dict comprehension temp local mismatch (_dx)");
+        return;
+    }
     scopeLocalCounts.back()--;
     locals.pop_back();  // _dx
 
@@ -1378,34 +1390,8 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
     }
 
     // Emit default-parameter preamble for fixed params with defaults
-    for (int i = requiredArity; i < totalArity; i++) {
-        const auto& param = expr.params[static_cast<size_t>(i)];
-
-        fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_DEFAULT_PARAM));
-        fnCompiler.emitByte(static_cast<uint8_t>(i));
-        size_t skipOffsetPos = fnCompiler.chunk.code.size();
-        fnCompiler.emitByte(0xFF);
-        fnCompiler.emitByte(0xFF);
-
-        param.defaultValue->accept(fnCompiler);
-
-        fnCompiler.emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
-                             static_cast<uint8_t>(i));
-        fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-
-        if (!fnCompiler.hadError) {
-            size_t jumpEnd = fnCompiler.chunk.code.size();
-            size_t offset = static_cast<size_t>(jumpEnd - skipOffsetPos - 2);
-            if (offset > 0xFFFF) {
-                fnCompiler.hadError = true;
-            } else {
-                fnCompiler.chunk.code[skipOffsetPos] =
-                    static_cast<uint8_t>(offset & 0xFF);
-                fnCompiler.chunk.code[skipOffsetPos + 1] =
-                    static_cast<uint8_t>((offset >> 8) & 0xFF);
-            }
-        }
-    }
+    compileDefaultParamPreamble(fnCompiler, expr.params, /*slotBase=*/0,
+                                requiredArity, totalArity);
 
     // Compile body statements
     for (const auto& s : expr.body->statements) {

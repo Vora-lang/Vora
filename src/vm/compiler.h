@@ -221,6 +221,11 @@ private:
     int dictCompCounter = 0;        // counter for unique _dcN result-dict names
     int matchCounter = 0;           // counter for unique __mN scrutinee names
 
+    // Recursion depth guard — prevents C++ stack overflow when compiling
+    // deeply nested ASTs (e.g. thousands of nested expressions).
+    static constexpr int MAX_COMPILE_DEPTH = 10000;
+    int recursionDepth_ = 0;
+
     void beginScope();
     void endScope();
     void addLocal(const std::string& name, bool isConst = false);
@@ -314,6 +319,23 @@ private:
                            size_t fallbackIndex);
     void emitCallKw(uint8_t posCount, uint8_t kwCount,  // OP_CALL_KW or _WIDE
                     const std::vector<size_t>& kwNameIndices);
+
+    // Emit default-parameter preamble for a function/method/constructor.
+    // For each parameter with a default value, emits:
+    //   OP_DEFAULT_PARAM <slot> <skipOffset16>
+    //   ... compiled default expression ...
+    //   OP_SET_LOCAL <slot>
+    //   OP_POP
+    // @param child     The compiler for the function/method body.
+    // @param params    Parameter declarations.
+    // @param slotBase  Local slot for param 0 (0 for functions, 1 for
+    //                  methods/constructors where 'this' occupies slot 0).
+    // @param requiredArity  Number of mandatory (non-default) parameters.
+    // @param totalArity     Total number of fixed (non-rest) parameters.
+    void compileDefaultParamPreamble(Compiler& child,
+                                     const std::vector<ParamDecl>& params,
+                                     int slotBase, int requiredArity,
+                                     int totalArity);
 
     // Compile an expression (convenience)
     void compileExpr(const Expr& expr);

@@ -131,6 +131,7 @@ void VM::resetStack() {
 void VM::push(Value value) {
     if (stackTopIndex >= stack.capacity()) {
         runtimeError("Stack overflow");
+        stackErrorFlag = true;  // halt dispatch loop at next iteration
         return;
     }
     if (stackTopIndex < stack.size())
@@ -149,10 +150,23 @@ Value VM::pop() {
 }
 
 Value& VM::peek(int distance) {
+    if (distance < 0 || static_cast<size_t>(distance) >= stackTopIndex) {
+        runtimeError("Stack underflow in peek()");
+        // Return reference to a static sentinel; the VM will stop on the
+        // next opcode boundary via the error flag set by runtimeError.
+        static Value sentinel;
+        return sentinel;
+    }
     return stack[stackTopIndex - 1 - distance];
 }
 
 const Value& VM::peek(int distance) const {
+    if (distance < 0 || static_cast<size_t>(distance) >= stackTopIndex) {
+        // Const version: can't call runtimeError, so return sentinel.
+        // This path is only used by valueToString / debug helpers.
+        static const Value sentinel;
+        return sentinel;
+    }
     return stack[stackTopIndex - 1 - distance];
 }
 
@@ -870,6 +884,10 @@ InterpretResult VM::run() {
             std::cerr << "\nInterrupted" << std::endl;
             return InterpretResult::RUNTIME_ERROR;
         }
+        if (stackErrorFlag) {
+            stackErrorFlag = false;
+            return InterpretResult::RUNTIME_ERROR;
+        }
 
         // --- Generator pending resume ---
         // next(gen) sets this to redirect execution from the caller's
@@ -955,12 +973,22 @@ InterpretResult VM::run() {
             // --- Locals ---
             case OpCode::OP_GET_LOCAL: {
                 uint8_t slot = READ_BYTE();
-                push(stack[frameBaseIndex + slot]);
+                size_t idx = frameBaseIndex + slot;
+                if (idx >= stack.size()) {
+                    RUNTIME_ERROR_OR_THROW("Invalid local variable index " + std::to_string(slot));
+                    return InterpretResult::RUNTIME_ERROR;
+                }
+                push(stack[idx]);
                 break;
             }
             case OpCode::OP_SET_LOCAL: {
                 uint8_t slot = READ_BYTE();
-                stack[frameBaseIndex + slot] = peek(0);
+                size_t idx = frameBaseIndex + slot;
+                if (idx >= stack.size()) {
+                    RUNTIME_ERROR_OR_THROW("Invalid local variable index " + std::to_string(slot));
+                    return InterpretResult::RUNTIME_ERROR;
+                }
+                stack[idx] = peek(0);
                 break;
             }
 
@@ -2203,6 +2231,10 @@ InterpretResult VM::run() {
             // --- Arrays ---
             case OpCode::OP_ARRAY: {
                 uint8_t count = READ_BYTE();
+                if (count > stackTopIndex) {
+                    RUNTIME_ERROR_OR_THROW("Not enough values on stack for array literal");
+                    return InterpretResult::RUNTIME_ERROR;
+                }
                 auto arr = GcHeap::instance().alloc<Array>();
                 arr->elements.reserve(count);
                 size_t startIdx = stackTopIndex - count;
@@ -2215,13 +2247,18 @@ InterpretResult VM::run() {
             }
             case OpCode::OP_DICT: {
                 uint8_t pairCount = READ_BYTE();
+                size_t totalSlots = static_cast<size_t>(pairCount) * 2;
+                if (totalSlots > stackTopIndex) {
+                    RUNTIME_ERROR_OR_THROW("Not enough values on stack for dict literal");
+                    return InterpretResult::RUNTIME_ERROR;
+                }
                 auto dict = GcHeap::instance().alloc<Dict>();
-                size_t startIdx = stackTopIndex - pairCount * 2;
+                size_t startIdx = stackTopIndex - totalSlots;
                 for (uint8_t i = 0; i < pairCount; i++) {
                     std::string key = valueToString(stack[startIdx + i * 2]);
                     dict->pairs[key] = stack[startIdx + i * 2 + 1];
                 }
-                stackTopIndex -= pairCount * 2;
+                stackTopIndex -= totalSlots;
                 push(dict);
                 break;
             }
@@ -2398,6 +2435,10 @@ InterpretResult VM::run() {
             case OpCode::OP_GET_PROPERTY:
                 nameIndex = READ_BYTE();
                 get_property_body: {
+                if (!std::holds_alternative<GcPtr<GcString>>(currentChunk->constants[nameIndex])) {
+                    RUNTIME_ERROR_OR_THROW("Invalid property name in constant pool");
+                    return InterpretResult::RUNTIME_ERROR;
+                }
                 std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
                 Value obj = pop();
 
@@ -2509,6 +2550,10 @@ InterpretResult VM::run() {
             case OpCode::OP_SET_PROPERTY:
                 nameIndex = READ_BYTE();
                 set_property_body: {
+                if (!std::holds_alternative<GcPtr<GcString>>(currentChunk->constants[nameIndex])) {
+                    RUNTIME_ERROR_OR_THROW("Invalid property name in constant pool");
+                    return InterpretResult::RUNTIME_ERROR;
+                }
                 std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
                 Value value = pop();
                 Value obj = pop();
@@ -2528,6 +2573,10 @@ InterpretResult VM::run() {
             case OpCode::OP_GET_SUPER:
                 nameIndex = READ_BYTE();
                 get_super_body: {
+                if (!std::holds_alternative<GcPtr<GcString>>(currentChunk->constants[nameIndex])) {
+                    RUNTIME_ERROR_OR_THROW("Invalid property name in constant pool");
+                    return InterpretResult::RUNTIME_ERROR;
+                }
                 std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
 
                 // Get 'this' from local slot 0 (must be in a method)
@@ -2781,6 +2830,12 @@ InterpretResult VM::run() {
 #undef READ_CONSTANT
     } catch (const std::runtime_error& e) {
         runtimeError(e.what());
+        return InterpretResult::RUNTIME_ERROR;
+    } catch (const std::exception& e) {
+        runtimeError(std::string("Internal VM error: ") + e.what());
+        return InterpretResult::RUNTIME_ERROR;
+    } catch (...) {
+        runtimeError("Internal VM error (unknown exception)");
         return InterpretResult::RUNTIME_ERROR;
     }
 }

@@ -30,6 +30,7 @@ enum {
 // =========================================================================
 
 std::string SourceFormatter::format(const Program* program) {
+    depth_ = 0;  // reset depth guard for each format invocation
     return program->accept(*this);
 }
 
@@ -154,12 +155,19 @@ int SourceFormatter::exprPrecedence(const Expr& expr) {
 // =========================================================================
 
 std::string SourceFormatter::formatExpr(const Expr& expr, int minPrec) {
+    if (++depth_ > MAX_FORMAT_DEPTH) {
+        return "(too deep)";
+    }
     int ownPrec = exprPrecedence(expr);
 
+    std::string result;
     if (ownPrec < minPrec) {
-        return "(" + expr.accept(*this) + ")";
+        result = "(" + expr.accept(*this) + ")";
+    } else {
+        result = expr.accept(*this);
     }
-    return expr.accept(*this);
+    depth_--;
+    return result;
 }
 
 // =========================================================================
@@ -167,21 +175,28 @@ std::string SourceFormatter::formatExpr(const Expr& expr, int minPrec) {
 // =========================================================================
 
 std::string SourceFormatter::formatBlockBody(const Stmt& stmt) {
+    if (++depth_ > MAX_FORMAT_DEPTH) {
+        depth_--;
+        return " { (too deep) }";
+    }
     // If the statement is already a BlockStmt, format it with a leading space
     // for "if (...) {" / "while (...) {" / etc.
+    std::string result;
     if (auto* block = dynamic_cast<const BlockStmt*>(&stmt)) {
-        return " " + visitBlockStmt(*block);
+        result = " " + visitBlockStmt(*block);
+    } else {
+        // Otherwise wrap a single statement in braces.
+        std::stringstream ss;
+        ss << " {";
+        incIndent();
+        ss << nl();
+        ss << stmt.accept(*this);
+        decIndent();
+        ss << nl() << "}";
+        result = ss.str();
     }
-
-    // Otherwise wrap a single statement in braces.
-    std::stringstream ss;
-    ss << " {";
-    incIndent();
-    ss << nl();
-    ss << stmt.accept(*this);
-    decIndent();
-    ss << nl() << "}";
-    return ss.str();
+    depth_--;
+    return result;
 }
 
 std::string SourceFormatter::formatStatements(

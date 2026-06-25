@@ -20,6 +20,9 @@ public:
     std::string print(const Program* program);
 
 private:
+    static constexpr int MAX_PRINT_DEPTH = 10000;
+    int depth_ = 0;
+
     std::string parenthesize(
         const std::string& name,
         const std::vector<const Expr*>& exprs

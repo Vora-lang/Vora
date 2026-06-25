@@ -13,15 +13,24 @@ namespace vora {
 // =========================================================================
 
 std::string ASTPrinter::print(const Expr* expr) {
-    return expr->accept(*this);
+    if (++depth_ > MAX_PRINT_DEPTH) return "(too deep)";
+    std::string result = expr->accept(*this);
+    depth_--;
+    return result;
 }
 
 std::string ASTPrinter::print(const Stmt* stmt) {
-    return stmt->accept(*this);
+    if (++depth_ > MAX_PRINT_DEPTH) return "(too deep)";
+    std::string result = stmt->accept(*this);
+    depth_--;
+    return result;
 }
 
 std::string ASTPrinter::print(const Program* program) {
-    return program->accept(*this);
+    if (++depth_ > MAX_PRINT_DEPTH) return "(too deep)";
+    std::string result = program->accept(*this);
+    depth_--;
+    return result;
 }
 
 // =========================================================================

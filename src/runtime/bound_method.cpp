@@ -1,7 +1,7 @@
 #include "bound_method.h"
 #include "vora_function.h"
 
-#include <cassert>
+#include "runtime_error.h"
 
 namespace vora {
 
@@ -16,8 +16,8 @@ BoundMethod::BoundMethod(GcPtr<ObjectInstance> instance,
 Value BoundMethod::call(const std::vector<Value>& /*arguments*/) {
     // BoundMethod is never called through the Callable interface —
     // the VM intercepts it in callValue() and dispatches directly.
-    assert(false && "BoundMethod::call() should never be invoked directly");
-    return nullptr;
+    throw RuntimeError("Internal error: BoundMethod::call() should never be invoked directly",
+                       Token());
 }
 
 void BoundMethod::trace(std::vector<GcObject*>& wl) {

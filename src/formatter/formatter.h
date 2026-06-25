@@ -34,7 +34,9 @@ public:
     std::string format(const Program* program);
 
 private:
-    int indent_;  // current indentation depth (0-based)
+    static constexpr int MAX_FORMAT_DEPTH = 10000;
+    int indent_ = 0;  // current indentation depth (0-based)
+    int depth_ = 0;   // recursion depth guard (prevent stack overflow)
 
     // --- indentation helpers ---
     std::string indentStr() const;

@@ -681,40 +681,8 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     }
 
     // Emit default-parameter preamble for fixed params with defaults
-    for (int i = requiredArity; i < totalArity; i++) {
-        const auto& param = stmt.params[static_cast<size_t>(i)];
-
-        // OP_DEFAULT_PARAM <slot> <skipOffset>
-        // If slot < actualArgCount, skip the default evaluation.
-        fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_DEFAULT_PARAM));
-        fnCompiler.emitByte(static_cast<uint8_t>(i));  // local slot
-        size_t skipOffsetPos = fnCompiler.chunk.code.size();
-        fnCompiler.emitByte(0xFF);  // placeholder skip offset (low)
-        fnCompiler.emitByte(0xFF);  // placeholder skip offset (high)
-
-        // Compile the default value expression (result on stack)
-        param.defaultValue->accept(fnCompiler);
-
-        // Store into the local slot and pop leftover
-        fnCompiler.emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
-                             static_cast<uint8_t>(i));
-        fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-
-        // Patch the skip offset to jump over the default eval code
-        if (!fnCompiler.hadError) {
-            size_t jumpEnd = fnCompiler.chunk.code.size();
-            size_t offset = static_cast<size_t>(jumpEnd - skipOffsetPos - 2);
-            if (offset > 0xFFFF) {
-                // Jump offset overflow
-                fnCompiler.hadError = true;
-            } else {
-                fnCompiler.chunk.code[skipOffsetPos] =
-                    static_cast<uint8_t>(offset & 0xFF);
-                fnCompiler.chunk.code[skipOffsetPos + 1] =
-                    static_cast<uint8_t>((offset >> 8) & 0xFF);
-            }
-        }
-    }
+    compileDefaultParamPreamble(fnCompiler, stmt.params, /*slotBase=*/0,
+                                requiredArity, totalArity);
 
     // Pre-allocate local for self-recursion: add the function name as a
     // local in the ENCLOSING scope BEFORE compiling the body. This lets
@@ -824,35 +792,8 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
             }
 
             // Emit default-parameter preamble for method params with defaults
-            for (int i = mRequiredArity; i < mTotalArity; i++) {
-                const auto& param = funcStmt->params[static_cast<size_t>(i)];
-                int slot = i + 1;  // slot 0 is 'this', params start at slot 1
-
-                methodCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_DEFAULT_PARAM));
-                methodCompiler.emitByte(static_cast<uint8_t>(slot));
-                size_t skipPos = methodCompiler.chunk.code.size();
-                methodCompiler.emitByte(0xFF);
-                methodCompiler.emitByte(0xFF);
-
-                param.defaultValue->accept(methodCompiler);
-
-                methodCompiler.emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
-                                         static_cast<uint8_t>(slot));
-                methodCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-
-                if (!methodCompiler.hadError) {
-                    size_t jumpEnd = methodCompiler.chunk.code.size();
-                    size_t off = static_cast<size_t>(jumpEnd - skipPos - 2);
-                    if (off > 0xFFFF) {
-                        methodCompiler.hadError = true;
-                    } else {
-                        methodCompiler.chunk.code[skipPos] =
-                            static_cast<uint8_t>(off & 0xFF);
-                        methodCompiler.chunk.code[skipPos + 1] =
-                            static_cast<uint8_t>((off >> 8) & 0xFF);
-                    }
-                }
-            }
+            compileDefaultParamPreamble(methodCompiler, funcStmt->params,
+                                        /*slotBase=*/1, mRequiredArity, mTotalArity);
 
             // Compile method body
             for (const auto& s : funcStmt->body->statements) {
@@ -910,35 +851,8 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     }
 
     // Emit default-parameter preamble for constructor params with defaults
-    for (int i = ctorRequiredArity; i < ctorTotalArity; i++) {
-        const auto& param = stmt.params[static_cast<size_t>(i)];
-        int slot = i + 1;  // slot 0 is 'this'
-
-        ctorCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_DEFAULT_PARAM));
-        ctorCompiler.emitByte(static_cast<uint8_t>(slot));
-        size_t skipPos = ctorCompiler.chunk.code.size();
-        ctorCompiler.emitByte(0xFF);
-        ctorCompiler.emitByte(0xFF);
-
-        param.defaultValue->accept(ctorCompiler);
-
-        ctorCompiler.emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
-                               static_cast<uint8_t>(slot));
-        ctorCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-
-        if (!ctorCompiler.hadError) {
-            size_t jumpEnd = ctorCompiler.chunk.code.size();
-            size_t off = static_cast<size_t>(jumpEnd - skipPos - 2);
-            if (off > 0xFFFF) {
-                ctorCompiler.hadError = true;
-            } else {
-                ctorCompiler.chunk.code[skipPos] =
-                    static_cast<uint8_t>(off & 0xFF);
-                ctorCompiler.chunk.code[skipPos + 1] =
-                    static_cast<uint8_t>((off >> 8) & 0xFF);
-            }
-        }
-    }
+    compileDefaultParamPreamble(ctorCompiler, stmt.params,
+                                /*slotBase=*/1, ctorRequiredArity, ctorTotalArity);
 
     for (const auto& s : stmt.body->statements) {
         s->accept(ctorCompiler);

@@ -83,6 +83,11 @@ class VM {
     // Checked at the top of each opcode dispatch in run().
     static volatile sig_atomic_t interruptFlag;
 
+    // Stack error flag — set by push() when the stack overflows.
+    // Checked at dispatch to bail out gracefully instead of continuing
+    // with corrupted stack state.
+    bool stackErrorFlag = false;
+
 public:
     VM();
     ~VM() = default;

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <variant>
 
+#include "../ast/param_decl.h"
 #include "../gc/gc_heap.h"
 #include "../runtime/vora_function.h"
 
@@ -243,7 +244,14 @@ void Compiler::emitCallKw(uint8_t posCount, uint8_t kwCount,
 }
 
 void Compiler::compileExpr(const Expr& expr) {
+    if (++recursionDepth_ > MAX_COMPILE_DEPTH) {
+        error("AST too deeply nested (max " +
+              std::to_string(MAX_COMPILE_DEPTH) + " levels)");
+        recursionDepth_--;
+        return;
+    }
     expr.accept(*this);
+    recursionDepth_--;
 }
 
 // =========================================================================
@@ -517,6 +525,47 @@ void Compiler::emitDeferCalls() {
         emitClosure(it->protoIndex, it->upvalues);
         emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 0);
         emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    }
+}
+
+void Compiler::compileDefaultParamPreamble(Compiler& child,
+                                           const std::vector<ParamDecl>& params,
+                                           int slotBase, int requiredArity,
+                                           int totalArity) {
+    for (int i = requiredArity; i < totalArity; i++) {
+        const auto& param = params[static_cast<size_t>(i)];
+        int slot = i + slotBase;
+
+        // OP_DEFAULT_PARAM <slot> <skipOffset16>
+        // At runtime: if slot < actualArgCount, skip the default evaluation.
+        child.emitByte(static_cast<uint8_t>(OpCode::OP_DEFAULT_PARAM));
+        child.emitByte(static_cast<uint8_t>(slot));
+        size_t skipPos = child.chunk.code.size();
+        child.emitByte(0xFF);  // placeholder skip offset (low)
+        child.emitByte(0xFF);  // placeholder skip offset (high)
+
+        // Compile the default value expression (result on stack)
+        param.defaultValue->accept(child);
+
+        // Store into the local slot and pop leftover
+        child.emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                        static_cast<uint8_t>(slot));
+        child.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+        // Patch the skip offset to jump over the default eval code
+        if (!child.hadError) {
+            size_t jumpEnd = child.chunk.code.size();
+            size_t offset = jumpEnd - skipPos - 2;
+            if (offset > 0xFFFF) {
+                // Jump offset overflow
+                child.hadError = true;
+            } else {
+                child.chunk.code[skipPos] =
+                    static_cast<uint8_t>(offset & 0xFF);
+                child.chunk.code[skipPos + 1] =
+                    static_cast<uint8_t>((offset >> 8) & 0xFF);
+            }
+        }
     }
 }
 
