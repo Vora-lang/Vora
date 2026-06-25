@@ -579,7 +579,7 @@ void printSourceLine(std::ostream& out,
     // Print line number + source
     // Right-align line number in 3-char field, but limit to 999 lines.
     if (line < 1000) {
-        char buf[8];
+        char buf[16];
         std::snprintf(buf, sizeof(buf), "%3d", line);
         out << " " << buf << " | " << displayLine << "\n";
     } else {

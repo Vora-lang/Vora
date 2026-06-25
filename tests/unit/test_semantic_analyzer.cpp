@@ -255,7 +255,7 @@ TEST_CASE("semantic_import_binding") {
     REQUIRE(r.program);
 
     // The import creates a binding derived from the module path.
-    auto& allSyms = r.analyzer.getVisibleSymbols(1, 1);
+    auto allSyms = r.analyzer.getVisibleSymbols(1, 1);
     bool hasImport = false;
     for (auto* s : allSyms) {
         if (s->kind == SymbolKind::Import) {
@@ -271,7 +271,7 @@ TEST_CASE("semantic_import_with_alias") {
     auto r = analyze("import \"math\" as M");
     REQUIRE(r.program);
 
-    auto& allSyms = r.analyzer.getVisibleSymbols(1, 1);
+    auto allSyms = r.analyzer.getVisibleSymbols(1, 1);
     bool hasM = false;
     for (auto* s : allSyms) {
         if (s->name == "M" && s->kind == SymbolKind::Import) {
@@ -286,7 +286,7 @@ TEST_CASE("semantic_from_import") {
     auto r = analyze("from \"math\" import sin, cos");
     REQUIRE(r.program);
 
-    auto& allSyms = r.analyzer.getVisibleSymbols(1, 1);
+    auto allSyms = r.analyzer.getVisibleSymbols(1, 1);
     bool hasSin = false, hasCos = false;
     for (auto* s : allSyms) {
         if (s->name == "sin" && s->kind == SymbolKind::Import) hasSin = true;
