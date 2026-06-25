@@ -1,6 +1,6 @@
 # Vora 优化路线图
 
-> 最后更新：2026-06-22 (Phase 1 进度更新：std/fs, std/os, std/datetime, std/array, std/string, std/regex 全部完成；?. + ?? + defer + do-while + ...expr 完成)
+> 最后更新：2026-06-25 (Phase 1-2 全部完成；稳定性：技术债清零 + 崩溃审计全部修复)
 > 基于对 Vora 语言定位、当前状态、行业标准的全面审查。
 
 ---
@@ -188,64 +188,87 @@ NaN-boxing、Superinstruction、JIT 编译被放在路线图中，但当前 Vora
 
 ---
 
-### Phase 2: 2026 Q4 (10-12月) — 语言竞争力 ⭐
+### Phase 2: 2026 Q3-Q4 (提前完成) — 语言竞争力 ⭐ ✅ 已完成
 
 > 目标：提升日常编码体验，让 Vora 写起来舒服
+> 进度：✅ 全部完成（列表推导式、Dict 推导式、命名参数、类型注解、常量池 WIDE 指令、C++ 嵌入 API）
 
 ```
 语法糖
 ├── ✅ 列表推导式 [x for x in arr if cond]
 ├── ✅ Dict 推导式 {k: v for k, v in pairs}
 ├── ✅ 命名参数 func(name="Vora", age=18)
-└── 参数解构 func f({x, y})
+├── ✅ 类型注解运行时转换 :float/:int/:bool/:str
+└── 参数解构 func f({x, y})  ← 延后至 Phase 3
+
+基础设施
+├── ✅ C++ 嵌入 API（vora.hpp 单头文件 + embed 示例）
+├── ✅ 常量池 16-bit WIDE 指令（突破 256 条目限制）
+└── ✅ 常量池 O(1) double 去重
 
 OOP 完善
-├── ~~访问控制 private/public~~ (已排除：import/export 提供模块级封装)
-├── 静态方法 / 类方法
-└── 对象 rest 解构 {x, ...rest}
-
-性能（可选，视进度决定）
-└── NaN-boxing — Value 8 字节瘦身
+├── 静态方法 / 类方法  ← 延后至 Phase 3
+└── 对象 rest 解构 {x, ...rest}  ← 延后至 Phase 3
 ```
-
-**为什么 OOP 排在这里**：Vora 的 Obj 系统已经很强（多继承 + super），但缺少静态方法。`import`/`export` 已提供模块级封装，类级 `private` 不再需要。
 
 ---
 
-### Phase 3: 2027 Q1 (1-3月) — 嵌入能力增强 + 生产级 ⭐⭐
+### 稳定性里程碑：2026-06-25 — 技术债清零 + 崩溃审计 ✅
 
-> 目标：让 Vora 嵌入体验达到 Lua 级别
+> **P3 技术债**：20 项已修复（默认参数辅助方法、LSP 死代码清理、防御性检查、`VORA_VERSION` 连接、语法高亮 `as alias`）
+>
+> **崩溃终止 vs RuntimeError 审计**：18 项全部处理
+> - P0 (5)：`assert()` → 异常/编译器错误、`std::get` → `holds_alternative` 守卫
+> - P1 (8)：`catch(...)` 兜底、`peek()` 边界检查、OP 栈下溢守卫、`push()` 溢出标志
+> - P2 (3)：AST Printer / Formatter / Compiler 递归深度限制 (MAX_DEPTH=10000)
+>
+> **CI**：改为 `workflow_dispatch` 手动触发
+
+---
+
+### Phase 3: 2027 Q1 (1-3月) — 嵌入增强 + OOP 完善 ⭐
+
+> 目标：完善 OOP 能力，让 Vora 嵌入体验达到 Lua 级别
 
 ```
-嵌入能力
-├── C++ 嵌入 API 完善（vora.hpp 单头文件）
-│   ├── 更多嵌入示例和文档
-│   ├── 完善 VM public API（get/set global, call function）
-│   └── SDK 安装器（cmake --install 一键导出）
-└── 嵌入性能优化（interrupt 机制、GC hooks）
+OOP 完善
+├── 静态方法 / 类方法
+├── 对象 rest 解构 {x, ...rest}
+└── 参数解构 func f({x, y})
 
-异步/并发
-└── async/await + 事件循环（基于现有 generator 扩展）
+嵌入能力增强
+├── ✅ C++ 嵌入 API 已完善（vora.hpp 单头文件 + embed 示例）
+├── VM public API 扩展（registerNativeFunction、setGlobal/getGlobal）
+├── 嵌入文档（嵌入指南 + 完整示例项目）
+└── SDK 安装器（cmake --install 一键导出头文件 + .lib）
 
 性能
-├── GC 分代回收
-└── Superinstruction 合并
-
-工具
-└── 调试器 DAP（断点 + 单步 + 变量查看）
+├── NaN-boxing — Value 从 16 字节压缩到 8 字节
+└── Superinstruction 合并 — 常见字节码序列融合
 ```
 
 **为什么嵌入 API 排在这里**：Lua 的成功很大程度上因为 C API 极其简洁。Vora 的 C++ 嵌入 API 已有基础（`vora.hpp` + `vora_lib.lib`），但还需要完善 VM public API 和嵌入文档才能与 Lua 竞争嵌入式脚本市场。
 
 ---
 
-### Phase 4: 2027 Q2+ — 生态建设
+### Phase 4: 2027 Q2+ — 生产级 + 生态建设
 
 ```
-├── 包管理器 vpm
-├── 文档生成器
-├── 性能基准套件 + 与 Lua/Python 对比
+性能
+├── GC 分代回收
+├── Superinstruction 合并
 ├── 常量池共享 + 字节码内联
+└── 性能基准套件 + 与 Lua/Python 对比
+
+异步/并发
+└── async/await + 事件循环（基于现有 generator 扩展）
+
+工具
+├── 调试器 DAP（断点 + 单步 + 变量查看）
+├── 包管理器 vpm
+└── 文档生成器
+
+JIT
 └── JIT 编译（研究阶段，仅在 NaN-boxing + superinstruction 之后）
 ```
 
