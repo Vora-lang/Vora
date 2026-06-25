@@ -113,13 +113,71 @@ target_compile_definitions(
 )
 
 # ──────────────────────────────────────────────────
-# Install
+# Install — 导出可执行文件、静态库、头文件、std/ 库
 # ──────────────────────────────────────────────────
 
 include(GNUInstallDirs)
 
+# 可执行文件
 install(TARGETS Vora
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+# 静态库 + 头文件（供 C++ 嵌入使用）
+install(TARGETS vora_lib
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+# ── 生成单文件 vora.hpp（合并所有头文件） ────────────────────────────────
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+    set(VORA_HPP "${CMAKE_BINARY_DIR}/vora.hpp")
+    add_custom_command(
+        OUTPUT "${VORA_HPP}"
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/scripts/amalgamate_headers.py"
+                -o "${VORA_HPP}"
+        DEPENDS
+            "${CMAKE_SOURCE_DIR}/scripts/amalgamate_headers.py"
+            "${CMAKE_SOURCE_DIR}/src/vora.h"
+        COMMENT "Generating single-header vora.hpp..."
+    )
+    add_custom_target(vora_hpp ALL DEPENDS "${VORA_HPP}")
+	    set(_msi_extra_deps vora_hpp)
+
+    # 将 vora.hpp 安装到 SDK
+    install(FILES "${VORA_HPP}"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/vora"
+    )
+endif()
+
+# 公开头文件 — 保留 src/ 内的目录结构，使 `#include "vora.h"`
+# 及所有内部 `#include "vm/vm.h"` 等路径都能正确解析。
+install(FILES src/vora.h
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/vora"
+)
+
+# src/ 下所有嵌入需要的头文件（排除 LSP / JSON-RPC 内部实现）
+install(DIRECTORY src/
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/vora"
+    FILES_MATCHING
+    PATTERN "*.h"
+    PATTERN "lsp"        EXCLUDE
+    PATTERN "json_rpc"   EXCLUDE
+)
+
+# 第三方依赖（nlohmann/json.hpp）
+install(DIRECTORY include/
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/vora"
+    FILES_MATCHING
+    PATTERN "*.hpp"
+)
+
+# 标准库模块（.va 文件）
+install(DIRECTORY std/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/vora/std"
+    FILES_MATCHING
+    PATTERN "*.va"
 )
 
 # ──────────────────────────────────────────────────
@@ -270,6 +328,11 @@ vora_unit_test(tests/unit/test_json_rpc.cpp "jsonrpc|lsp")
 # ═══════════════════════════════════════════════════════════════════════════
 # Fuzzer target (libFuzzer) — Linux/clang only
 # ═══════════════════════════════════════════════════════════════════════════
+
+option(VORA_EMBED_DEMO "Build the C++ embedding example" OFF)
+if(VORA_EMBED_DEMO)
+    add_subdirectory(examples/embed)
+endif()
 
 option(VORA_FUZZER "Build libFuzzer harness for VM execution layer" OFF)
 
@@ -503,7 +566,7 @@ if(WIN32)
                 -ext "${WIX_TOOLS_DIR}/WixUIExtension.dll"
                 -out "${CMAKE_BINARY_DIR}/vora-${PROJECT_VERSION}-Windows-AMD64.msi"
                 "${CMAKE_BINARY_DIR}/vora.wixobj"
-            DEPENDS Vora "${CMAKE_BINARY_DIR}/vora.wxs"
+            DEPENDS Vora vora_lib ${_msi_extra_deps} "${CMAKE_BINARY_DIR}/vora.wxs"
             COMMENT "Building MSI with WiX v3 + WixUI..."
         )
         message(STATUS "MSI target enabled (candle: ${WIX_CANDLE}, light: ${WIX_LIGHT})")

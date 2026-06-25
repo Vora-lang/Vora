@@ -69,13 +69,45 @@
             </Component>
           </Directory>
 
-          <!-- std/ — standard library -->
+          <!-- lib/ — static library for C++ embedding -->
+          <Directory Id="LibDir" Name="lib">
+            <Component Id="VoraLib" Guid="A1C2D3E4-F506-4A7B-8C9D-0E1F2A3B4C5D">
+              <File Id="VoraLibFile" Source="@CMAKE_BINARY_DIR@/Release/vora_lib.lib" KeyPath="yes" />
+            </Component>
+          </Directory>
+
+          <!-- include/ — single-header for C++ embedding -->
+          <Directory Id="IncludeDir" Name="include">
+            <Component Id="VoraHpp" Guid="B2D3E4F5-A617-4B8C-9D0E-1F2A3B4C5D6E">
+              <File Id="VoraHppFile" Source="@CMAKE_BINARY_DIR@/vora.hpp" KeyPath="yes" />
+            </Component>
+          </Directory>
+
+          <!-- std/ — standard library modules -->
           <Directory Id="StdDir" Name="std">
-            <Component Id="StdMath" Guid="F1A2C834-E705-4C94-BF1F-48D6C3B83D71">
-              <File Id="StdMathVa" Source="@CMAKE_SOURCE_DIR@/std/math.va" KeyPath="yes" />
+            <Component Id="StdArray" Guid="F1A2C834-E705-4C94-BF1F-48D6C3B83D71">
+              <File Id="StdArrayVa" Source="@CMAKE_SOURCE_DIR@/std/array.va" KeyPath="yes" />
+            </Component>
+            <Component Id="StdDatetime" Guid="A3B4D5E6-F917-4C9D-CF1F-2A3B4C5D6E7F">
+              <File Id="StdDatetimeVa" Source="@CMAKE_SOURCE_DIR@/std/datetime.va" KeyPath="yes" />
+            </Component>
+            <Component Id="StdFs" Guid="B4C5D6E7-A728-4D0A-EF2F-3B4C5D6E7F80">
+              <File Id="StdFsVa" Source="@CMAKE_SOURCE_DIR@/std/fs.va" KeyPath="yes" />
             </Component>
             <Component Id="StdJson" Guid="A2B3D945-F816-4DA5-CF2F-59E7D4C94E82">
               <File Id="StdJsonVa" Source="@CMAKE_SOURCE_DIR@/std/json.va" KeyPath="yes" />
+            </Component>
+            <Component Id="StdMath" Guid="C5D6E7F8-B839-4E1B-AB3F-4C5D6E7F8091">
+              <File Id="StdMathVa" Source="@CMAKE_SOURCE_DIR@/std/math.va" KeyPath="yes" />
+            </Component>
+            <Component Id="StdOs" Guid="D6E7F8A9-C94A-4F2C-BC4F-5D6E7F8091A2">
+              <File Id="StdOsVa" Source="@CMAKE_SOURCE_DIR@/std/os.va" KeyPath="yes" />
+            </Component>
+            <Component Id="StdRegex" Guid="E7F8A9B0-DA5B-4A3D-CD5F-6E7F8091A2B3">
+              <File Id="StdRegexVa" Source="@CMAKE_SOURCE_DIR@/std/regex.va" KeyPath="yes" />
+            </Component>
+            <Component Id="StdString" Guid="F8A9B0C1-EB6C-4B4E-DE6F-7F8091A2B3C4">
+              <File Id="StdStringVa" Source="@CMAKE_SOURCE_DIR@/std/string.va" KeyPath="yes" />
             </Component>
           </Directory>
 
@@ -84,14 +116,26 @@
     </Directory>
 
     <Feature Id="Main" Title="Vora" Level="1" Display="expand"
-             Description="Vora programming language — interpreter, LSP server, and standard library"
+             Description="Vora programming language — runtime, LSP, embedding SDK, and standard library"
              ConfigurableDirectory="INSTALLFOLDER">
+      <!-- bin -->
       <ComponentRef Id="MainExe" />
       <ComponentRef Id="LspExe" />
       <ComponentRef Id="Launcher" />
       <ComponentRef Id="PathEnv" />
-      <ComponentRef Id="StdMath" />
+      <!-- lib -->
+      <ComponentRef Id="VoraLib" />
+      <!-- include -->
+      <ComponentRef Id="VoraHpp" />
+      <!-- std -->
+      <ComponentRef Id="StdArray" />
+      <ComponentRef Id="StdDatetime" />
+      <ComponentRef Id="StdFs" />
       <ComponentRef Id="StdJson" />
+      <ComponentRef Id="StdMath" />
+      <ComponentRef Id="StdOs" />
+      <ComponentRef Id="StdRegex" />
+      <ComponentRef Id="StdString" />
     </Feature>
 
   </Product>
