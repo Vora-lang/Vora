@@ -247,10 +247,121 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
             compileBindPattern(*prop.pattern, -1, isConst);
         }
 
-        // Rest for object: not implemented in v1
+        // Object rest: ...rest
         if (obj.rest) {
-            emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
-            compileBindPattern(*obj.rest, -1, isConst);
+            if (scopeDepth == 0) {
+                error("Object rest in destructuring is only supported inside functions");
+                emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+                compileBindPattern(*obj.rest, -1, isConst);
+            } else {
+                // ── Strategy: copy all keys to rest dict, then remove explicit ones ──
+                // Desugars to:
+                //   let _rest = {}
+                //   let _keys = _src.keys()
+                //   loop _i over _keys:
+                //     let _k = _keys[_i]
+                //     _rest[_k] = _src[_k]
+                //   for each explicit property: _rest.remove(propName)
+                //   let rest = _rest
+
+                // ── Create empty rest dict ──
+                std::string restName = "_ds" + std::to_string(tempId) + "_rest";
+                emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 0);
+                addLocal(restName);
+                int restSlot = resolveLocal(restName);
+
+                // ── Get source keys: _keys = _src.keys() ──
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(srcSlot));
+                size_t keysMethodIdx = identifierConstant("keys");
+                emitGetProperty(keysMethodIdx);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 0);
+                std::string keysName = "_ds" + std::to_string(tempId) + "_keys";
+                addLocal(keysName);
+                int keysSlot = resolveLocal(keysName);
+
+                // ── Loop counter: _i = 0 ──
+                std::string iName = "_ds" + std::to_string(tempId) + "_i";
+                emitConstant(0.0);
+                addLocal(iName);
+                int iSlot = resolveLocal(iName);
+
+                // ── Loop bound: _len = _vora_len(_keys) ──
+                std::string lenName = "_ds" + std::to_string(tempId) + "_len";
+                int lenBuiltin = resolveGlobal("_vora_len");
+                emitGetGlobal(lenBuiltin);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(keysSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                addLocal(lenName);
+                int lenSlot = resolveLocal(lenName);
+
+                // ── While loop: _i < _len ──
+                size_t restLoopStart = chunk.code.size();
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(lenSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN));
+                size_t restExitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                // ── _k = _keys[_i] ──
+                beginScope();
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(keysSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+                std::string kName = "_ds" + std::to_string(tempId) + "_k";
+                addLocal(kName);
+                int kSlot = resolveLocal(kName);
+
+                // ── _rest[_k] = _src[_k]  (copy value) ──
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(restSlot));       // _rest
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(kSlot));          // _k (key)
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(srcSlot));        // _src
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(kSlot));          // _k (key)
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX)); // _src[_k]
+                emitByte(static_cast<uint8_t>(OpCode::OP_SET_INDEX)); // _rest[_k] = val
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // discard value
+                endScope();
+
+                // ── _i = _i + 1 ──
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitConstant(1.0);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                emitLoop(restLoopStart);
+                patchJump(restExitJump);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                // ── Remove explicit properties from rest dict ──
+                for (size_t pi = 0; pi < obj.properties.size(); pi++) {
+                    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                              static_cast<uint8_t>(restSlot));
+                    size_t removeIdx = identifierConstant("remove");
+                    emitGetProperty(removeIdx);
+                    size_t keyIdx = identifierConstant(obj.properties[pi].key);
+                    emitBytes(static_cast<uint8_t>(OpCode::OP_CONSTANT),
+                              static_cast<uint8_t>(keyIdx));
+                    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                    emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // discard return
+                }
+
+                // ── Push rest dict and bind to rest variable ──
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(restSlot));
+                compileBindPattern(*obj.rest, -1, isConst);
+            }
         }
 
         // Pop source object at global scope
@@ -663,10 +774,15 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
         ? static_cast<int>(stmt.params.size()) - 1
         : static_cast<int>(stmt.params.size());
 
-    // Add fixed parameters as locals (they'll be bound by callVoraFunction)
+    // Add fixed parameters as locals (they'll be bound by callVoraFunction).
+    // Destructured params use compileBindPattern which may create temp locals.
     for (const auto& param : stmt.params) {
         if (param.isRest) break;
-        fnCompiler.addLocal(param.name);
+        if (param.pattern) {
+            fnCompiler.compileBindPattern(*param.pattern, -1, false);
+        } else {
+            fnCompiler.addLocal(param.name);
+        }
     }
     // Add rest parameter as a local (value set by callVoraFunction as array)
     if (hasRest) {
@@ -780,10 +896,14 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
             if (!isStatic) {
                 methodCompiler.addLocal("this");
             }
-            // Add fixed parameters
+            // Add fixed parameters as locals — destructured params use compileBindPattern.
             for (const auto& param : funcStmt->params) {
                 if (param.isRest) break;
-                methodCompiler.addLocal(param.name);
+                if (param.pattern) {
+                    methodCompiler.compileBindPattern(*param.pattern, -1, false);
+                } else {
+                    methodCompiler.addLocal(param.name);
+                }
             }
             // Add rest parameter as a local
             if (mHasRest) {
@@ -846,10 +966,14 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     ctorCompiler.chunk.source = chunk.source;  // propagate source for error display
     ctorCompiler.beginScope();
     ctorCompiler.addLocal("this");  // slot 0
-    // Add fixed parameters (slots 1, 2, ...)
+    // Add fixed parameters (slots 1, 2, ...) — destructured use compileBindPattern.
     for (const auto& param : stmt.params) {
         if (param.isRest) break;
-        ctorCompiler.addLocal(param.name);
+        if (param.pattern) {
+            ctorCompiler.compileBindPattern(*param.pattern, -1, false);
+        } else {
+            ctorCompiler.addLocal(param.name);
+        }
     }
     // Add rest parameter as a local
     if (ctorHasRest) {

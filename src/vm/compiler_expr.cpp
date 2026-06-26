@@ -1359,10 +1359,14 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
         ? static_cast<int>(expr.params.size()) - 1
         : static_cast<int>(expr.params.size());
 
-    // Add fixed parameters as locals
+    // Add fixed parameters as locals — destructured use compileBindPattern.
     for (const auto& param : expr.params) {
         if (param.isRest) break;
-        fnCompiler.addLocal(param.name);
+        if (param.pattern) {
+            fnCompiler.compileBindPattern(*param.pattern, -1, false);
+        } else {
+            fnCompiler.addLocal(param.name);
+        }
     }
     // Add rest parameter as a local
     if (hasRest) {

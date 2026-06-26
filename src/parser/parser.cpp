@@ -790,6 +790,24 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
                 break;  // rest is always last — skip to ')'
             }
 
+            // Check for destructuring pattern: {x, y} or [a, b]
+            if (peek().type == TokenType::LEFT_BRACE ||
+                peek().type == TokenType::LEFT_BRACKET) {
+                auto pattern = parseBindingPattern();
+                if (!pattern) {
+                    error("Expected destructuring pattern");
+                    continue;
+                }
+                std::unique_ptr<Expr> defaultValue;
+                if (match(TokenType::EQUAL)) {
+                    defaultValue = expression();
+                }
+                ParamDecl pd("", std::move(defaultValue));
+                pd.pattern = std::move(pattern);
+                params.push_back(std::move(pd));
+                continue;
+            }
+
             if (!match(TokenType::IDENTIFIER)) {
                 error("Expected parameter name");
                 // Skip this param and continue
@@ -1044,6 +1062,21 @@ std::unique_ptr<Expr> Parser::funcExpression() {
                 break;  // rest is always last — skip to ')'
             }
 
+            // Check for destructuring pattern in lambda params
+            if (peek().type == TokenType::LEFT_BRACE ||
+                peek().type == TokenType::LEFT_BRACKET) {
+                auto pattern = parseBindingPattern();
+                if (!pattern) return errorExpr("Expected destructuring pattern");
+                std::unique_ptr<Expr> defaultValue;
+                if (match(TokenType::EQUAL)) {
+                    defaultValue = expression();
+                }
+                ParamDecl pd("", std::move(defaultValue));
+                pd.pattern = std::move(pattern);
+                params.push_back(std::move(pd));
+                continue;
+            }
+
             if (!match(TokenType::IDENTIFIER)) {
                 return errorExpr("Expected parameter name");
             }
@@ -1142,6 +1175,24 @@ std::unique_ptr<Stmt> Parser::objStatement() {
                 }
                 params.emplace_back(std::move(paramName), nullptr, true);
                 break;  // rest is always last — skip to ')'
+            }
+
+            // Check for destructuring pattern in obj params
+            if (peek().type == TokenType::LEFT_BRACE ||
+                peek().type == TokenType::LEFT_BRACKET) {
+                auto pattern = parseBindingPattern();
+                if (!pattern) {
+                    error("Expected destructuring pattern");
+                    continue;
+                }
+                std::unique_ptr<Expr> defaultValue;
+                if (match(TokenType::EQUAL)) {
+                    defaultValue = expression();
+                }
+                ParamDecl pd("", std::move(defaultValue));
+                pd.pattern = std::move(pattern);
+                params.push_back(std::move(pd));
+                continue;
             }
 
             if (!match(TokenType::IDENTIFIER)) {

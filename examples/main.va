@@ -430,6 +430,19 @@ T(ff.inc() == 43)
 // Instance also has access to static methods
 T(ff.create(99).val == 99)
 
+// Object rest destructuring (v0.25)
+func testObjRest({name, age, ...rest}) {
+    return name + ":" + toString(age) + ":" + toString(rest.extra)
+}
+T(testObjRest({name: "X", age: 20, extra: "Y"}) == "X:20:Y")
+
+func testObjRestLet() {
+    let {a, ...r} = {a: 1, b: 2, c: 3}
+    T(a == 1)
+    T(r.b == 2 && r.c == 3 && !r.has("a"))
+}
+testObjRestLet()
+
 // [WISH] getter / setter
 // 期望: func get fullName() { return this.first + " " + this.last }
 // 现状优点: 方法调用语义明确; 无隐式副作用
