@@ -1194,14 +1194,36 @@ std::unique_ptr<Stmt> Parser::objStatement() {
         while (!isAtEnd() &&
                peek().type != TokenType::RIGHT_BRACE) {
 
+            // Check for static method declaration: this.func name(...) { ... }
+            // Only intercept when all three tokens match — otherwise let
+            // statement() parse 'this.x' as a regular property access.
+            bool isStatic = false;
+            if (peek().type == TokenType::THIS &&
+                tokens[current + 1].type == TokenType::DOT &&
+                tokens[current + 2].type == TokenType::FUNC) {
+                // Consume only 'this' and '.' — leave 'func' for statement().
+                advance();  // 'this'
+                advance();  // '.'
+                isStatic = true;
+                // statement() will see 'func' and parse the function declaration.
+            }
+
             auto stmt = statement();
 
             if (!stmt) {
                 stmt = std::make_unique<ErrorStmt>("Failed to parse object member", peek());
             }
 
-            if (dynamic_cast<FuncStmt*>(stmt.get())) {
+            if (auto funcStmt = dynamic_cast<FuncStmt*>(stmt.get())) {
+                if (isStatic) {
+                    funcStmt->isStatic = true;
+                }
                 methods.push_back(std::move(stmt));
+            } else if (isStatic) {
+                // 'this.' was followed by something that wasn't a func
+                // (shouldn't happen since we checked for func above)
+                error("Only 'func' declarations can follow 'this.' in an object");
+                bodyStmts.push_back(std::move(stmt));
             } else {
                 bodyStmts.push_back(std::move(stmt));
             }

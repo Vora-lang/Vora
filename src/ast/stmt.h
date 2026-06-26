@@ -220,12 +220,14 @@ public:
         std::string name,
         Token nameToken,
         std::vector<ParamDecl> params,
-        std::shared_ptr<BlockStmt> body
+        std::shared_ptr<BlockStmt> body,
+        bool isStatic = false
     )
         : name(std::move(name)),
           nameToken(std::move(nameToken)),
           params(std::move(params)),
-          body(std::move(body)) {
+          body(std::move(body)),
+          isStatic(isStatic) {
     }
 
     void        accept(StmtVisitor<void>& visitor)        const override;
@@ -238,6 +240,8 @@ public:
     std::vector<ParamDecl> params;
 
     std::shared_ptr<BlockStmt> body;
+
+    bool isStatic = false;  // true if declared with 'this.func' inside Obj
 };
 
 class ObjStmt : public Stmt {

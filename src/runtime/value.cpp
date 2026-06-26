@@ -210,7 +210,13 @@ void ClassDefinition::trace(std::vector<GcObject*>& wl) {
     for (auto& mp : methodProtos) {
         if (mp) wl.push_back(mp.get());
     }
+    for (auto& mp : staticMethodProtos) {
+        if (mp) wl.push_back(mp.get());
+    }
     for (auto& [name, fn] : methods) {
+        if (fn) wl.push_back(fn.get());
+    }
+    for (auto& [name, fn] : staticMethods) {
         if (fn) wl.push_back(fn.get());
     }
     for (auto& pc : parentClasses) {

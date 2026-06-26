@@ -413,12 +413,22 @@ T(p.toy == "ball")
 T(p.who() == "Max")
 T(p.play() == "Max plays ball")
 
-// [WISH] 静态方法 / 类方法
-// 期望: Obj Math { static func square(x) { return x*x } }; Math.square(3) → 9
-// 现状优点: 简单; 用普通函数 + 模块替代
-// 现状缺点: 无法在类型上组织工具函数; 缺少"属于这个类的函数"语义
-// 期望优点: 命名空间自然; 工厂方法模式必备; JS/Python/C# 惯例
-// 期望缺点: 增加 Obj 语法复杂度; static 关键字增加解析负担
+// Static methods via this.func syntax (Ruby-style, zero new keywords)
+Obj MathUtil() {
+    this.func square(x) { return x * x }
+}
+T(MathUtil.square(5) == 25)
+
+Obj Factory(start) {
+    this.val = start
+    func inc() { this.val = this.val + 1; return this.val }
+    this.func create(n) { return Factory(n) }
+}
+let ff = Factory.create(42)
+T(ff.val == 42)
+T(ff.inc() == 43)
+// Instance also has access to static methods
+T(ff.create(99).val == 99)
 
 // [WISH] getter / setter
 // 期望: func get fullName() { return this.first + " " + this.last }

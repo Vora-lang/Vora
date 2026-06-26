@@ -751,11 +751,14 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
 
     // First, compile each method
     std::vector<GcPtr<FunctionPrototype>> methodProtos;
+    std::vector<GcPtr<FunctionPrototype>> staticMethodProtos;
     for (const auto& methodStmt : stmt.methods) {
         if (auto funcStmt = dynamic_cast<const FuncStmt*>(methodStmt.get())) {
             Compiler methodCompiler(errorReporter_);
             methodCompiler.enclosing = this;
             methodCompiler.chunk.source = chunk.source;  // propagate source for error display
+
+            bool isStatic = funcStmt->isStatic;
 
             // Detect rest parameter for methods
             bool mHasRest = !funcStmt->params.empty() && funcStmt->params.back().isRest;
@@ -772,9 +775,12 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
                 : static_cast<int>(funcStmt->params.size());
 
             methodCompiler.beginScope();
-            // Add 'this' as local at slot 0
-            methodCompiler.addLocal("this");
-            // Add fixed parameters (slots 1, 2, ...)
+            // Instance methods: 'this' at slot 0, params at slots 1+
+            // Static methods: no 'this', params at slots 0+
+            if (!isStatic) {
+                methodCompiler.addLocal("this");
+            }
+            // Add fixed parameters
             for (const auto& param : funcStmt->params) {
                 if (param.isRest) break;
                 methodCompiler.addLocal(param.name);
@@ -784,9 +790,12 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
                 methodCompiler.addLocal(funcStmt->params.back().name);
             }
 
-            // Emit default-parameter preamble for method params with defaults
+            // Emit default-parameter preamble.
+            // Instance methods: slotBase=1 (after 'this')
+            // Static methods:  slotBase=0 (no 'this')
+            int slotBase = isStatic ? 0 : 1;
             compileDefaultParamPreamble(methodCompiler, funcStmt->params,
-                                        /*slotBase=*/1, mRequiredArity, mTotalArity);
+                                        slotBase, mRequiredArity, mTotalArity);
 
             // Compile method body
             for (const auto& s : funcStmt->body->statements) {
@@ -809,7 +818,11 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
                 if (param.isRest) break;
                 proto->paramNames.push_back(param.name);
             }
-            methodProtos.push_back(proto);
+            if (isStatic) {
+                staticMethodProtos.push_back(proto);
+            } else {
+                methodProtos.push_back(proto);
+            }
         }
     }
 
@@ -876,6 +889,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     classDef->params = paramNames;
     classDef->ctorProto = ctorProto;
     classDef->methodProtos = methodProtos;
+    classDef->staticMethodProtos = staticMethodProtos;
 
     size_t classIndex = makeConstant(classDef);
 

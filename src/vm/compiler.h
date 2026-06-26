@@ -54,9 +54,11 @@ struct ClassDefinition : GcObject {
     std::vector<std::string> params;
     GcPtr<FunctionPrototype> ctorProto;
     std::vector<GcPtr<FunctionPrototype>> methodProtos;
+    std::vector<GcPtr<FunctionPrototype>> staticMethodProtos;  // static methods (this.func)
 
     // --- Runtime fields (set by OP_CLASS) ---
     std::map<std::string, GcPtr<class VoraFunction>> methods;
+    std::map<std::string, GcPtr<class VoraFunction>> staticMethods;  // static methods
     std::vector<GcPtr<ClassDefinition>> parentClasses;
     std::vector<GcPtr<ClassDefinition>> mro;
 

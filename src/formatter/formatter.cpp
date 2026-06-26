@@ -828,6 +828,7 @@ std::string SourceFormatter::visitCForStmt(const CForStmt& stmt) {
 
 std::string SourceFormatter::visitFuncStmt(const FuncStmt& stmt) {
     std::stringstream ss;
+    if (stmt.isStatic) ss << "this.";
     ss << "func " << stmt.name;
     ss << formatParams(stmt.params);
     ss << " ";

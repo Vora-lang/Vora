@@ -2664,6 +2664,7 @@ InterpretResult VM::run() {
                         break;
                     }
                     // Check class methods via MRO (C3 linearization)
+                    bool methodFound = false;
                     if (instance->classDefinition) {
                         for (const auto& wp : instance->classDefinition->mro) {
                             auto cls = wp;
@@ -2679,13 +2680,34 @@ InterpretResult VM::run() {
                                 auto bound = GcHeap::instance().alloc<BoundMethod>(
                                     instance, mp, methodFn);
                                 push(bound);
-                                goto method_found;
+                                methodFound = true;
+                                break;
                             }
                         }
-                        method_found:
-                        break;
+                    }
+                    if (methodFound) break;
+                    // Fall back to static methods on the class
+                    if (instance->classDefinition) {
+                        auto smIt = instance->classDefinition->staticMethods.find(propName);
+                        if (smIt != instance->classDefinition->staticMethods.end()) {
+                            push(smIt->second);  // static method, no binding needed
+                            break;
+                        }
                     }
                     RUNTIME_ERROR_OR_THROW("Undefined property: " + propName);
+                } else if (auto callable = std::get_if<GcPtr<Callable>>(&obj)) {
+                    // Class constructor — check for static methods
+                    if (*callable) {
+                        auto classDef = (*callable)->getClassDef();
+                        if (classDef) {
+                            auto smIt = classDef->staticMethods.find(propName);
+                            if (smIt != classDef->staticMethods.end()) {
+                                push(smIt->second);  // static method, no binding
+                                break;
+                            }
+                        }
+                    }
+                    RUNTIME_ERROR_OR_THROW("Unknown static method: " + propName);
                 } else {
                     RUNTIME_ERROR_OR_THROW("Can only access properties on objects");
                 }
@@ -2782,6 +2804,7 @@ InterpretResult VM::run() {
                         push(it->second);
                         break;
                     }
+                    bool safeMethodFound = false;
                     if (instance->classDefinition) {
                         for (const auto& wp : instance->classDefinition->mro) {
                             auto cls = wp;
@@ -2796,15 +2819,39 @@ InterpretResult VM::run() {
                                 auto bound = GcHeap::instance().alloc<BoundMethod>(
                                     instance, mp, methodFn);
                                 push(bound);
+                                safeMethodFound = true;
                                 break;
                             }
                         }
-                        if (stackTopIndex > 0) break;  // bound method was pushed
+                    }
+                    if (safeMethodFound) break;
+                    // Fall back to static methods on the class
+                    if (instance->classDefinition) {
+                        auto smIt = instance->classDefinition->staticMethods.find(propName);
+                        if (smIt != instance->classDefinition->staticMethods.end()) {
+                            push(smIt->second);  // static method
+                            break;
+                        }
                     }
                     push(nullptr);  // safe: return null for undefined property
                     break;
+                } else if (auto callable = std::get_if<GcPtr<Callable>>(&obj)) {
+                    // Class constructor — check for static methods
+                    if (*callable) {
+                        auto classDef = (*callable)->getClassDef();
+                        if (classDef) {
+                            auto smIt = classDef->staticMethods.find(propName);
+                            if (smIt != classDef->staticMethods.end()) {
+                                push(smIt->second);  // static method
+                                break;
+                            }
+                        }
+                    }
+                    push(nullptr);  // safe: return null for unknown static method
+                    break;
+                } else {
+                    push(nullptr);  // safe: return null for non-object types
                 }
-                push(nullptr);  // safe: return null for non-object types
                 break;
             }
             case OpCode::OP_SET_PROPERTY_WIDE:
@@ -2942,13 +2989,22 @@ InterpretResult VM::run() {
                     }
                 }
 
-                // Store method VoraFunctions on the ClassDefinition
+                // Store instance method VoraFunctions on the ClassDefinition
                 for (const auto& methodProto : cd->methodProtos) {
                     auto methodFn = GcHeap::instance().alloc<VoraFunction>(
                         methodProto->name, methodProto->arity,
                         methodProto->requiredArity, methodProto->hasRest,
                         methodProto.get());
                     cd->methods[methodProto->name] = methodFn;
+                }
+
+                // Store static method VoraFunctions on the ClassDefinition
+                for (const auto& staticProto : cd->staticMethodProtos) {
+                    auto staticFn = GcHeap::instance().alloc<VoraFunction>(
+                        staticProto->name, staticProto->arity,
+                        staticProto->requiredArity, staticProto->hasRest,
+                        staticProto.get());
+                    cd->staticMethods[staticProto->name] = staticFn;
                 }
 
                 // Compute C3 MRO and cache on ClassDefinition

@@ -396,7 +396,9 @@ std::string ASTPrinter::visitLetStmt(const LetStmt& stmt) {
 std::string ASTPrinter::visitFuncStmt(const FuncStmt& stmt) {
     std::stringstream ss;
 
-    ss << "(func " << stmt.name;
+    ss << "(";
+    if (stmt.isStatic) ss << "static ";
+    ss << "func " << stmt.name;
 
     for (const auto& param : stmt.params) {
         if (param.isRest) {
