@@ -188,16 +188,18 @@ false ?? true        // false — false 不是 null，保留
 ### 可选链 `?.`
 **v0.21+**
 
-安全地访问可能为 `null` 的对象。如果接收者为 `null`，整个表达式短路返回 `null`：
+安全地访问可能为 `null` 的对象。如果接收者为 `null` 或属性不存在，返回 `null` 而不抛出错误：
 
 ```vora
-obj?.property        // 如果 obj 为 null → null；否则 obj.property
+obj?.property        // obj 为 null → null；obj 无此属性 → null
 obj?.(args)          // 可选函数调用
-arr?.[index]         // 可选下标访问
+arr?.[index]         // 可选下标访问（越界返回 null）
 
 // 链式使用
 deep?.a?.b?.c        // 任一中间值为 null 则短路
 ```
+
+> **v0.25+**: `?.` 对 dict 中不存在的 key 也返回 `null`（之前会抛出 RuntimeError）。
 
 ### 三元运算符 `?:`
 
@@ -267,7 +269,7 @@ func demo(x) {
 // 无论哪个分支，cleanup 都会执行
 ```
 
-> **注意**: `defer` 在异常抛出时不会执行（当前限制）。
+> **v0.25+**: `defer` 在同函数内的 `throw` 前会执行（RAII 语义）。跨函数异常展开时暂不执行（已知限制）。
 
 ### while 循环
 
@@ -310,7 +312,7 @@ do {
 
 ### for-in 循环
 
-> 引入版本: v0.5 | 对象遍历: v0.16 | 迭代器协议: v0.21
+> 引入版本: v0.5 | 对象遍历: v0.16 | 迭代器协议: v0.21 | 生成器支持: v0.25
 
 ```vora
 // 遍历数组
@@ -325,7 +327,13 @@ for i in range(1, 5) { print(i) } // 1, 2, 3, 4
 
 // 遍历字典（迭代键）
 for key in dict { print(key) }
+
+// 遍历生成器 (v0.25+)
+func gen() { yield 1; yield 2; yield 3 }
+for v in gen() { print(v) }   // 1, 2, 3
 ```
+
+> `for-in` 使用 `iter()`/`next()` 迭代器协议，统一支持所有可迭代类型。
 
 ### C 风格 for 循环
 
@@ -860,6 +868,41 @@ Obj Child : Parent () {
 
 Child().greet()  // "Hello from Parent and Child"
 ```
+
+### 静态方法 (this.func)
+
+> 引入版本: v0.25
+
+使用 `this.func` 在 Obj 体内部声明静态方法——方法挂在类上而非实例上，不接收 `this`：
+
+```vora
+Obj MathUtil() {
+    this.func square(x) { return x * x }
+    this.func sum(...ns) {
+        let t = 0
+        for n in ns { t = t + n }
+        return t
+    }
+}
+
+MathUtil.square(5)     // 25
+MathUtil.sum(1, 2, 3)  // 6
+```
+
+静态方法适用于工厂模式：
+
+```vora
+Obj Point(x, y) {
+    this.x = x; this.y = y
+    this.func origin() { return Point(0, 0) }
+    func len() { return MathUtil.square(this.x) + MathUtil.square(this.y) }
+}
+
+let p = Point.origin()  // 类调用
+p.len()                 // 实例也可调用静态方法
+```
+
+> `this.func` 不需要新关键字（复用已有的 `this` 和 `func`），语法风格学习 Ruby 的 `def self.method`。
 
 ---
 
