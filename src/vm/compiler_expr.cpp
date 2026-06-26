@@ -588,28 +588,27 @@ void Compiler::visitSpreadExpr(const SpreadExpr& expr) {
 void Compiler::visitListCompExpr(const ListCompExpr& expr) {
     currentLine = expr.leftBracket.line;
     currentColumn = expr.leftBracket.column;
-    // Desugar list comprehension into a for-in loop that accumulates results:
+    // Desugar list comprehension using the iter()/next() iterator protocol:
     //
     //   [resultExpr for var in iterable if condition]
     // becomes:
     //   {
     //     let _lcN = []                    // result array
-    //     let _iter = iterable             // for-in setup
-    //     let _i = 0
-    //     let _len = _vora_len(_iter)
-    //     while (_i < _len) {
-    //       let var = _iter[_i]
-    //       if condition:                  // optional
-    //         _lcN = _lcN + [resultExpr]   // array concat via OP_ADD
-    //       _i += 1
+    //     {
+    //       let _iter = iter(iterable)
+    //       while (true) {
+    //         try {
+    //           let var = next(_iter)
+    //           if condition:              // optional
+    //             _lcN = _lcN + [resultExpr]
+    //         } catch (_exn) {
+    //           if (_exn == "StopIteration") break
+    //           else throw _exn
+    //         }
+    //       }
     //     }
     //     // _lcN stays on stack as expression value
     //   }
-    //
-    // We use a wrapping beginScope() so addLocal() works even at function
-    // level (scopeDepth == 0). But we do NOT call endScope() for the
-    // wrapper — instead we manually remove the tracking so _lcN remains
-    // on the stack as the expression result.
 
     // ── Wrapping scope (so addLocal works even at function level) ──
     beginScope();
@@ -620,56 +619,42 @@ void Compiler::visitListCompExpr(const ListCompExpr& expr) {
     addLocal(resultName);
     int resultSlot = resolveLocal(resultName);
 
-    // ── Step 2: For-in setup scope ──
+    // ── Step 2: For-in scope ──
     beginScope();
 
-    // Compile iterable → _iter
+    // let _iter = iter(iterable)
+    int iterBuiltinSlot = resolveGlobal("iter");
+    emitGetGlobal(iterBuiltinSlot);
     expr.iterable->accept(*this);
-    addLocal("_iter");
-
-    // _i = 0
-    emitConstant(0.0);
-    addLocal("_i");
-
-    // _len = _vora_len(_iter)
-    int lenGlobalSlot = resolveGlobal("_vora_len");
-    emitGetGlobal(lenGlobalSlot);
-
-    int iterSlot = resolveLocal("_iter");
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iterSlot));
     emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
-    addLocal("_len");
+    addLocal("_iter");
+    int iterLocalSlot = resolveLocal("_iter");
 
-    // ── Step 3: Loop structure ──
+    // ── Step 3: while (true) loop ──
     size_t loopStart = chunk.code.size();
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 3});
+    // continueTarget = loopStart, extraLocalsToPopOnBreak = 1 (_iter)
+    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0});
 
-    // Condition: _i < _len
-    int iSlot = resolveLocal("_i");
+    // ── Step 4: OP_PUSH_CATCH ──
+    emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
+    emitByte(static_cast<uint8_t>(currentLocalCount()));
+    size_t pushCatchPlaceholder = chunk.code.size();
+    emitByte(0xFF);
+    emitByte(0xFF);
+
+    tryNesting++;
+
+    // ── Step 5: var = next(_iter) ──
+    int nextBuiltinSlot = resolveGlobal("next");
+    emitGetGlobal(nextBuiltinSlot);
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iSlot));
+              static_cast<uint8_t>(iterLocalSlot));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
 
-    int lenLocalSlot = resolveLocal("_len");
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(lenLocalSlot));
-
-    emitByte(static_cast<uint8_t>(OpCode::OP_LESS));
-    size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-
-    // ── Step 4: Body scope ──
     beginScope();
-
-    // var = _iter[_i]
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iterSlot));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iSlot));
-    emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
     addLocal(expr.variable);
 
-    // ── Step 5: Optional if condition ──
+    // ── Step 6: Optional if condition ──
     size_t skipAppendJump = 0;
     size_t skipConditionPopJump = 0;
     if (expr.condition) {
@@ -678,27 +663,20 @@ void Compiler::visitListCompExpr(const ListCompExpr& expr) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // pop condition when true
     }
 
-    // ── Step 6: Append to result: _lcN = _lcN + [resultExpr] ──
-    // Push _lcN and track it as a temp local (_lx) so the compiler knows
-    // this stack slot is occupied. This prevents resultExpr compilation
-    // (e.g. nested list comprehensions) from assigning locals to the
-    // wrong stack position.
+    // ── Step 7: Append to result ──
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
               static_cast<uint8_t>(resultSlot));
     std::string tmpName = "_lx" + std::to_string(listCompCounter++);
     addLocal(tmpName);
 
-    expr.resultExpr->accept(*this);            // push result value
+    expr.resultExpr->accept(*this);
 
-    emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 1);  // wrap: [value]
-    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));        // array concat: _lx + [value]
+    emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 1);
+    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
     emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
-              static_cast<uint8_t>(resultSlot));           // update _lcN
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));        // discard concat result
-    // Remove _lx from tracking (OP_ADD already consumed its runtime value).
-    // _lx must be the last entry in locals — resultExpr compilation must
-    // not leave any locals in the current scope (nested comprehensions
-    // clean up their own locals via beginScope/endScope or manual cleanup).
+              static_cast<uint8_t>(resultSlot));
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
     if (locals.empty() || locals.back().name != tmpName) {
         error("Internal compiler error: list comprehension temp local mismatch");
         return;
@@ -706,62 +684,71 @@ void Compiler::visitListCompExpr(const ListCompExpr& expr) {
     scopeLocalCounts.back()--;
     locals.pop_back();
 
-    // After append, skip over the condition-pop (only needed for false path)
     if (expr.condition) {
         skipConditionPopJump = emitJump(OpCode::OP_JUMP);
-        patchJump(skipAppendJump);             // false lands here
-        emitByte(static_cast<uint8_t>(OpCode::OP_POP));   // pop condition (false)
-        patchJump(skipConditionPopJump);       // true lands here (after skipping pop)
+        patchJump(skipAppendJump);
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+        patchJump(skipConditionPopJump);
     }
 
-    // ── Step 7: End body scope (pops loop variable) ──
+    // ── Step 8: End body scope (pops loop variable) ──
     endScope();
 
-    // ── Step 8: Increment _i ──
-    loopStack.back().continueTarget = chunk.code.size();
+    tryNesting--;
+
+    // Normal exit: pop catch handler, skip catch block
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+    size_t skipCatchJump = emitJump(OpCode::OP_JUMP);
+
+    // ── Step 9: Catch handler (StopIteration → break) ──
+    size_t catchTarget = chunk.code.size();
+    size_t catchJumpSize = catchTarget - pushCatchPlaceholder - 2;
+    if (catchJumpSize > UINT16_MAX) catchJumpSize = UINT16_MAX;
+    chunk.writeAt(pushCatchPlaceholder,
+                  static_cast<uint8_t>(catchJumpSize & 0xFF));
+    chunk.writeAt(pushCatchPlaceholder + 1,
+                  static_cast<uint8_t>((catchJumpSize >> 8) & 0xFF));
+
+    emitByte(static_cast<uint8_t>(OpCode::OP_CLEAR_EXCEPTION));
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+
+    beginScope();
+    addLocal("_exn");
 
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iSlot));
-    emitConstant(1.0);
-    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
-              static_cast<uint8_t>(iSlot));
+              static_cast<uint8_t>(resolveLocal("_exn")));
+    emitConstant(GcHeap::instance().alloc<GcString>("StopIteration"));
+    emitByte(static_cast<uint8_t>(OpCode::OP_EQUAL));
+    size_t notStopIterJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
     emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    visitBreakStmt(BreakStmt(expr.leftBracket));  // break uses leftBracket token for location
+    patchJump(notStopIterJump);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(resolveLocal("_exn")));
+    emitByte(static_cast<uint8_t>(OpCode::OP_THROW));
 
-    // ── Step 9: Loop back ──
+    endScope();
+
+    patchJump(skipCatchJump);
+
+    // ── Step 10: Loop back ──
     emitLoop(loopStart);
 
-    // Patch exit jump
-    patchJump(exitJump);
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-
-    // Patch continue jumps
-    for (size_t jumpOffset : loopStack.back().continueJumps) {
-        size_t target = loopStack.back().continueTarget;
-        size_t jumpSize = target - jumpOffset - 2;
-        if (jumpSize > UINT16_MAX) jumpSize = UINT16_MAX;
-        chunk.writeAt(jumpOffset, static_cast<uint8_t>(jumpSize & 0xFF));
-        chunk.writeAt(jumpOffset + 1, static_cast<uint8_t>((jumpSize >> 8) & 0xFF));
-    }
-
-    // Save and patch break jumps
+    // Patch break jumps
     std::vector<size_t> savedBreakJumps = std::move(loopStack.back().breakJumps);
     loopStack.pop_back();
 
-    // ── Step 10: End for-in scope (pops _iter, _i, _len) ──
+    // ── Step 11: End for-in scope (pops _iter) ──
     endScope();
 
-    // Patch break jumps after endScope() (break already cleaned up 3 locals)
     for (size_t jumpOffset : savedBreakJumps) {
         patchJump(jumpOffset);
     }
 
-    // ── Step 11: Manual wrapper cleanup ──
-    // _lcN is on the stack as the expression's value. Remove the wrapping
-    // scope's tracking WITHOUT emitting OP_POPN (so the value stays).
+    // ── Step 12: Manual wrapper cleanup (leave _lcN on stack) ──
     int wrapperCount = scopeLocalCounts.back();
     scopeLocalCounts.pop_back();
-    // Remove _lcN from locals (it's the last entry added in wrapper scope)
     for (int i = 0; i < wrapperCount; i++) {
         locals.pop_back();
     }
@@ -802,56 +789,41 @@ void Compiler::visitDictCompExpr(const DictCompExpr& expr) {
     addLocal(resultName);
     int resultSlot = resolveLocal(resultName);
 
-    // ── Step 2: For-in setup scope ──
+    // ── Step 2: For-in scope ──
     beginScope();
 
-    // Compile iterable → _iter
+    // let _iter = iter(iterable)
+    int iterBuiltinSlot = resolveGlobal("iter");
+    emitGetGlobal(iterBuiltinSlot);
     expr.iterable->accept(*this);
-    addLocal("_iter");
-
-    // _i = 0
-    emitConstant(0.0);
-    addLocal("_i");
-
-    // _len = _vora_len(_iter)
-    int lenGlobalSlot = resolveGlobal("_vora_len");
-    emitGetGlobal(lenGlobalSlot);
-
-    int iterSlot = resolveLocal("_iter");
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iterSlot));
     emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
-    addLocal("_len");
+    addLocal("_iter");
+    int iterLocalSlot = resolveLocal("_iter");
 
-    // ── Step 3: Loop structure ──
+    // ── Step 3: while (true) loop ──
     size_t loopStart = chunk.code.size();
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 3});
+    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0});
 
-    // Condition: _i < _len
-    int iSlot = resolveLocal("_i");
+    // ── Step 4: OP_PUSH_CATCH ──
+    emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
+    emitByte(static_cast<uint8_t>(currentLocalCount()));
+    size_t pushCatchPlaceholder = chunk.code.size();
+    emitByte(0xFF);
+    emitByte(0xFF);
+
+    tryNesting++;
+
+    // ── Step 5: var = next(_iter) ──
+    int nextBuiltinSlot = resolveGlobal("next");
+    emitGetGlobal(nextBuiltinSlot);
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iSlot));
+              static_cast<uint8_t>(iterLocalSlot));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
 
-    int lenLocalSlot = resolveLocal("_len");
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(lenLocalSlot));
-
-    emitByte(static_cast<uint8_t>(OpCode::OP_LESS));
-    size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-
-    // ── Step 4: Body scope ──
     beginScope();
-
-    // var = _iter[_i]
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iterSlot));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iSlot));
-    emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
     addLocal(expr.variable);
 
-    // ── Step 5: Optional if condition (Bug #2: jump-over-pop pattern) ──
+    // ── Step 6: Optional if condition ──
     size_t skipAppendJump = 0;
     size_t skipConditionPopJump = 0;
     if (expr.condition) {
@@ -860,30 +832,26 @@ void Compiler::visitDictCompExpr(const DictCompExpr& expr) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // pop condition when true
     }
 
-    // ── Step 6: Merge one-pair dict: _dcN = _dcN + {keyExpr: valueExpr} ──
-    // Push _dcN and track it as temp _dx (Bug #3: prevents stack offset mismatch).
+    // ── Step 7: Merge one-pair dict: _dcN = _dcN + {keyExpr: valueExpr} ──
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
               static_cast<uint8_t>(resultSlot));
     std::string dxName = "_dx" + std::to_string(dictCompCounter++);
     addLocal(dxName);
 
-    // Compile key and value, tracking both as temp locals. Without this,
-    // a nested comprehension in keyExpr or valueExpr would allocate locals
-    // at the wrong stack position (same Bug #3 root cause).
-    expr.keyExpr->accept(*this);              // push key (untracked)
+    expr.keyExpr->accept(*this);
     std::string dkName = "_dk" + std::to_string(dictCompCounter++);
-    addLocal(dkName);                         // now tracked
+    addLocal(dkName);
 
-    expr.valueExpr->accept(*this);            // push value (untracked)
+    expr.valueExpr->accept(*this);
     std::string dvName = "_dv" + std::to_string(dictCompCounter++);
-    addLocal(dvName);                         // now tracked
+    addLocal(dvName);
 
-    emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 1);  // consume _dv, _dk → {key: value}
-    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));       // consume _dx, {pair} → merge
+    emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 1);
+    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
     emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
-              static_cast<uint8_t>(resultSlot));          // update _dcN
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));       // discard merge result
-    // Remove _dv, _dk, _dx from tracking (OP_DICT + OP_ADD consumed their values).
+              static_cast<uint8_t>(resultSlot));
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
     if (locals.empty() || locals.back().name != dvName) {
         error("Internal compiler error: dict comprehension temp local mismatch (_dv)");
         return;
@@ -903,57 +871,69 @@ void Compiler::visitDictCompExpr(const DictCompExpr& expr) {
     scopeLocalCounts.back()--;
     locals.pop_back();  // _dx
 
-    // After append, skip over the condition-pop (only needed for false path)
     if (expr.condition) {
         skipConditionPopJump = emitJump(OpCode::OP_JUMP);
-        patchJump(skipAppendJump);             // false lands here
-        emitByte(static_cast<uint8_t>(OpCode::OP_POP));   // pop condition (false)
-        patchJump(skipConditionPopJump);       // true lands here (after skipping pop)
+        patchJump(skipAppendJump);
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+        patchJump(skipConditionPopJump);
     }
 
-    // ── Step 7: End body scope (pops loop variable) ──
+    // ── Step 8: End body scope (pops loop variable) ──
     endScope();
 
-    // ── Step 8: Increment _i ──
-    loopStack.back().continueTarget = chunk.code.size();
+    tryNesting--;
+
+    // Normal exit: pop catch handler, skip catch block
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+    size_t skipCatchJump = emitJump(OpCode::OP_JUMP);
+
+    // ── Step 9: Catch handler (StopIteration → break) ──
+    size_t catchTarget = chunk.code.size();
+    size_t catchJumpSize = catchTarget - pushCatchPlaceholder - 2;
+    if (catchJumpSize > UINT16_MAX) catchJumpSize = UINT16_MAX;
+    chunk.writeAt(pushCatchPlaceholder,
+                  static_cast<uint8_t>(catchJumpSize & 0xFF));
+    chunk.writeAt(pushCatchPlaceholder + 1,
+                  static_cast<uint8_t>((catchJumpSize >> 8) & 0xFF));
+
+    emitByte(static_cast<uint8_t>(OpCode::OP_CLEAR_EXCEPTION));
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+
+    beginScope();
+    addLocal("_exn");
 
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iSlot));
-    emitConstant(1.0);
-    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
-              static_cast<uint8_t>(iSlot));
+              static_cast<uint8_t>(resolveLocal("_exn")));
+    emitConstant(GcHeap::instance().alloc<GcString>("StopIteration"));
+    emitByte(static_cast<uint8_t>(OpCode::OP_EQUAL));
+    size_t notStopIterJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
     emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    visitBreakStmt(BreakStmt(expr.leftBrace));
+    patchJump(notStopIterJump);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(resolveLocal("_exn")));
+    emitByte(static_cast<uint8_t>(OpCode::OP_THROW));
 
-    // ── Step 9: Loop back ──
+    endScope();
+
+    patchJump(skipCatchJump);
+
+    // ── Step 10: Loop back ──
     emitLoop(loopStart);
 
-    // Patch exit jump
-    patchJump(exitJump);
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-
-    // Patch continue jumps
-    for (size_t jumpOffset : loopStack.back().continueJumps) {
-        size_t target = loopStack.back().continueTarget;
-        size_t jumpSize = target - jumpOffset - 2;
-        if (jumpSize > UINT16_MAX) jumpSize = UINT16_MAX;
-        chunk.writeAt(jumpOffset, static_cast<uint8_t>(jumpSize & 0xFF));
-        chunk.writeAt(jumpOffset + 1, static_cast<uint8_t>((jumpSize >> 8) & 0xFF));
-    }
-
-    // Save and patch break jumps
+    // Patch break jumps
     std::vector<size_t> savedBreakJumps = std::move(loopStack.back().breakJumps);
     loopStack.pop_back();
 
-    // ── Step 10: End for-in scope (pops _iter, _i, _len) ──
+    // ── Step 11: End for-in scope (pops _iter) ──
     endScope();
 
-    // Patch break jumps after endScope() (break already cleaned up 3 locals)
     for (size_t jumpOffset : savedBreakJumps) {
         patchJump(jumpOffset);
     }
 
-    // ── Step 11: Manual wrapper cleanup (Bug #1: no OP_POPN, value stays) ──
+    // ── Step 12: Manual wrapper cleanup (leave _dcN on stack) ──
     int wrapperCount = scopeLocalCounts.back();
     scopeLocalCounts.pop_back();
     for (int i = 0; i < wrapperCount; i++) {
@@ -1450,7 +1430,7 @@ void Compiler::visitOptionalChainExpr(const OptionalChainExpr& expr) {
     switch (expr.kind) {
         case OptionalChainExpr::Kind::PROPERTY: {
             size_t propIndex = identifierConstant(expr.property);
-            emitGetProperty(propIndex);
+            emitGetPropertySafe(propIndex);
             break;
         }
         case OptionalChainExpr::Kind::CALL: {
@@ -1516,7 +1496,7 @@ void Compiler::visitOptionalChainExpr(const OptionalChainExpr& expr) {
         }
         case OptionalChainExpr::Kind::INDEX: {
             expr.index->accept(*this);
-            emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+            emitByte(static_cast<uint8_t>(OpCode::OP_INDEX_SAFE));
             break;
         }
     }

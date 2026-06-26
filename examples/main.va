@@ -85,13 +85,15 @@ T(x == 2)
 const K = 42
 T(K == 42)
 
-// [WISH] :int / :float 类型注解正确转换值
-// 现状: let a: int = "42" → a == 0   (bug: 恒为默认值)
-// 期望: let a: int = "42" → a == 42  (正确解析并转换)
-// 现状优点: (无 — 这是 bug)
-// 现状缺点: 静默产生错误值, 极易导致隐蔽 bug
-// 期望优点: 与 :bool / :str 行为一致, 符合用户预期
-// 期望缺点: 转换失败时的错误处理需定义 (抛异常? 回退?)
+// Type annotation string conversion: :int/:float now parse strings correctly
+let si:int = "42"
+T(si == 42)
+let sf:float = "3.14"
+T(sf == 3.14)
+let si_bad:int = "abc"
+T(si_bad == 0)  // invalid string → fallback to 0
+let sf_bad:float = "xyz"
+T(sf_bad == 0.0)
 
 // [WISH] 多变量声明
 // 现状: let a = 1; let b = 2
@@ -163,13 +165,12 @@ T(("ok" ?? "x") == "ok")
 let o = {a: {b: 42}}
 T(o?.a?.b == 42)
 
-// [WISH] o?.x 对未知 dict key 返回 null
-// 现状: o?.x     → 抛 "Unknown dict key: x"
-// 期望: o?.x     → null
-// 现状优点: 显式报错, 帮助发现拼写错误
-// 现状缺点: ?. 的语义是"安全访问", 抛异常违背了 ?. 的设计意图
-// 期望优点: 语义一致; 深层 JSON 遍历安全; JS/TS 行为一致
-// 期望缺点: 会掩盖真正的拼写错误, 调试更难
+// Optional chaining now returns null for missing dict keys
+T(o?.missing == null)
+T(o?.missing?.alsoMissing == null)
+let arrMissing = [1,2]
+T(arrMissing?.[99] == null)
+T(null?.x == null)
 
 let inc = 0
 inc++
@@ -219,13 +220,11 @@ let fc = ""
 for ch in "V" { fc = fc + ch }
 T(fc == "V")
 
-// [WISH] for-in 支持 generator
-// 现状: for v in myGenerator() { ... }  → 不消费任何值
-// 期望: for v in myGenerator() { ... }  → 逐个 yield 值
-// 现状优点: (无 — 功能缺陷)
-// 现状缺点: generator 无法用 for-in 消费, 只能 iter/next 手动循环
-// 期望优点: Python 行为一致; generator 真正可用
-// 期望缺点: 需修改 VM 的 for-in 迭代协议
+// for-in now supports generators via iter()/next() protocol
+let genSum = 0
+func gen123() { for (let i = 1; i <= 3; i = i + 1) { yield i } }
+for v in gen123() { genSum = genSum + v }
+T(genSum == 6)
 
 // [WISH] for-in 带索引
 // 现状: let i = 0; for item in arr { ...; i = i + 1 }
@@ -370,13 +369,10 @@ print("\n── 6. 生成器 ──")
 func countTo(n) {
     for (let j = 1; j <= n; j = j + 1) { yield j }
 }
-// [WISH] for-in 消费 generator
-// 现状: for v in countTo(3) {}  → 循环体不执行
-// 期望: for v in countTo(3) {}  → v=1,2,3
-// 现状优点: (无 — 这是缺陷)
-// 现状缺点: generator 无法用 for-in, 需 iter/next 手动模式
-// 期望优点: Python 行为; 生成器与数组/字符串迭代方式统一
-// 期望缺点: 需修改迭代协议
+// for-in now consumes generators via iterator protocol
+let ctSum = 0
+for v in countTo(3) { ctSum = ctSum + v }
+T(ctSum == 6)  // 1+2+3
 
 let mi = iter([7,8,9])
 T(next(mi) == 7)
@@ -486,13 +482,18 @@ T(msg == "err")
 // 期望优点: 错误可携带上下文; 调用者可编程处理
 // 期望缺点: Error 类型需设计; 增加运行时开销
 
-// [WISH] defer 在异常抛出时也执行
-// 现状: defer 仅在正常 return 时执行, throw 时跳过
-// 期望: defer 在 throw 时也执行 (RAII 语义)
-// 现状优点: 简单; 异常路径不触发额外代码
-// 现状缺点: 资源清理代码在异常时不执行; defer 的核心价值丧失
-// 期望优点: 真正的 RAII; Go/Rust 风格保证资源释放
-// 期望缺点: 异常路径执行 defer 可能抛出二次异常
+// defer now executes on same-function throw (cross-function still WISH)
+let deferOnThrow = []
+func tdThrow() {
+    defer func() { deferOnThrow.add("cleanup") }()
+    throw "oops"
+}
+try { tdThrow() } catch(e) {}
+T(deferOnThrow.length == 1 && deferOnThrow[0] == "cleanup")
+
+// [WISH] defer cross-function unwind on throw
+// 现状: 跨函数异常传播时 defer 不会执行
+// 期望: 异常展开调用栈时, 每个被展开帧的 defer 都应执行
 
 let fr = false
 try { let y = 1 } finally { fr = true }
@@ -745,6 +746,8 @@ T(jb.ok == true && jb.n == 42)
 // 13. 标准库 — math + json
 // ═══════════════════════════════════════════════════════════════════════════
 print("\n── 13. 标准库 ──")
+
+from "math" import PI, sin, cos
 
 // import "math"
 // T(math.PI > 3.14 && math.PI < 3.15)

@@ -427,129 +427,122 @@ void Compiler::visitDoWhileStmt(const DoWhileStmt& stmt) {
 void Compiler::visitForStmt(const ForStmt& stmt) {
     currentLine = stmt.forToken.line;
     currentColumn = stmt.forToken.column;
-    // Desugar for-in into a while loop using local variables:
+    // Desugar for-in using the iter()/next() iterator protocol:
     //
     //   for x in iterable { body }
     // becomes:
     //   {
-    //     let _iter = iterable
-    //     let _i = 0
-    //     while (_i < _length(_iter)) {
-    //       let x = _iter[_i]
-    //       body
-    //       _i += 1
+    //     let _iter = iter(iterable)
+    //     while (true) {
+    //       try {
+    //         let x = next(_iter)
+    //         body
+    //       } catch (_exn) {
+    //         if (_exn == "StopIteration") break
+    //         else throw _exn
+    //       }
     //     }
     //   }
     //
-    // For strings, indexing returns a single-char string.
-    // The _length is computed via a builtin or by checking array/string size.
+    // This works for all iterable types: arrays, strings, dicts, sets, maps,
+    // objects, and generators — the iter()/next() protocol handles each.
 
     beginScope();
 
-    // Compile iterable expression and store as local _iter
+    // --- let _iter = iter(iterable) ---
+    int iterBuiltinSlot = resolveGlobal("iter");
+    emitGetGlobal(iterBuiltinSlot);
     stmt.iterable->accept(*this);
-    addLocal("_iter");
-
-    // Initialize index _i = 0
-    emitConstant(0.0);
-    addLocal("_i");
-
-    // Call _vora_len to get the length of _iter
-    int lenSlot = resolveGlobal("_vora_len");
-    emitGetGlobal(lenSlot);
-
-    int iterSlot = resolveLocal("_iter");
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iterSlot));
     emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
-    addLocal("_len");
+    addLocal("_iter");
+    int iterLocalSlot = resolveLocal("_iter");
 
-    // Loop structure:
-    //   loopStart:  condition (_i < _len)
-    //   body (with beginScope/endScope)
-    //   continueTarget: increment (_i += 1)
-    //   loop back to loopStart
-    //
-    // continue requires increment before looping back. We store
-    // continueJumps and patch them to the continueTarget.
-
+    // --- while (true) ---
     size_t loopStart = chunk.code.size();
-    // continueTarget = SIZE_MAX signals "for-in loop: use forward jump,
-    // target will be set later". extraLocalsToPopOnBreak = 3 accounts for
-    // the auto-generated _iter, _i, _len locals that must be cleaned up on
-    // break (but NOT on continue — they persist across iterations).
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 3});
+    // continueTarget = loopStart (continue jumps go back to top via OP_LOOP).
+    // extraLocalsToPopOnBreak = 1 (_iter), extraLocalsToPopOnContinue = 0.
+    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0});
 
-    // --- Condition: _i < _len ---
-    int iSlot = resolveLocal("_i");
+    // --- OP_PUSH_CATCH: try { let x = next(_iter); body } ---
+    emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
+    emitByte(static_cast<uint8_t>(currentLocalCount()));
+    size_t pushCatchPlaceholder = chunk.code.size();
+    emitByte(0xFF);  // offset low placeholder
+    emitByte(0xFF);  // offset high placeholder
+
+    tryNesting++;
+
+    // Compile next(_iter) and bind to loop variable
+    int nextBuiltinSlot = resolveGlobal("next");
+    emitGetGlobal(nextBuiltinSlot);
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iSlot));
+              static_cast<uint8_t>(iterLocalSlot));
+    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
 
-    int lenLocalSlot = resolveLocal("_len");
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(lenLocalSlot));
-
-    emitByte(static_cast<uint8_t>(OpCode::OP_LESS));
-    size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-
-    // --- Body ---
     beginScope();
-
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iterSlot));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iSlot));
-    emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
     addLocal(stmt.variable);
-
     stmt.body->accept(*this);
-
     endScope();
 
-    // --- Increment _i (continue target) ---
-    // Record this position for continue jumps
-    loopStack.back().continueTarget = chunk.code.size();
+    tryNesting--;
 
+    // Normal try exit: pop catch handler and skip the catch block
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+    size_t skipCatchJump = emitJump(OpCode::OP_JUMP);
+
+    // --- Catch handler: if StopIteration → break, else → re-throw ---
+    size_t catchTarget = chunk.code.size();
+    size_t catchJumpSize = catchTarget - pushCatchPlaceholder - 2;
+    if (catchJumpSize > UINT16_MAX) catchJumpSize = UINT16_MAX;
+    chunk.writeAt(pushCatchPlaceholder,
+                  static_cast<uint8_t>(catchJumpSize & 0xFF));
+    chunk.writeAt(pushCatchPlaceholder + 1,
+                  static_cast<uint8_t>((catchJumpSize >> 8) & 0xFF));
+
+    // Clear exception-in-flight and pop the catch handler at catch entry
+    emitByte(static_cast<uint8_t>(OpCode::OP_CLEAR_EXCEPTION));
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+
+    // Bind the exception value to internal variable _exn
+    beginScope();
+    addLocal("_exn");
+
+    // if (_exn == "StopIteration") { pop _exn; break; } else { throw _exn; }
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iSlot));
-    emitConstant(1.0);
-    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
-              static_cast<uint8_t>(iSlot));
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+              static_cast<uint8_t>(resolveLocal("_exn")));
+    emitConstant(GcHeap::instance().alloc<GcString>("StopIteration"));
+    emitByte(static_cast<uint8_t>(OpCode::OP_EQUAL));
+    size_t notStopIterJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // pop comparison result
+    // Break out of the while loop (emit break jump → patched after endScope)
+    visitBreakStmt(BreakStmt(stmt.forToken));  // uses forToken as approximate location
+    // else: not StopIteration — re-throw
+    patchJump(notStopIterJump);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // pop comparison result
+    // Re-throw: push _exn and throw
+    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+              static_cast<uint8_t>(resolveLocal("_exn")));
+    emitByte(static_cast<uint8_t>(OpCode::OP_THROW));
 
-    // --- Loop back ---
+    endScope();  // _exn scope
+
+    // After catch (normal flow after each iteration)
+    patchJump(skipCatchJump);
+
+    // Loop back to try the next element
     emitLoop(loopStart);
 
-    // Patch exit (condition false → exit loop)
-    patchJump(exitJump);
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-
-    // Patch continue jumps to the continueTarget (the increment section).
-    // Must be done BEFORE endScope() because continue re-enters the loop
-    // and needs _iter/_i/_len still on the stack.
-    for (size_t jumpOffset : loopStack.back().continueJumps) {
-        size_t target = loopStack.back().continueTarget;
-        size_t jumpSize = target - jumpOffset - 2;
-        if (jumpSize > UINT16_MAX) jumpSize = UINT16_MAX;
-        chunk.writeAt(jumpOffset, static_cast<uint8_t>(jumpSize & 0xFF));
-        chunk.writeAt(jumpOffset + 1, static_cast<uint8_t>((jumpSize >> 8) & 0xFF));
-    }
-
-    // Save break jumps before popping the loop context. They must be
-    // patched AFTER endScope() because break already handled cleanup of
-    // _iter/_i/_len via extraLocalsToPopOnBreak — landing before endScope()
-    // would double-pop those locals.
+    // --- Patch break jumps (from StopIteration catch and user break in body) ---
+    // Save break jumps before popping the loop context. Must be patched AFTER
+    // endScope() because break paths already handled _iter cleanup via
+    // extraLocalsToPopOnBreak — landing before endScope() would double-pop.
     std::vector<size_t> savedBreakJumps = std::move(loopStack.back().breakJumps);
-
     loopStack.pop_back();
 
-    // End outer scope (pops _iter, _i, _len for normal exit path)
+    // End outer scope (pops _iter for normal exit path)
     endScope();
 
-    // Patch break jumps after endScope() — break path skips the
-    // endScope() cleanup since it already handled it.
+    // Patch break jumps after endScope()
     for (size_t jumpOffset : savedBreakJumps) {
         patchJump(jumpOffset);
     }
@@ -1133,6 +1126,8 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
 void Compiler::visitThrowStmt(const ThrowStmt& stmt) {
     currentLine = stmt.keyword.line;
     currentColumn = stmt.keyword.column;
+    // Execute deferred cleanup before throwing (RAII semantics)
+    emitDeferCalls();
     // Compile the value to throw
     stmt.value->accept(*this);
     emitByte(static_cast<uint8_t>(OpCode::OP_THROW));

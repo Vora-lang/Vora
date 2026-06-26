@@ -1030,6 +1030,13 @@ InterpretResult VM::run() {
                             push(v);
                         else if (std::holds_alternative<bool>(v))
                             push(std::get<bool>(v) ? 1.0 : 0.0);
+                        else if (std::holds_alternative<GcPtr<GcString>>(v)) {
+                            try {
+                                push(std::stod(std::get<GcPtr<GcString>>(v)->value));
+                            } catch (const std::exception&) {
+                                push(0.0);
+                            }
+                        }
                         else
                             push(0.0);
                         break;
@@ -1041,6 +1048,14 @@ InterpretResult VM::run() {
                             push(static_cast<int64_t>(std::trunc(std::get<double>(v))));
                         else if (std::holds_alternative<bool>(v))
                             push(std::get<bool>(v) ? static_cast<int64_t>(1) : static_cast<int64_t>(0));
+                        else if (std::holds_alternative<GcPtr<GcString>>(v)) {
+                            try {
+                                push(static_cast<int64_t>(std::trunc(
+                                    std::stod(std::get<GcPtr<GcString>>(v)->value))));
+                            } catch (const std::exception&) {
+                                push(static_cast<int64_t>(0));
+                            }
+                        }
                         else
                             push(static_cast<int64_t>(0));
                         break;
@@ -2380,6 +2395,138 @@ InterpretResult VM::run() {
                 }
                 break;
             }
+            // --- Null-safe index access (for ?.[] optional chaining) ---
+            case OpCode::OP_INDEX_SAFE: {
+                Value indexVal = pop();
+                Value target = pop();
+
+                // Dict: string-keyed lookup (handled first since keys are non-numeric)
+                if (std::holds_alternative<GcPtr<Dict>>(target)) {
+                    const auto& dpairs = std::get<GcPtr<Dict>>(target)->pairs;
+                    if (isNumeric(indexVal)) {
+                        double raw = toDouble(indexVal);
+                        if (raw >= 0 && std::floor(raw) == raw) {
+                            size_t idx = static_cast<size_t>(raw);
+                            if (idx >= dpairs.size()) {
+                                push(nullptr);  // safe: return null on bounds
+                            } else {
+                                auto it = dpairs.begin();
+                                std::advance(it, idx);
+                                push(GcHeap::instance().alloc<GcString>(it->first));
+                            }
+                        } else {
+                            std::string key = valueToString(indexVal);
+                            auto it = dpairs.find(key);
+                            if (it == dpairs.end()) {
+                                push(nullptr);  // safe: return null
+                            } else {
+                                push(it->second);
+                            }
+                        }
+                    } else {
+                        std::string key = valueToString(indexVal);
+                        auto it = dpairs.find(key);
+                        if (it == dpairs.end()) {
+                            push(nullptr);  // safe: return null
+                        } else {
+                            push(it->second);
+                        }
+                    }
+                    break;
+                }
+
+                // Map: key lookup by Value
+                if (std::holds_alternative<GcPtr<Map>>(target)) {
+                    const auto& mpairs = std::get<GcPtr<Map>>(target)->pairs;
+                    if (isNumeric(indexVal)) {
+                        double raw = toDouble(indexVal);
+                        if (raw >= 0 && std::floor(raw) == raw) {
+                            size_t idx = static_cast<size_t>(raw);
+                            if (idx >= mpairs.size()) {
+                                push(nullptr);  // safe: return null on bounds
+                            } else {
+                                auto it = mpairs.begin();
+                                std::advance(it, idx);
+                                push(it->first);
+                            }
+                            break;
+                        }
+                    }
+                    auto it = mpairs.find(indexVal);
+                    if (it == mpairs.end()) {
+                        push(nullptr);  // safe: return null
+                    } else {
+                        push(it->second);
+                    }
+                    break;
+                }
+
+                // Set: numeric index for for-in iteration
+                if (std::holds_alternative<GcPtr<Set>>(target)) {
+                    if (!isNumeric(indexVal)) {
+                        push(nullptr);  // safe: non-numeric index on set
+                        break;
+                    }
+                    double rawIndex = toDouble(indexVal);
+                    if (rawIndex < 0 || std::floor(rawIndex) != rawIndex) {
+                        push(nullptr);  // safe: invalid index
+                        break;
+                    }
+                    const auto& selements = std::get<GcPtr<Set>>(target)->elements;
+                    size_t idx = static_cast<size_t>(rawIndex);
+                    if (idx >= selements.size()) {
+                        push(nullptr);  // safe: return null on bounds
+                    } else {
+                        auto it = selements.begin();
+                        std::advance(it, idx);
+                        push(*it);
+                    }
+                    break;
+                }
+
+                if (!isNumeric(indexVal)) {
+                    push(nullptr);  // safe: non-numeric index on non-dict/map/set
+                    break;
+                }
+
+                double rawIndex = toDouble(indexVal);
+                if (rawIndex < 0 || std::floor(rawIndex) != rawIndex) {
+                    push(nullptr);  // safe: invalid index
+                    break;
+                }
+
+                size_t index = static_cast<size_t>(rawIndex);
+
+                if (std::holds_alternative<GcPtr<GcString>>(target)) {
+                    const auto& str = std::get<GcPtr<GcString>>(target)->value;
+                    if (index >= str.size()) {
+                        push(nullptr);  // safe: return null on bounds
+                    } else {
+                        push(GcHeap::instance().alloc<GcString>(std::string(1, str[index])));
+                    }
+                } else if (std::holds_alternative<GcPtr<Array>>(target)) {
+                    const auto& elements =
+                        std::get<GcPtr<Array>>(target)->elements;
+                    if (index >= elements.size()) {
+                        push(nullptr);  // safe: return null on bounds
+                    } else {
+                        push(elements[index]);
+                    }
+                } else if (std::holds_alternative<GcPtr<ObjectInstance>>(target)) {
+                    const auto& props =
+                        std::get<GcPtr<ObjectInstance>>(target)->properties;
+                    if (index >= props.size()) {
+                        push(nullptr);  // safe: return null on bounds
+                    } else {
+                        auto it = props.begin();
+                        std::advance(it, index);
+                        push(GcHeap::instance().alloc<GcString>(it->first));
+                    }
+                } else {
+                    push(nullptr);  // safe: return null for non-indexable types
+                }
+                break;
+            }
             case OpCode::OP_SET_INDEX: {
                 Value value = pop();
                 Value indexVal = pop();
@@ -2542,6 +2689,122 @@ InterpretResult VM::run() {
                 } else {
                     RUNTIME_ERROR_OR_THROW("Can only access properties on objects");
                 }
+                break;
+            }
+            // --- Null-safe property access (for ?. optional chaining) ---
+            case OpCode::OP_GET_PROPERTY_SAFE_WIDE:
+                nameIndex = READ_SHORT();
+                goto get_property_safe_body;
+            case OpCode::OP_GET_PROPERTY_SAFE:
+                nameIndex = READ_BYTE();
+                get_property_safe_body: {
+                if (!std::holds_alternative<GcPtr<GcString>>(currentChunk->constants[nameIndex])) {
+                    RUNTIME_ERROR_OR_THROW("Invalid property name in constant pool");
+                    return InterpretResult::RUNTIME_ERROR;
+                }
+                std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
+                Value obj = pop();
+
+                // Array built-in methods & properties
+                if (std::holds_alternative<GcPtr<Array>>(obj)) {
+                    auto arr = std::get<GcPtr<Array>>(obj);
+                    if (propName == "length") {
+                        push(static_cast<int64_t>(arr->elements.size()));
+                        break;
+                    }
+                    auto method = getArrayMethod(propName, arr);
+                    if (method) { push(method); break; }
+                    push(nullptr);  // safe: return null instead of throwing
+                    break;
+                }
+
+                // String built-in methods & properties
+                if (std::holds_alternative<GcPtr<GcString>>(obj)) {
+                    const auto& str = std::get<GcPtr<GcString>>(obj)->value;
+                    if (propName == "length") {
+                        push(static_cast<int64_t>(str.size()));
+                        break;
+                    }
+                    auto method = getStringMethod(propName, str);
+                    if (method) { push(method); break; }
+                    push(nullptr);  // safe: return null instead of throwing
+                    break;
+                }
+
+                // Dict built-in methods & properties
+                if (std::holds_alternative<GcPtr<Dict>>(obj)) {
+                    auto dict = std::get<GcPtr<Dict>>(obj);
+                    if (propName == "length") {
+                        push(static_cast<int64_t>(dict->pairs.size()));
+                        break;
+                    }
+                    auto method = getDictMethod(propName, dict);
+                    if (method) { push(method); break; }
+                    auto keyIt = dict->pairs.find(propName);
+                    if (keyIt != dict->pairs.end()) {
+                        push(keyIt->second);
+                        break;
+                    }
+                    push(nullptr);  // safe: return null for unknown key
+                    break;
+                }
+
+                // Set built-in methods & properties
+                if (std::holds_alternative<GcPtr<Set>>(obj)) {
+                    auto set = std::get<GcPtr<Set>>(obj);
+                    if (propName == "length" || propName == "size") {
+                        push(static_cast<int64_t>(set->elements.size()));
+                        break;
+                    }
+                    auto method = getSetMethod(propName, set);
+                    if (method) { push(method); break; }
+                    push(nullptr);  // safe: return null instead of throwing
+                    break;
+                }
+
+                // Map built-in methods & properties
+                if (std::holds_alternative<GcPtr<Map>>(obj)) {
+                    auto map = std::get<GcPtr<Map>>(obj);
+                    if (propName == "length" || propName == "size") {
+                        push(static_cast<int64_t>(map->pairs.size()));
+                        break;
+                    }
+                    auto method = getMapMethod(propName, map);
+                    if (method) { push(method); break; }
+                    push(nullptr);  // safe: return null instead of throwing
+                    break;
+                }
+
+                if (std::holds_alternative<GcPtr<ObjectInstance>>(obj)) {
+                    auto instance = std::get<GcPtr<ObjectInstance>>(obj);
+                    auto it = instance->properties.find(propName);
+                    if (it != instance->properties.end()) {
+                        push(it->second);
+                        break;
+                    }
+                    if (instance->classDefinition) {
+                        for (const auto& wp : instance->classDefinition->mro) {
+                            auto cls = wp;
+                            if (!cls) continue;
+                            auto methodIt = cls->methods.find(propName);
+                            if (methodIt != cls->methods.end()) {
+                                auto methodFn = methodIt->second;
+                                const FunctionPrototype* mp = methodFn->getPrototype();
+                                if (!mp) {
+                                    RUNTIME_ERROR_OR_THROW("Method has no compiled body");
+                                }
+                                auto bound = GcHeap::instance().alloc<BoundMethod>(
+                                    instance, mp, methodFn);
+                                push(bound);
+                                break;
+                            }
+                        }
+                        if (stackTopIndex > 0) break;  // bound method was pushed
+                    }
+                    push(nullptr);  // safe: return null for undefined property
+                    break;
+                }
+                push(nullptr);  // safe: return null for non-object types
                 break;
             }
             case OpCode::OP_SET_PROPERTY_WIDE:

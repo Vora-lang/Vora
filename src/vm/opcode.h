@@ -126,6 +126,11 @@ enum class OpCode : uint8_t {
     OP_IMPORT_WIDE,         // import module (operand: uint16_t pathIndex LE, uint16_t nameIndex LE)
     OP_GET_GLOBAL_SAFE_WIDE,// safe global get (operand: uint16_t slot LE, uint16_t fallbackIndex LE)
     OP_CALL_KW_WIDE,        // named-arg call (operand: u8 posCount, u8 kwCount, uint16_t nameIdx... LE)
+
+    // Null-safe property/index access for optional chaining (?. and ?.[])
+    OP_GET_PROPERTY_SAFE,       // like OP_GET_PROPERTY but returns null on missing key
+    OP_GET_PROPERTY_SAFE_WIDE,  // 16-bit nameIndex variant
+    OP_INDEX_SAFE,              // like OP_INDEX but returns null on key/index not found
 };
 
 } // namespace vora

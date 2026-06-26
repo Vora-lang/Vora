@@ -149,6 +149,16 @@ void Compiler::emitGetProperty(size_t nameIndex) {
     }
 }
 
+void Compiler::emitGetPropertySafe(size_t nameIndex) {
+    if (needsWide(nameIndex)) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY_SAFE_WIDE));
+        emitShort(static_cast<uint16_t>(nameIndex));
+    } else {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_GET_PROPERTY_SAFE),
+                  static_cast<uint8_t>(nameIndex));
+    }
+}
+
 void Compiler::emitSetProperty(size_t nameIndex) {
     if (needsWide(nameIndex)) {
         emitByte(static_cast<uint8_t>(OpCode::OP_SET_PROPERTY_WIDE));

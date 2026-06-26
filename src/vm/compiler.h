@@ -307,6 +307,7 @@ private:
 
     // ── Emitter helpers that auto-select narrow/wide based on index ────
     void emitGetProperty(size_t nameIndex);       // OP_GET_PROPERTY or _WIDE
+    void emitGetPropertySafe(size_t nameIndex);  // OP_GET_PROPERTY_SAFE or _SAFE_WIDE
     void emitSetProperty(size_t nameIndex);       // OP_SET_PROPERTY or _WIDE
     void emitGetSuper(size_t nameIndex);          // OP_GET_SUPER or _WIDE
     void emitClosure(size_t protoIndex,           // OP_CLOSURE or _WIDE

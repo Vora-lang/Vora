@@ -302,6 +302,12 @@ void registerBuiltins(VM& vm) {
                 return arg;
             }
 
+            // iter(generator) → the generator itself (it is its own iterator,
+            // driven by next() which already handles Generator)
+            if (std::holds_alternative<GcPtr<Generator>>(arg)) {
+                return arg;
+            }
+
             auto it = GcHeap::instance().alloc<Iterator>();
             it->source = arg;
             it->index = 0;
@@ -323,6 +329,12 @@ void registerBuiltins(VM& vm) {
                 it->valueKeys.reserve((*m)->pairs.size());
                 for (const auto& [k, v] : (*m)->pairs) {
                     it->valueKeys.push_back(k);
+                }
+            } else if (auto* inst = std::get_if<GcPtr<ObjectInstance>>(&arg)) {
+                // Snapshot object property keys for stable iteration
+                it->dictKeys.reserve((*inst)->properties.size());
+                for (const auto& [k, v] : (*inst)->properties) {
+                    it->dictKeys.push_back(k);
                 }
             } else if (!std::holds_alternative<GcPtr<Array>>(arg) &&
                        !std::holds_alternative<GcPtr<GcString>>(arg)) {
@@ -439,6 +451,17 @@ void registerBuiltins(VM& vm) {
                 }
                 it->index = idx + 1;
                 return it->valueKeys[idx];
+            }
+
+            // ObjectInstance iteration — iterates over property keys
+            if (std::holds_alternative<GcPtr<ObjectInstance>>(source)) {
+                if (idx >= it->dictKeys.size()) {
+                    vm.nativeError = true;
+                    vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
+                    return nullptr;
+                }
+                it->index = idx + 1;
+                return GcHeap::instance().alloc<GcString>(it->dictKeys[idx]);
             }
 
             // Exhausted or non-iterable source
