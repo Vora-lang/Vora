@@ -1322,17 +1322,16 @@ void Compiler::visitYieldExpr(const YieldExpr& expr) {
 
 void Compiler::visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) {
     // Bare destructuring assignment: [a, b] = arr  or  {x, y} = obj
-    // TODO: Implement full destructured assignment compilation.
-    // Currently only compiles the RHS value onto the stack; the binding
-    // pattern is not unpacked. This is a known limitation tracked as BUG-021.
-    // The `let`/`const` destructuring declarations (compileBindPattern) ARE
-    // fully implemented — only the standalone assignment form is missing.
-    // For now, compile value and leave on stack.
-    if (expr.value) {
-        expr.value->accept(*this);
-    } else {
+    // Compile RHS, then unpack pattern assigning to existing variables.
+    // compileAssignPattern saves the source in a temp and leaves it on
+    // the stack as the expression result (assignment is an expression).
+    if (!expr.value) {
         emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+        return;
     }
+
+    expr.value->accept(*this);
+    compileAssignPattern(*expr.binding);
 }
 
 void Compiler::visitFuncExpr(const FuncExpr& expr) {

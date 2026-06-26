@@ -180,6 +180,8 @@ private:
     bool callValue(const Value& callee, uint8_t argCount);
     InterpretResult callVoraFunction(const GcPtr<VoraFunction>& func,
                                       const std::vector<Value>& args);
+    InterpretResult executeCallKw(uint8_t posCount, uint8_t kwCount,
+                                  const std::vector<size_t>& kwNameIndices);
 
     // Stack trace: walks the CallFrame chain to produce a traceback string.
     std::string captureStackTrace() const;

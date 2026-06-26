@@ -16,8 +16,7 @@ namespace vora {
 void Compiler::visitLetStmt(const LetStmt& stmt) {
     // Destructured binding: let [a, b] = expr  or  let {x, y} = expr
     if (stmt.binding) {
-        compileDestructuredBinding(*stmt.binding, stmt.initializer.get(), stmt.isConst);
-        // TODO: apply typeAnnotation conversion to destructured bindings
+        compileDestructuredBinding(*stmt.binding, stmt.initializer.get(), stmt.isConst, stmt.typeAnnotation);
         return;
     }
 
@@ -62,7 +61,8 @@ void Compiler::visitLetStmt(const LetStmt& stmt) {
 // =========================================================================
 
 void Compiler::compileDestructuredBinding(const BindingPattern& pattern,
-                                          const Expr* initializer, bool isConst) {
+                                          const Expr* initializer, bool isConst,
+                                          const std::string& typeAnnotation) {
     // Compile the RHS value (the source array/object to destructure).
     if (initializer) {
         initializer->accept(*this);
@@ -77,15 +77,20 @@ void Compiler::compileDestructuredBinding(const BindingPattern& pattern,
     // For global scope, we pop values via OP_DEFINE_GLOBAL.
     // For local scope, they stay on the stack as locals.
     // The pattern compilation handles both cases.
-    compileBindPattern(pattern, scopeDepth == 0 ? -1 : -1, isConst);
+    compileBindPattern(pattern, scopeDepth == 0 ? -1 : -1, isConst, typeAnnotation);
 }
 
 void Compiler::compileBindPattern(const BindingPattern& pattern,
-                                  int sourceSlot, bool isConst) {
+                                  int sourceSlot, bool isConst,
+                                  const std::string& typeAnnotation) {
     switch (pattern.kind()) {
 
     case BindingKind::Identifier: {
         const auto& id = static_cast<const IdentifierBinding&>(pattern);
+        // Apply type annotation conversion before binding (let [a]:int = ["42"] → a==42)
+        if (!typeAnnotation.empty()) {
+            emitConvert(typeAnnotation);
+        }
         // The value to bind is already on top of stack.
         if (scopeDepth == 0) {
             int slot;
@@ -132,7 +137,7 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
             }
             emitConstant(static_cast<double>(i));             // push index
             emitByte(static_cast<uint8_t>(OpCode::OP_INDEX)); // array[i]
-            compileBindPattern(*arr.elements[i], -1, isConst);
+            compileBindPattern(*arr.elements[i], -1, isConst, typeAnnotation);
         }
 
         // Rest element: ...rest
@@ -140,7 +145,7 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
             if (scopeDepth == 0) {
                 error("Rest element in destructuring is only supported inside functions");
                 emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
-                compileBindPattern(*arr.rest, -1, isConst);
+                compileBindPattern(*arr.rest, -1, isConst, typeAnnotation);
             } else {
                 int restStartIdx = static_cast<int>(arr.elements.size());
 
@@ -206,7 +211,7 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
                 // Push rest array and bind
                 emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
                           static_cast<uint8_t>(arrSlot));
-                compileBindPattern(*arr.rest, -1, isConst);
+                compileBindPattern(*arr.rest, -1, isConst, typeAnnotation);
             }
         }
 
@@ -244,7 +249,7 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
             }
             size_t keyIndex = identifierConstant(prop.key);
             emitGetProperty(keyIndex);
-            compileBindPattern(*prop.pattern, -1, isConst);
+            compileBindPattern(*prop.pattern, -1, isConst, typeAnnotation);
         }
 
         // Object rest: ...rest
@@ -252,7 +257,7 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
             if (scopeDepth == 0) {
                 error("Object rest in destructuring is only supported inside functions");
                 emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
-                compileBindPattern(*obj.rest, -1, isConst);
+                compileBindPattern(*obj.rest, -1, isConst, typeAnnotation);
             } else {
                 // ── Strategy: copy all keys to rest dict, then remove explicit ones ──
                 // Desugars to:
@@ -360,13 +365,278 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
                 // ── Push rest dict and bind to rest variable ──
                 emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
                           static_cast<uint8_t>(restSlot));
-                compileBindPattern(*obj.rest, -1, isConst);
+                compileBindPattern(*obj.rest, -1, isConst, typeAnnotation);
             }
         }
 
         // Pop source object at global scope
         if (scopeDepth == 0) {
             emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+        }
+        break;
+    }
+    }
+}
+
+void Compiler::compileAssignPattern(const BindingPattern& pattern) {
+    // Bare destructuring assignment: [a, b] = arr  or  {x, y} = obj
+    // Unlike compileBindPattern (which declares NEW variables), this assigns
+    // to EXISTING variables. The value to assign is on top of the stack;
+    // after assignment we POP to keep the stack clean (the source temp
+    // managed by visitDestructureAssignmentExpr stays as expression result).
+
+    switch (pattern.kind()) {
+
+    case BindingKind::Identifier: {
+        const auto& id = static_cast<const IdentifierBinding&>(pattern);
+        // Value is on top of stack. Assign to existing variable.
+        int localSlot = resolveLocal(id.name);
+        if (localSlot >= 0) {
+            if (isLocalConst(id.name)) {
+                error("Cannot assign to const variable '" + id.name + "'");
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+                return;
+            }
+            emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                      static_cast<uint8_t>(localSlot));
+        } else {
+            int upvalueIdx = resolveUpvalue(this, id.name);
+            if (upvalueIdx >= 0) {
+                if (isUpvalueConst(upvalueIdx)) {
+                    error("Cannot assign to const variable '" + id.name + "'");
+                    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+                    return;
+                }
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_UPVALUE),
+                          static_cast<uint8_t>(upvalueIdx));
+            } else {
+                int slot = resolveGlobal(id.name);
+                // Check global const
+                Compiler* root = this;
+                while (root->enclosing) root = root->enclosing;
+                if (slot >= 0 && static_cast<size_t>(slot) < root->globalIsConst.size() &&
+                    root->globalIsConst[static_cast<size_t>(slot)]) {
+                    error("Cannot assign to const variable '" + id.name + "'");
+                    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+                    return;
+                }
+                emitSetGlobal(slot);
+            }
+        }
+        // OP_SET_LOCAL/SET_UPVALUE/SET_GLOBAL don't pop — clean up manually
+        emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+        break;
+    }
+
+    case BindingKind::Array: {
+        const auto& arr = static_cast<const ArrayBinding&>(pattern);
+        // Use OP_DUP to keep source accessible — avoids temp locals that
+        // would interfere with the expression result at the call site.
+        int tempId = destructureTempCounter++;
+
+        for (size_t i = 0; i < arr.elements.size(); i++) {
+            emitByte(static_cast<uint8_t>(OpCode::OP_DUP));  // dup source
+            emitConstant(static_cast<double>(i));             // push index
+            emitByte(static_cast<uint8_t>(OpCode::OP_INDEX)); // source[i]
+            compileAssignPattern(*arr.elements[i]);           // assign + pop
+        }
+
+        // Rest element: ...rest (local scope only — needs temp locals)
+        if (arr.rest) {
+            if (scopeDepth == 0) {
+                error("Rest element in destructuring is only supported inside functions");
+                emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+                compileAssignPattern(*arr.rest);
+            } else {
+                // Save source in a temp so the rest loop can reload it.
+                // The source is at the TOP of stack; addLocal names it.
+                std::string srcName = "_da" + std::to_string(tempId) + "_src";
+                addLocal(srcName);
+                int srcSlot = resolveLocal(srcName);
+
+                int restStartIdx = static_cast<int>(arr.elements.size());
+
+                // Create empty rest array
+                std::string restArrName = "_da" + std::to_string(tempId) + "_arr";
+                emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 0);
+                addLocal(restArrName);
+                int arrSlot = resolveLocal(restArrName);
+
+                // Loop counter: _i = restStartIdx
+                std::string iName = "_da" + std::to_string(tempId) + "_i";
+                emitConstant(static_cast<double>(restStartIdx));
+                addLocal(iName);
+                int iSlot = resolveLocal(iName);
+
+                // Get array length: _len = _vora_len(_src)
+                std::string lenName = "_da" + std::to_string(tempId) + "_len";
+                int lenBuiltinSlot = resolveGlobal("_vora_len");
+                emitGetGlobal(lenBuiltinSlot);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(srcSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                addLocal(lenName);
+                int lenSlot = resolveLocal(lenName);
+
+                // While loop: _i < _len
+                size_t loopStart = chunk.code.size();
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(lenSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN));
+                size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+
+                // Body: _arr = _arr + [_src[_i]]
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(arrSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(srcSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 1);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                          static_cast<uint8_t>(arrSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                // i = i + 1
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitConstant(1.0);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                emitLoop(loopStart);
+                patchJump(exitJump);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                // Push rest array and assign
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(arrSlot));
+                compileAssignPattern(*arr.rest);
+            }
+        }
+        break;
+    }
+
+    case BindingKind::Object: {
+        const auto& obj = static_cast<const ObjectBinding&>(pattern);
+        // Use OP_DUP to keep source accessible (same reasoning as Array case).
+        int tempId = destructureTempCounter++;
+
+        for (size_t i = 0; i < obj.properties.size(); i++) {
+            const auto& prop = obj.properties[i];
+            emitByte(static_cast<uint8_t>(OpCode::OP_DUP));  // dup source
+            size_t keyIndex = identifierConstant(prop.key);
+            emitGetProperty(keyIndex);
+            compileAssignPattern(*prop.pattern);             // assign + pop
+        }
+
+        // Object rest: ...rest (local scope only — needs temp locals)
+        if (obj.rest) {
+            if (scopeDepth == 0) {
+                error("Object rest in destructuring is only supported inside functions");
+                emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+                compileAssignPattern(*obj.rest);
+            } else {
+                // Save source in a temp so the rest logic can reload it
+                std::string srcName = "_da" + std::to_string(tempId) + "_obj";
+                addLocal(srcName);
+                int srcSlot = resolveLocal(srcName);
+
+                std::string restName = "_da" + std::to_string(tempId) + "_rest";
+                emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 0);
+                addLocal(restName);
+                int restSlot = resolveLocal(restName);
+
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(srcSlot));
+                size_t keysMethodIdx = identifierConstant("keys");
+                emitGetProperty(keysMethodIdx);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 0);
+                std::string keysName = "_da" + std::to_string(tempId) + "_keys";
+                addLocal(keysName);
+                int keysSlot = resolveLocal(keysName);
+
+                std::string iName = "_da" + std::to_string(tempId) + "_i";
+                emitConstant(0.0);
+                addLocal(iName);
+                int iSlot = resolveLocal(iName);
+
+                std::string lenName = "_da" + std::to_string(tempId) + "_len";
+                int lenBuiltin = resolveGlobal("_vora_len");
+                emitGetGlobal(lenBuiltin);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(keysSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                addLocal(lenName);
+                int lenSlot = resolveLocal(lenName);
+
+                size_t restLoopStart = chunk.code.size();
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(lenSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN));
+                size_t restExitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                beginScope();
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(keysSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+                std::string kName = "_da" + std::to_string(tempId) + "_k";
+                addLocal(kName);
+                int kSlot = resolveLocal(kName);
+
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(restSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(kSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(srcSlot));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(kSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+                emitByte(static_cast<uint8_t>(OpCode::OP_SET_INDEX));
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+                endScope();
+
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitConstant(1.0);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                          static_cast<uint8_t>(iSlot));
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                emitLoop(restLoopStart);
+                patchJump(restExitJump);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                for (size_t pi = 0; pi < obj.properties.size(); pi++) {
+                    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                              static_cast<uint8_t>(restSlot));
+                    size_t removeIdx = identifierConstant("remove");
+                    emitGetProperty(removeIdx);
+                    size_t keyIdx = identifierConstant(obj.properties[pi].key);
+                    emitBytes(static_cast<uint8_t>(OpCode::OP_CONSTANT),
+                              static_cast<uint8_t>(keyIdx));
+                    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+                }
+
+                emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                          static_cast<uint8_t>(restSlot));
+                compileAssignPattern(*obj.rest);
+            }
         }
         break;
     }
@@ -1360,12 +1630,13 @@ void Compiler::visitExportStmt(const ExportStmt& stmt) {
         exportNames.push_back(fs->name);
     } else if (auto* ls = dynamic_cast<LetStmt*>(stmt.declaration.get())) {
         // 'const' declarations also use LetStmt (with isConst=true).
-        // For destructuring patterns (ls->pattern is set), the name is
-        // empty — the binding pattern names are not yet extracted.
         if (!ls->name.empty()) {
             exportNames.push_back(ls->name);
+        } else if (ls->binding) {
+            // Extract names from destructuring pattern (e.g. export let {x, y} = obj)
+            auto names = ls->binding->getBoundNames();
+            exportNames.insert(exportNames.end(), names.begin(), names.end());
         }
-        // TODO: extract names from ls->pattern for destructuring exports
     } else if (auto* os = dynamic_cast<ObjStmt*>(stmt.declaration.get())) {
         exportNames.push_back(os->name);
     }

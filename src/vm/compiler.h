@@ -121,9 +121,12 @@ public:
 
     // Destructuring compilation helpers
     void compileDestructuredBinding(const BindingPattern& pattern,
-                                    const Expr* initializer, bool isConst);
+                                    const Expr* initializer, bool isConst,
+                                    const std::string& typeAnnotation = "");
     void compileBindPattern(const BindingPattern& pattern,
-                            int sourceSlot, bool isConst);
+                            int sourceSlot, bool isConst,
+                            const std::string& typeAnnotation = "");
+    void compileAssignPattern(const BindingPattern& pattern);  // bare assignment [a,b]=expr
     void visitSpreadExpr(const SpreadExpr& expr) override;
     void visitListCompExpr(const ListCompExpr& expr) override;
     void visitDictCompExpr(const DictCompExpr& expr) override;
