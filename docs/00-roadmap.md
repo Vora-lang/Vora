@@ -90,7 +90,7 @@ OOP 完善
 嵌入增强
 ├── VM public API 扩展（setGlobal/getGlobal/registerNativeFunction）
 ├── 嵌入文档 + 完整示例项目
-└── SDK 安装器（cmake --install）
+└── ✅ SDK 随安装包分发    ← MSI 包含 lib/vora_lib.lib + include/vora.hpp
 ```
 
 ### Phase 4: 2027 Q1-Q2 — 工具链 + 异步
