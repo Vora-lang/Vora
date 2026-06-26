@@ -1223,3 +1223,112 @@ let words = ["Google", "Runoob", "Taobao"]
 - 字典推导是一个表达式，求值为一个新字典
 - 支持嵌套（内层推导可引用外层变量）
 - 重复键以后出现的为准（字典合并规则）
+
+---
+
+## 15. C++ 嵌入 / Embedding Vora in C++
+
+> Vora 是嵌入优先的语言。你只需要一个头文件和一个静态库，就能在自己的 C++ 应用中运行 Vora 代码。
+
+### 快速开始
+
+```bash
+# 1. 从 Vora 安装目录复制 SDK 文件
+#    include/vora.hpp    — 单文件头文件
+#    lib/vora_lib.lib    — 静态库 (Windows) / libvora_lib.a (Linux/macOS)
+
+# 2. 在你的 CMakeLists.txt 中:
+find_library(VORA_LIB vora_lib PATHS <install>/lib)
+target_link_libraries(my_app PRIVATE ${VORA_LIB})
+target_include_directories(my_app PRIVATE <install>/include/vora)
+
+# 3. 最小示例 (3 行执行 Vora 代码):
+```
+
+```cpp
+#include "vora.hpp"
+using namespace vora;
+
+int main() {
+    VM vm;
+    registerBuiltins(vm);  // 注册内建函数 (print, type, len, ...)
+
+    // 编译 + 执行一行代码
+    Lexer lexer("print(\"Hello from C++!\")", StderrErrorReporter(""));
+    Parser parser(lexer.scanTokens(), StderrErrorReporter(""));
+    Compiler compiler(StderrErrorReporter(""));
+    compiler.seedGlobals(vm.getGlobalNames());
+    Chunk chunk = compiler.compile(parser.parse().get());
+    vm.initGlobals(compiler.getGlobalNames());
+    vm.interpret(chunk);
+}
+```
+
+### 注册原生函数
+
+```cpp
+vm.defineNative("cpp_add", 2,
+    [](const std::vector<Value>& args) -> Value {
+        return toNumber(args[0]) + toNumber(args[1]);
+    });
+
+// Vora 侧直接调用:
+// print(cpp_add(3.5, 2.5))   → 6.0
+```
+
+`defineNative` 签名: `(name, arity, callback)`
+- `arity = -1` → 可变参数
+- 回调接收 `const std::vector<Value>&`，返回 `Value`
+
+### 完整嵌入流水线
+
+```
+C++ 字符串/文件
+    ↓
+Lexer (词法分析) → Token 流
+    ↓
+Parser (语法分析) → AST (Program)
+    ↓
+Compiler (字节码编译) → Chunk
+    ↓
+VM (虚拟机执行) → 结果
+```
+
+每一步都可以插入自定义逻辑：自定义 ErrorReporter、预注册全局变量、增量执行（REPL 模式）。
+
+### 错误隔离
+
+Vora 的错误**不会**传播到 C++ 宿主：
+
+```cpp
+InterpretResult result = vm.interpret(chunk);
+if (result != InterpretResult::OK) {
+    // 编译器/VM 错误通过 ErrorReporter 收集，不抛异常
+}
+```
+
+### 完整示例
+
+参考 `examples/embed/main.cpp`——8 个演示覆盖：
+1. 从字符串执行 Vora
+2. 注册 C++ 原生函数
+3. C++ ↔ Vora 双向数据交换
+4. 从文件加载脚本
+5. 错误隔离
+6. Vora 类和对象
+7. REPL 式增量执行
+8. 自定义 ErrorReporter
+
+### Value 类型速查
+
+| C++ 访问 | Vora 类型 |
+|----------|----------|
+| `std::get<double>(v)` | float |
+| `std::get<int64_t>(v)` | int |
+| `std::get<bool>(v)` | boolean |
+| `std::get<GcPtr<GcString>>(v)->value` | string |
+| `std::get<GcPtr<Array>>(v)->elements` | array |
+| `std::get<GcPtr<Dict>>(v)->pairs` | dict |
+| `std::holds_alternative<std::nullptr_t>(v)` | null |
+
+> **零外部依赖**: `vora_lib.lib` 只需 C++17 标准库，无第三方库依赖。

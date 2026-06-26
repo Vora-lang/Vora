@@ -89,7 +89,7 @@ OOP 完善
 
 嵌入增强
 ├── VM public API 扩展（setGlobal/getGlobal/registerNativeFunction）
-├── 嵌入文档 + 完整示例项目
+├── ✅ 嵌入文档 + 完整示例项目  ← USER_GUIDE.md 第15章 + examples/embed/
 └── ✅ SDK 随安装包分发    ← MSI 包含 lib/vora_lib.lib + include/vora.hpp
 ```
 
