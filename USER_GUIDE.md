@@ -1234,7 +1234,7 @@ let words = ["Google", "Runoob", "Taobao"]
 
 ```bash
 # 1. 从 Vora 安装目录复制 SDK 文件
-#    include/vora.hpp    — 单文件头文件
+#    include/vora.hpp    — 合并后的单文件头文件（vora.hpp）
 #    lib/vora_lib.lib    — 静态库 (Windows) / libvora_lib.a (Linux/macOS)
 
 # 2. 在你的 CMakeLists.txt 中:
@@ -1242,11 +1242,11 @@ find_library(VORA_LIB vora_lib PATHS <install>/lib)
 target_link_libraries(my_app PRIVATE ${VORA_LIB})
 target_include_directories(my_app PRIVATE <install>/include/vora)
 
-# 3. 最小示例 (3 行执行 Vora 代码):
+# 3. 最小示例 (只需 #include "vora.hpp"):
 ```
 
 ```cpp
-#include "vora.hpp"
+#include "vora.hpp"  // 合并后的单文件头文件，包含全部 API
 using namespace vora;
 
 int main() {
