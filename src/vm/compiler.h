@@ -284,13 +284,11 @@ private:
 
     // =========================================================================
     // Defer tracking (per-function LIFO execution at return)
+    // Defers are compiled to closures at declaration time (OP_CLOSURE + OP_DEFER_PUSH)
+    // and flushed at exit points (OP_DEFER_FLUSH) or during throwException unwind.
     // =========================================================================
-    struct DeferredCall {
-        size_t protoIndex;
-        std::vector<UpvalueDescriptor> upvalues;
-    };
-    std::vector<DeferredCall> deferredProtos;
-    void emitDeferCalls();  // emit calls for all deferred closures (LIFO), popping results
+    int deferCount_ = 0;
+    void emitDeferFlush();  // emit OP_DEFER_FLUSH if function has defers
 
     // =========================================================================
     // Bytecode emission

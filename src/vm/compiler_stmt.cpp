@@ -645,7 +645,7 @@ void Compiler::compileAssignPattern(const BindingPattern& pattern) {
 
 void Compiler::visitReturnStmt(const ReturnStmt& stmt) {
     // Execute deferred calls (LIFO) before returning
-    emitDeferCalls();
+    emitDeferFlush();
 
     // Pop catch handlers for any enclosing try blocks before returning
     for (int t = 0; t < tryNesting; t++) {
@@ -1077,7 +1077,7 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     }
 
     // Execute deferred calls (LIFO) before implicit return
-    fnCompiler.emitDeferCalls();
+    fnCompiler.emitDeferFlush();
 
     // Implicit return null at end of function
     fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
@@ -1192,7 +1192,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
                 s->accept(methodCompiler);
             }
 
-            methodCompiler.emitDeferCalls();
+            methodCompiler.emitDeferFlush();
             methodCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
             methodCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
 
@@ -1257,7 +1257,7 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     for (const auto& s : stmt.body->statements) {
         s->accept(ctorCompiler);
     }
-    ctorCompiler.emitDeferCalls();
+    ctorCompiler.emitDeferFlush();
     ctorCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
     ctorCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
     ctorCompiler.endScope();
@@ -1535,7 +1535,7 @@ void Compiler::visitThrowStmt(const ThrowStmt& stmt) {
     currentLine = stmt.keyword.line;
     currentColumn = stmt.keyword.column;
     // Execute deferred cleanup before throwing (RAII semantics)
-    emitDeferCalls();
+    emitDeferFlush();
     // Compile the value to throw
     stmt.value->accept(*this);
     emitByte(static_cast<uint8_t>(OpCode::OP_THROW));
@@ -1676,8 +1676,13 @@ void Compiler::visitDeferStmt(const DeferStmt& stmt) {
 
     uint8_t protoIndex = addFunctionPrototype(std::move(proto));
 
-    // Record for emission at return points (LIFO order via reverse iteration)
-    deferredProtos.push_back({protoIndex, std::move(capturedUpvalues)});
+    // Emit closure creation immediately (at defer declaration site)
+    // instead of at exit points. This captures upvalues at the correct
+    // scope and pushes the closure onto the frame's defer stack for
+    // cross-function unwind support.
+    emitClosure(protoIndex, capturedUpvalues);
+    emitByte(static_cast<uint8_t>(OpCode::OP_DEFER_PUSH));
+    deferCount_++;
 }
 
 } // namespace vora

@@ -1382,7 +1382,7 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
     }
 
     // Execute deferred calls (LIFO) before implicit return
-    fnCompiler.emitDeferCalls();
+    fnCompiler.emitDeferFlush();
 
     // Implicit return null
     fnCompiler.emitByte(static_cast<uint8_t>(OpCode::OP_NULL));

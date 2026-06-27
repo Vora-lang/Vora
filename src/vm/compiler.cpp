@@ -468,7 +468,7 @@ Chunk Compiler::compile(const Program* program) {
     program->accept(*this);
 
     // Execute deferred calls (LIFO) before implicit return
-    emitDeferCalls();
+    emitDeferFlush();
 
     // Implicit return null at end of program
     emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
@@ -526,15 +526,12 @@ void Compiler::visitErrorStmt(const ErrorStmt& /*stmt*/) {
     // No-op: error statements produce no bytecode.
 }
 
-void Compiler::emitDeferCalls() {
-    // Emit calls to all deferred closures in LIFO order (reverse of registration).
-    // Each defer: OP_CLOSURE <protoIndex> <upvalueCount> {<isLocal> <index>}*
-    //             OP_CALL 0
-    //             OP_POP  (discard the defer's return value)
-    for (auto it = deferredProtos.rbegin(); it != deferredProtos.rend(); ++it) {
-        emitClosure(it->protoIndex, it->upvalues);
-        emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 0);
-        emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+void Compiler::emitDeferFlush() {
+    // Emit OP_DEFER_FLUSH if this function has any defer statements.
+    // At runtime, this calls all closures on the frame's defer stack (LIFO),
+    // discarding return values. If the defer stack is empty, it's a no-op.
+    if (deferCount_ > 0) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_DEFER_FLUSH));
     }
 }
 

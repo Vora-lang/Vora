@@ -78,6 +78,10 @@ enum class OpCode : uint8_t {
     OP_SET_UPVALUE,    // set upvalue, leave value on stack (operand: uint8_t upvalue index)
     OP_CLOSE_UPVALUE,  // move local to heap (operand: uint8_t local slot)
 
+    // Defer
+    OP_DEFER_PUSH,     // pop closure from operand stack, push onto frame's defer stack
+    OP_DEFER_FLUSH,    // pop all defer closures from frame's defer stack (LIFO), call each
+
     // Arrays / Dicts
     OP_ARRAY,          // create array from N stack values (operand: uint8_t count)
     OP_DICT,           // create dict from N*2 stack values (operand: uint8_t pairCount)

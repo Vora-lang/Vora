@@ -71,4 +71,60 @@ before_return = 0;
 defer_return(3);
 assert(before_return == 99);
 
+// --- Cross-function defer unwind on throw ---
+let cross_log = []
+func cross_inner() {
+    defer cross_log.add("inner_defer")
+    throw "from_inner"
+}
+func cross_middle() {
+    defer cross_log.add("middle_d1")
+    defer cross_log.add("middle_d2")
+    cross_inner()
+}
+func cross_outer() {
+    defer cross_log.add("outer_defer")
+    try { cross_middle() } catch(e) { cross_log.add("caught") }
+}
+cross_outer()
+// Defers run LIFO per frame. Middle's defers run during throwException
+// unwind (cross-function!). Outer's defer runs at normal return.
+assert(cross_log[0] == "inner_defer")
+assert(cross_log[1] == "middle_d2")
+assert(cross_log[2] == "middle_d1")
+assert(cross_log[3] == "caught")
+assert(cross_log[4] == "outer_defer")
+assert(len(cross_log) == 5)
+
+// --- Cross-function defer with upvalues ---
+let upv = 0
+func upv_inner() {
+    defer upv = upv + 10
+    throw "boom"
+}
+func upv_middle() {
+    defer upv = upv + 100
+    upv_inner()
+}
+func upv_outer2() {
+    try { upv_middle() } catch(e) {}
+    assert(upv == 110)  // inner's +10 first, then middle's +100 during unwind
+}
+upv = 0
+upv_outer2()
+
+// --- Defer during normal exit still works (no throw) ---
+let normal_log = []
+func normal_inner() {
+    defer normal_log.add("inner")
+}
+func normal_middle() {
+    defer normal_log.add("middle")
+    normal_inner()
+}
+normal_middle()
+assert(normal_log[0] == "inner")
+assert(normal_log[1] == "middle")
+assert(len(normal_log) == 2)
+
 print("test_defer OK");

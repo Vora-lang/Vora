@@ -498,12 +498,23 @@ T(msg == "err")
 // 期望优点: 分层错误处理; Java/C#/JS 惯例
 // 期望缺点: 需错误类型层级; 动态语言中类型检查开销
 
-// [WISH] 结构化错误对象
-// 期望: throw Error("msg", code=42, data={...})
-// 现状优点: throw "string" 简单直接
-// 现状缺点: 只能传字符串; 无 code/stack/data 等结构化信息
-// 期望优点: 错误可携带上下文; 调用者可编程处理
-// 期望缺点: Error 类型需设计; 增加运行时开销
+  func inner() {
+      throw {msg: "文件未找到", code: 404}
+  }
+  try { inner() } catch(e) {
+      print(e.msg)   // "文件未找到"
+      print(e.code)  // 404
+      print(e.stack) // Stack trace (most recent call last):
+                     //   [4:5] in <script>
+                     //   [1:12] in inner
+  }
+
+// [DONE] 结构化错误对象 — throw 支持任意类型 + stack 自动注入
+// throw 已支持任意值类型: throw {msg: "err", code: 42} / throw MyErr(data)
+// 对于 dict/object, throwException() 自动注入 .stack 属性（调用栈追踪）
+// [WISH] 内置 Error 类 — 提供标准化 structured error 工厂
+// 期望: let e = Error("msg", code=42, data={...}); throw e
+// 现状: 可用 Obj/字典替代; 无内置 .stack 自动填充以外的标准化字段
 
 // defer now executes on same-function throw (cross-function still WISH)
 let deferOnThrow = []
@@ -514,9 +525,23 @@ func tdThrow() {
 try { tdThrow() } catch(e) {}
 T(deferOnThrow.length == 1 && deferOnThrow[0] == "cleanup")
 
-// [WISH] defer cross-function unwind on throw
-// 现状: 跨函数异常传播时 defer 不会执行
-// 期望: 异常展开调用栈时, 每个被展开帧的 defer 都应执行
+// [DONE] defer cross-function unwind on throw (v0.26)
+// throwException() 展开调用栈时, 每帧的 defer 闭包依次执行 (LIFO)
+let cdLog = []
+func cdInner() {
+    defer cdLog.add("inner")
+    throw "err"
+}
+func cdMiddle() {
+    defer cdLog.add("middle")
+    cdInner()
+}
+func cdOuter() {
+    defer cdLog.add("outer")
+    try { cdMiddle() } catch(e) { cdLog.add("caught") }
+}
+cdOuter()
+T(cdLog == ["inner", "middle", "caught", "outer"])
 
 let fr = false
 try { let y = 1 } finally { fr = true }

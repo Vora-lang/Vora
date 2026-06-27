@@ -27,6 +27,7 @@ struct CallFrame {
     const Chunk* callerChunk;    // chunk to restore on return
     GcPtr<VoraFunction> function;  // executing function (for upvalue access)
     uint64_t paramProvidedMask = 0;  // bit i=1 if param slot i has caller-provided value
+    std::vector<Value> deferStack;   // defer closures (LIFO: back = most recently deferred)
 };
 
 class VM {
@@ -87,6 +88,11 @@ class VM {
     // Checked at dispatch to bail out gracefully instead of continuing
     // with corrupted stack state.
     bool stackErrorFlag = false;
+
+    // Defer execution depth limit — when >=0, run() returns OK when
+    // frames.size() reaches this value. Used by flushDeferStack() to
+    // execute a single defer closure to completion within throwException().
+    int deferExecutionLimit = -1;
 
 public:
     VM();
@@ -189,6 +195,10 @@ private:
     // Run a mark-sweep garbage collection cycle.  Gathers roots from the VM
     // stack, globals, open upvalues, and call frames, then invokes the GC.
     void collectGarbage();
+
+    // Execute all defer closures on the current frame's defer stack (LIFO).
+    // Shared by OP_DEFER_FLUSH (normal exit) and throwException() (unwind).
+    void flushDeferStack();
 
     // Pre-unwind snapshot: throwException() captures the stack trace before
     // popping frames. runtimeError() uses this if non-empty (exception path)

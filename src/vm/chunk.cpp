@@ -78,6 +78,8 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_FINALLY_END:    return "OP_FINALLY_END";
         case OpCode::OP_JUMP_IF_NULL:   return "OP_JUMP_IF_NULL";
         case OpCode::OP_IMPORT:         return "OP_IMPORT";
+        case OpCode::OP_DEFER_PUSH:    return "OP_DEFER_PUSH";
+        case OpCode::OP_DEFER_FLUSH:   return "OP_DEFER_FLUSH";
         case OpCode::OP_CONVERT:       return "OP_CONVERT";
     }
     return "OP_UNKNOWN";

@@ -269,7 +269,8 @@ func demo(x) {
 // 无论哪个分支，cleanup 都会执行
 ```
 
-> **v0.25+**: `defer` 在同函数内的 `throw` 前会执行（RAII 语义）。跨函数异常展开时暂不执行（已知限制）。
+> **v0.25+**: `defer` 在同函数内的 `throw` 前会执行（RAII 语义）。
+> **v0.26+**: 跨函数异常展开时，每帧的 `defer` 都会执行（类似 Go 的 defer + panic 机制）。
 
 ### while 循环
 
@@ -931,6 +932,40 @@ throw {code: 500, msg: "Server Error"}
 ```
 
 `throw` 可以抛出任何类型的值。
+
+### 结构化错误 + 调用栈追踪
+
+> 引入版本: v0.25 (stack 自动注入)
+
+抛出字典或对象实例时，Vora 自动注入 `.stack` 属性（调用栈追踪）：
+
+```vora
+func inner() {
+    throw {msg: "文件未找到", code: 404}
+}
+
+try {
+    inner()
+} catch (e) {
+    print(e.msg)    // "文件未找到"
+    print(e.code)   // 404
+    print(e.stack)  // Stack trace (most recent call last):
+                    //   [4:5] in <script>
+                    //   [1:12] in inner
+}
+```
+
+抛出字符串或数字时不会注入 `.stack`（因为它们没有属性）。如需栈追踪，使用字典或对象包装：
+
+```vora
+Obj AppError(msg, code) {
+    this.message = msg
+    this.code = code
+}
+
+throw AppError("超时", 408)
+// catch (e) 后 e.stack 自动可用
+```
 
 ---
 

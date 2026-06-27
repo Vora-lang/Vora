@@ -350,11 +350,53 @@ std::shared_ptr<Upvalue> VM::captureUpvalue(size_t slotIndex) {
     return uv;
 }
 
+void VM::flushDeferStack() {
+    // Capture the frame index — NOT a reference, since callVoraFunction()
+    // may reallocate the frames vector, invalidating references.
+    size_t frameIndex = frames.size() - 1;
+    while (!frames[frameIndex].deferStack.empty()) {
+        Value closure = std::move(frames[frameIndex].deferStack.back());
+        frames[frameIndex].deferStack.pop_back();
+        if (!std::holds_alternative<GcPtr<Callable>>(closure)) continue;
+        auto callable = std::get<GcPtr<Callable>>(closure);
+        if (auto* vfn = dynamic_cast<VoraFunction*>(callable.get())) {
+            size_t savedFramesSize = frames.size();
+            bool savedExceptionInFlight = exceptionInFlight;
+            exceptionInFlight = false;
+            auto result = callVoraFunction(GcPtr<VoraFunction>(vfn), {});
+            if (result == InterpretResult::OK) {
+                deferExecutionLimit = static_cast<int>(savedFramesSize);
+                run();
+                deferExecutionLimit = -1;
+            }
+            exceptionInFlight = savedExceptionInFlight;
+            // Pop the defer closure's return value (discarded)
+            if (stackTopIndex > 0) pop();
+        }
+    }
+}
+
 bool VM::throwException(const Value& value) {
     // Capture stack trace BEFORE unwinding — once frames are popped, the
     // call chain is lost. If this exception is uncaught, runtimeError()
     // will print the captured trace.
     lastErrorStackTrace = captureStackTrace();
+
+    // Auto-inject stack trace into structured thrown values (dicts/objects)
+    // so catch blocks can access e.stack for diagnostics.
+    if (!lastErrorStackTrace.empty()) {
+        if (auto* dictPtr = std::get_if<GcPtr<Dict>>(&value)) {
+            if (*dictPtr) {
+                (*dictPtr)->pairs["stack"] =
+                    GcHeap::instance().alloc<GcString>(lastErrorStackTrace);
+            }
+        } else if (auto* objPtr = std::get_if<GcPtr<ObjectInstance>>(&value)) {
+            if (*objPtr) {
+                (*objPtr)->properties["stack"] =
+                    GcHeap::instance().alloc<GcString>(lastErrorStackTrace);
+            }
+        }
+    }
 
     // Walk up through catch handlers. We peek the handler (don't pop it)
     // so that OP_POP_CATCH at the target can pop it. If we popped here,
@@ -376,6 +418,10 @@ bool VM::throwException(const Value& value) {
 
         // Unwind call frames to the level where the handler was registered.
         while (frames.size() > handler.frameCount) {
+            // Execute defer closures for this frame BEFORE popping it.
+            // Safe: defer upvalues reference live stack slots (frame not yet popped).
+            flushDeferStack();
+
             // Close + clear open upvalues for the frame being unwound
             size_t frameEnd = frames.back().frameBase + MAX_LOCALS_PER_FRAME;
             auto it = openUpvalues.begin();
@@ -1001,10 +1047,13 @@ void VM::collectGarbage() {
         pushGcRefs(uv->get(), roots);
     }
 
-    // 4. Call frames — the executing functions
+    // 4. Call frames — the executing functions and their defer stacks
     for (auto& frame : frames) {
         if (frame.function) {
             roots.push_back(frame.function.get());
+        }
+        for (auto& v : frame.deferStack) {
+            pushGcRefs(v, roots);
         }
     }
 
@@ -1055,6 +1104,12 @@ InterpretResult VM::run() {
         if (stackErrorFlag) {
             stackErrorFlag = false;
             return InterpretResult::RUNTIME_ERROR;
+        }
+
+        // --- Defer execution limit (used by flushDeferStack) ---
+        if (deferExecutionLimit >= 0 &&
+            frames.size() <= static_cast<size_t>(deferExecutionLimit)) {
+            return InterpretResult::OK;
         }
 
         // --- Generator pending resume ---
@@ -2146,6 +2201,19 @@ InterpretResult VM::run() {
                     it->second->close();
                     openUpvalues.erase(it);
                 }
+                break;
+            }
+
+            // --- Defer ---
+            case OpCode::OP_DEFER_PUSH: {
+                Value closure = pop();
+                frames.back().deferStack.push_back(std::move(closure));
+                break;
+            }
+
+            case OpCode::OP_DEFER_FLUSH: {
+                flushDeferStack();
+                if (exceptionInFlight) goto dispatch;
                 break;
             }
 
