@@ -24,6 +24,10 @@ if (Get-Command chcp -ErrorAction SilentlyContinue) {
 
 $ErrorActionPreference = "Stop"
 
+# Read project version from CMakeLists.txt (used for MSI filtering + summary)
+$versionMatch = [regex]::Match((Get-Content "$PSScriptRoot\CMakeLists.txt" -Raw), 'project\(Vora VERSION (\d+\.\d+\.\d+)\)')
+$projectVersion = if ($versionMatch.Success) { $versionMatch.Groups[1].Value } else { "0.0.0" }
+
 # Interactive mode -- when run without arguments, ask the user
 $isInteractive = (-not $PSBoundParameters.ContainsKey('Architecture')) -and
                  (-not $PSBoundParameters.ContainsKey('Config')) -and
@@ -156,8 +160,7 @@ if ($Package) {
 
         Write-Host ""
         Write-Host "Package:" -ForegroundColor Cyan
-        $versionMatch = [regex]::Match((Get-Content "$PSScriptRoot\CMakeLists.txt" -Raw), 'project\(Vora VERSION (\d+\.\d+\.\d+)\)')
-        $pkgPattern = if ($versionMatch.Success) { "vora-$($versionMatch.Groups[1].Value)-*.msi" } else { "vora-*.msi" }
+        $pkgPattern = "vora-$projectVersion-*.msi"
         Get-ChildItem $buildDir\$pkgPattern 2>$null | Sort-Object Name -Descending | Select-Object -First 1 | ForEach-Object {
             $sizeMB = [math]::Round($_.Length / 1MB, 1)
             Write-Host "  $($_.Name)  ($sizeMB MB)" -ForegroundColor Green
@@ -183,7 +186,7 @@ $artifacts = @(
     @{Path="$buildDir\$Config\vora-dap.exe";    Label="DAP debugger"}
 )
 if ($Package -and $Config -eq "Release") {
-    $msiPattern = "vora-$($versionMatch.Groups[1].Value)-*.msi"
+    $msiPattern = "vora-$projectVersion-*.msi"
     $msi = Get-ChildItem "$buildDir\$msiPattern" 2>$null | Sort-Object Name -Descending | Select-Object -First 1
     if ($msi) { $artifacts += @{Path=$msi.FullName; Label="Installer"} }
 }
