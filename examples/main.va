@@ -502,9 +502,9 @@ T(msg == "err")
       throw {msg: "文件未找到", code: 404}
   }
   try { inner() } catch(e) {
-      print(e.msg)   // "文件未找到"
-      print(e.code)  // 404
-      print(e.stack) // Stack trace (most recent call last):
+      T(e.msg == "文件未找到")   // "文件未找到"
+      T(e.code == 404)  // 404
+      T(e.stack != null) // Stack trace (most recent call last):
                      //   [4:5] in <script>
                      //   [1:12] in inner
   }
@@ -795,14 +795,14 @@ T(jb.ok == true && jb.n == 42)
 // ═══════════════════════════════════════════════════════════════════════════
 print("\n── 13. 标准库 ──")
 
-from "math" import PI, sin, cos
+// from "math" import PI, sin, cos
 
-// import "math"
-// T(math.PI > 3.14 && math.PI < 3.15)
-// T(math.abs(-10) == 10)
-// T(math.sqrt(25) == 5.0)
-// T(math.min([5,3,9]) == 3)
-// T(math.max([5,3,9]) == 9)
+import "math"
+T(math.PI > 3.14 && math.PI < 3.15)
+T(math.abs(-10) == 10)
+T(math.sqrt(25) == 5.0)
+T(math.min([5,3,9]) == 3)
+T(math.max([5,3,9]) == 9)
 
 // import "json"
 // T(json.parse("42") == 42)
