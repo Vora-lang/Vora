@@ -12,6 +12,9 @@
 
 set -euo pipefail
 
+# Parallel jobs: 2x CPU cores (matching make -j$(nproc)*2)
+JOBS=$(($(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) * 2))
+
 # ── Defaults ────────────────────────────────────────────────────────────────
 ARCH=""
 CONFIG=""
@@ -159,14 +162,14 @@ cmake --preset "$PRESET"
 # ── Build ───────────────────────────────────────────────────────────────────
 echo "[3/5] Building project..."
 
-cmake --build --preset "$PRESET"
+cmake --build --preset "$PRESET" --parallel "$JOBS"
 
 # ── Build LSP + DAP from Vora-LSP repo (Release + Package only) ─────────────
 LSP_REPO="$(dirname "$0")/../Vora-LSP"
 if [[ $PACKAGE -eq 1 && "$CONFIG" == "release" ]]; then
     echo "[4/6] Building vora-lsp + vora-dap from Vora-LSP..."
     if [[ -f "$LSP_REPO/CMakeLists.txt" ]]; then
-        (cd "$LSP_REPO" && rm -f build/CMakeCache.txt && cmake -B build -DVORA_BUILD="$(cd "$(dirname "$0")" && pwd)/$BUILD_DIR" > /dev/null 2>&1 && cmake --build build --config Release --target vora-lsp vora-dap) && {
+        (cd "$LSP_REPO" && rm -f build/CMakeCache.txt && cmake -B build -DVORA_BUILD="$(cd "$(dirname "$0")" && pwd)/$BUILD_DIR" > /dev/null 2>&1 && cmake --build build --config Release --target vora-lsp vora-dap --parallel "$JOBS") && {
             mkdir -p "$BUILD_DIR/Release"
             cp -f "$LSP_REPO/build/Release/vora-lsp" "$BUILD_DIR/Release/" 2>/dev/null || true
             cp -f "$LSP_REPO/build/Release/vora-dap" "$BUILD_DIR/Release/" 2>/dev/null || true
@@ -185,7 +188,7 @@ fi
 if [[ $PACKAGE -eq 1 ]]; then
     if [[ "$CONFIG" == "release" ]]; then
         echo "[5/6] Generating package..."
-        cmake --build "$BUILD_DIR" --target package
+        cmake --build "$BUILD_DIR" --target package --parallel "$JOBS"
         echo ""
         echo "Packages:"
         find "$BUILD_DIR" -maxdepth 1 \( -name '*.deb' -o -name '*.rpm' -o -name '*.tar.xz' -o -name '*.tar.gz' \) -exec basename {} \; 2>/dev/null || true

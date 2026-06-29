@@ -24,6 +24,10 @@ if (Get-Command chcp -ErrorAction SilentlyContinue) {
 
 $ErrorActionPreference = "Stop"
 
+# Parallel jobs: 2x CPU cores (matching make -j$(nproc)*2)
+$cpuCores = try { [int]$env:NUMBER_OF_PROCESSORS } catch { 4 }
+$jobs = [Math]::Max(1, $cpuCores * 2)
+
 # Read project version from CMakeLists.txt (used for MSI filtering + summary)
 $versionMatch = [regex]::Match((Get-Content "$PSScriptRoot\CMakeLists.txt" -Raw), 'project\(Vora VERSION (\d+\.\d+\.\d+)\)')
 $projectVersion = if ($versionMatch.Success) { $versionMatch.Groups[1].Value } else { "0.0.0" }
@@ -112,9 +116,9 @@ Write-Host "[3/5] Building project..." -ForegroundColor Yellow
 
 # Release: skip tests (Vora_tests not needed for packaging)
 if ($Config -eq "Release") {
-    cmake --build --preset $PresetName --config $Config --target Vora vora_lib vora_hpp
+    cmake --build --preset $PresetName --config $Config --parallel $jobs --target Vora vora_lib vora_hpp
 } else {
-    cmake --build --preset $PresetName --config $Config
+    cmake --build --preset $PresetName --config $Config --parallel $jobs
 }
 
 # ----------------------------------------
@@ -135,7 +139,7 @@ if ($Package -and $Config -eq "Release") {
                 Remove-Item "build\CMakeCache.txt" -Force
             }
             cmake -B build -DVORA_BUILD="$absBuildDir" 2>&1 | Out-Null
-            cmake --build build --config Release --target vora-lsp vora-dap
+            cmake --build build --config Release --target vora-lsp vora-dap --parallel $jobs
             if ($LASTEXITCODE -eq 0) {
                 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
                 Copy-Item -Force "build\Release\vora-lsp.exe" "$releaseDir\" -ErrorAction SilentlyContinue
@@ -163,7 +167,7 @@ if ($Package -and $Config -eq "Release") {
 if ($Package) {
     if ($Config -eq "Release") {
         Write-Host "[5/6] Generating MSI..." -ForegroundColor Yellow
-        cmake --build $buildDir --target package --config $Config
+        cmake --build $buildDir --target package --config $Config --parallel $jobs
 
         Write-Host ""
         Write-Host "Package:" -ForegroundColor Cyan
