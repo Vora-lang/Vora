@@ -193,7 +193,7 @@ $artifacts = @(
 if ($Package -and $Config -eq "Release") {
     $msiPattern = "vora-$projectVersion-*.msi"
     $msi = Get-ChildItem "$buildDir\$msiPattern" 2>$null | Sort-Object Name -Descending | Select-Object -First 1
-    if ($msi) { $artifacts += @{Path=$msi.FullName; Label="Installer"} }
+    if ($msi) { $artifacts += @{Path="$buildDir\$($msi.Name)"; Label="Installer"} }
 }
 
 $found = $false
