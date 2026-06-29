@@ -161,23 +161,43 @@ echo "[3/5] Building project..."
 
 cmake --build --preset "$PRESET"
 
+# ── Build LSP + DAP from Vora-LSP repo (Release + Package only) ─────────────
+LSP_REPO="$(dirname "$0")/../Vora-LSP"
+if [[ $PACKAGE -eq 1 && "$CONFIG" == "release" ]]; then
+    echo "[4/6] Building vora-lsp + vora-dap from Vora-LSP..."
+    if [[ -f "$LSP_REPO/CMakeLists.txt" ]]; then
+        (cd "$LSP_REPO" && cmake -B build > /dev/null 2>&1 && cmake --build build --config Release --target vora-lsp vora-dap) && {
+            mkdir -p "$BUILD_DIR/Release"
+            cp -f "$LSP_REPO/build/Release/vora-lsp" "$BUILD_DIR/Release/" 2>/dev/null || true
+            cp -f "$LSP_REPO/build/Release/vora-dap" "$BUILD_DIR/Release/" 2>/dev/null || true
+            cp -f "$LSP_REPO/vora-lsp" "$BUILD_DIR/Release/" 2>/dev/null || true
+            cp -f "$LSP_REPO/vora-dap" "$BUILD_DIR/Release/" 2>/dev/null || true
+            echo "  vora-lsp + vora-dap rebuilt and staged"
+        } || echo "  Warning: Vora-LSP build failed, using existing binaries if present"
+    else
+        echo "  Vora-LSP repo not found at $LSP_REPO, using existing binaries"
+    fi
+else
+    echo "[4/6] LSP/DAP rebuild skipped (requires -p -c release)"
+fi
+
 # ── Package ─────────────────────────────────────────────────────────────────
 if [[ $PACKAGE -eq 1 ]]; then
     if [[ "$CONFIG" == "release" ]]; then
-        echo "[4/5] Generating package..."
+        echo "[5/6] Generating package..."
         cmake --build "$BUILD_DIR" --target package
         echo ""
         echo "Packages:"
         find "$BUILD_DIR" -maxdepth 1 \( -name '*.deb' -o -name '*.rpm' -o -name '*.tar.xz' -o -name '*.tar.gz' \) -exec basename {} \; 2>/dev/null || true
     else
-        echo "[4/5] Package skipped — only available for release builds"
+        echo "[5/6] Package skipped — only available for release builds"
     fi
 else
-    echo "[4/5] Package skipped — use -p to generate installer"
+    echo "[5/6] Package skipped — use -p to generate installer"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
-echo "[5/5] Build complete"
+echo "[6/6] Build complete"
 echo ""
 
 # Print artifact locations

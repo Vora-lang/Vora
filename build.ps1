@@ -109,31 +109,65 @@ Write-Host "[3/5] Building project..." -ForegroundColor Yellow
 cmake --build --preset $PresetName --config $Config
 
 # ----------------------------------------
+# Build LSP + DAP from Vora-LSP repo (Release only)
+# ----------------------------------------
+
+$lspRepo = "$PSScriptRoot\..\Vora-LSP"
+if ($Package -and $Config -eq "Release") {
+    Write-Host "[4/6] Building vora-lsp + vora-dap from Vora-LSP..." -ForegroundColor Yellow
+    if (Test-Path "$lspRepo\CMakeLists.txt") {
+        Push-Location $lspRepo
+        try {
+            cmake -B build 2>&1 | Out-Null
+            cmake --build build --config Release --target vora-lsp vora-dap
+            if ($LASTEXITCODE -eq 0) {
+                $releaseDir = "$buildDir\Release"
+                New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+                Copy-Item -Force "$lspRepo\build\Release\vora-lsp.exe" "$releaseDir\" -ErrorAction SilentlyContinue
+                Copy-Item -Force "$lspRepo\build\Release\vora-dap.exe" "$releaseDir\" -ErrorAction SilentlyContinue
+                Copy-Item -Force "$lspRepo\vora-lsp.exe" "$releaseDir\" -ErrorAction SilentlyContinue
+                Copy-Item -Force "$lspRepo\vora-dap.exe" "$releaseDir\" -ErrorAction SilentlyContinue
+                Write-Host "  vora-lsp + vora-dap rebuilt and staged" -ForegroundColor Green
+            } else {
+                Write-Host "  Warning: Vora-LSP build failed, using existing binaries if present" -ForegroundColor Yellow
+            }
+        } finally {
+            Pop-Location
+        }
+    } else {
+        Write-Host "  Vora-LSP repo not found at $lspRepo, using existing binaries" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "[4/6] LSP/DAP rebuild skipped (requires -Package -Config Release)" -ForegroundColor Yellow
+}
+
+# ----------------------------------------
 # Package (if requested)
 # ----------------------------------------
 
 if ($Package) {
     if ($Config -eq "Release") {
-        Write-Host "[4/5] Generating package..." -ForegroundColor Yellow
-        cmake --build $buildDir --target package --config $Config
+        Write-Host "[5/6] Generating MSI..." -ForegroundColor Yellow
+        cmake --build $buildDir --target msi --config $Config
 
         Write-Host ""
         Write-Host "Packages:" -ForegroundColor Cyan
-        Get-ChildItem $buildDir\vora-*.* 2>$null | ForEach-Object {
-            Write-Host "  $($_.Name)" -ForegroundColor Green
+        Get-ChildItem $buildDir\vora-*.msi 2>$null | ForEach-Object {
+            $sizeMB = [math]::Round($_.Length / 1MB, 1)
+            Write-Host "  $($_.Name)  ($sizeMB MB)" -ForegroundColor Green
         }
     } else {
-        Write-Host "[4/5] Package skipped — only available for Release builds" -ForegroundColor Yellow
+        Write-Host "[5/6] Package skipped — only available for Release builds" -ForegroundColor Yellow
     }
 } else {
-    Write-Host "[4/5] Package skipped — use -Package to generate installer" -ForegroundColor Yellow
+    Write-Host "[5/6] Package skipped — use -Package to generate installer" -ForegroundColor Yellow
 }
 
 # ----------------------------------------
-# Run executable
+# Summary
 # ----------------------------------------
 
-Write-Host "[5/5] Build complete" -ForegroundColor Yellow
+Write-Host "[6/6] Build complete" -ForegroundColor Yellow
 Write-Host ""
 
 $exePath = "$buildDir\$Config\Vora.exe"
