@@ -120,12 +120,7 @@ cmake --preset $PresetName
 
 Write-Host "[3/5] Building project..." -ForegroundColor Yellow
 
-# Release: skip tests (Vora_tests not needed for packaging)
-if ($Config -eq "Release") {
-    cmake --build --preset $PresetName --config $Config --parallel $Jobs --target Vora vora_lib vora_hpp
-} else {
-    cmake --build --preset $PresetName --config $Config --parallel $Jobs
-}
+cmake --build --preset $PresetName --config $Config --parallel $Jobs
 
 # ----------------------------------------
 # Build LSP + DAP from Vora-LSP repo (Release only)
@@ -174,14 +169,6 @@ if ($Package) {
     if ($Config -eq "Release") {
         Write-Host "[5/6] Generating MSI..." -ForegroundColor Yellow
         cmake --build $buildDir --target package --config $Config --parallel $Jobs
-
-        Write-Host ""
-        Write-Host "Package:" -ForegroundColor Cyan
-        $pkgPattern = "vora-$projectVersion-*.msi"
-        Get-ChildItem $buildDir\$pkgPattern 2>$null | Sort-Object Name -Descending | Select-Object -First 1 | ForEach-Object {
-            $sizeMB = [math]::Round($_.Length / 1MB, 1)
-            Write-Host "  $($_.Name)  ($sizeMB MB)" -ForegroundColor Green
-        }
     } else {
         Write-Host "[5/6] Package skipped — only available for Release builds" -ForegroundColor Yellow
     }

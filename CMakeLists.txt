@@ -289,7 +289,7 @@ if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/doctest.h")
     )
 endif()
 
-add_executable(Vora_tests
+add_executable(Vora_tests EXCLUDE_FROM_ALL
     tests/unit/test_main.cpp
     tests/unit/test_value.cpp
     tests/unit/test_chunk.cpp
