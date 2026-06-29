@@ -1,5 +1,6 @@
 #include <csignal>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -128,8 +129,7 @@ static std::string findStdDir() {
             std::string dir = exeDir;
             while (!dir.empty()) {
                 std::string cand = dir + "/std";
-                std::ifstream test(cand + "/math.va");
-                if (test.good()) return normalizePath(cand);
+                if (std::filesystem::is_directory(cand)) return normalizePath(cand);
                 auto s = dir.find_last_of("\\/");
                 if (s == std::string::npos) break;
                 dir = dir.substr(0, s);
@@ -149,8 +149,7 @@ static std::string findStdDir() {
             std::string dir = exeDir;
             while (!dir.empty()) {
                 std::string cand = dir + "/std";
-                std::ifstream test(cand + "/math.va");
-                if (test.good()) return normalizePath(cand);
+                if (std::filesystem::is_directory(cand)) return normalizePath(cand);
                 auto s = dir.find_last_of('/');
                 if (s == std::string::npos) break;
                 dir = dir.substr(0, s);
