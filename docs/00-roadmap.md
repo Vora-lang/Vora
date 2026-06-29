@@ -1,7 +1,7 @@
 # Vora 路线图
 
-> 最后更新：2026-06-26
-> 当前版本：v0.25.0 (Phase 3 OOP 全部完成)
+> 最后更新：2026-06-29
+> 当前版本：v0.27.0 (Phase 3 全部完成)
 
 ---
 
@@ -84,13 +84,13 @@ OOP 完善
 └── ✅ 参数解构 func f({x, y})     ← v0.25
 
 性能
-├── NaN-boxing                 ← Value 16→8 字节，性能 2-5×
-└── Superinstruction 合并       ← 常见字节码序列融合
+├── ✅ NaN-boxing                 ← v0.27, Value 16→8 字节，性能 2-5×
+└── ✅ Superinstruction 合并       ← v0.27, OP_GET_LOCAL_PROP / OP_GET_GLOBAL_PROP
 
 嵌入增强
-├── VM public API 扩展（setGlobal/getGlobal/registerNativeFunction）
-├── ✅ 嵌入文档 + 完整示例项目  ← USER_GUIDE.md 第15章 + examples/embed/
-└── ✅ SDK 随安装包分发    ← MSI 包含 lib/vora_lib.lib + include/vora.hpp
+├── ✅ VM public API 扩展          ← v0.27, setGlobal/getGlobal/hasGlobal/registerNativeFunction
+├── ✅ 嵌入文档 + 完整示例项目     ← USER_GUIDE.md 第15章 + examples/embed/
+└── ✅ SDK 随安装包分发            ← MSI 包含 lib/vora_lib.lib + include/vora.hpp
 ```
 
 ### Phase 4: 2027 Q1-Q2 — 工具链 + 异步
@@ -99,7 +99,7 @@ OOP 完善
 
 ```
 工具链
-├── 调试器 DAP                 ← 断点 + 单步 + 变量查看
+├── ✅ 调试器 DAP                 ← v0.27, vora-dap.exe + VM debug hooks (Vora-LSP repo)
 ├── 包管理器 vpm               ← install/publish/search
 └── 文档生成器                  ← 源码注释 → API 文档
 
@@ -168,7 +168,7 @@ OOP 完善
 | 异常 | pcall（函数式） | try/catch/finally（语法级） |
 | 嵌入 | C API | C++ API（vora.hpp 单头文件） |
 | 标准库 | 极小 | 8 个模块，覆盖核心场景 |
-| 性能 | 寄存器 VM，更快 | NaN-boxing 后可接近 |
+| 性能 | 寄存器 VM，更快 | NaN-boxing 已实现 (v0.27) |
 | 构建 | Makefile | CMake 跨平台 + 原生打包 |
 
 > **一句话**：Vora 的路径不是"成为下一个 X"，而是成为唯一同时满足 **可嵌入 + 现代语法 + 原生 OOP + 零依赖** 的语言。

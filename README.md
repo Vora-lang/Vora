@@ -9,7 +9,7 @@
 [![CI](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml/badge.svg)](https://github.com/Vora-lang/Vora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
-[![Version](https://img.shields.io/badge/version-0.25-orange.svg)](#changelog)
+[![Version](https://img.shields.io/badge/version-0.27-orange.svg)](#changelog)
 
 </div>
 
@@ -651,8 +651,10 @@ All platforms support cross-compilation. CI (GitHub Actions) automates builds ac
 | v0.22 | **Done / 已完成** | Rest parameters (`...name`), LSP server infrastructure, AST node position (nameToken), `json_rpc` refactor |
 | v0.23 | **Done / 已完成** | Set (hash set) + Map (hash map) data structures, O(1) `has`/`add`/`remove`, union/merge via `+`, for-in iteration |
 | v0.24 | **Done / 已完成** | `match` pattern matching — literal/wildcard/range patterns, `\|` multi-pattern, `=>` expression/block body, `..=`/`..` range syntax |
-| v0.25 | **Done / 已完成** | Static methods (`this.func`), unified for-in via `iter()`/`next()` protocol (generators now work), type annotation string conversion, `?.` safe access for unknown keys, `defer` on throw |
-| v0.26+ | Planned / 规划中 | Object rest destructuring, parameter destructuring, NaN-boxing, async/await, guard conditions, JIT compilation |
+| v0.25 | **Done / 已完成** | Static methods (`this.func`), unified for-in via `iter()`/`next()` protocol, type annotation string conversion, `?.` safe access for unknown keys, `defer` on throw |
+| v0.26 | **Done / 已完成** | Named args, list/dict comprehensions, cross-function `defer` unwind on throw, destructuring + OP_CALL_KW dedup |
+| v0.27 | **Done / 已完成** | NaN-boxing (Value 16→8 bytes), superinstruction merging (OP_GET_LOCAL_PROP/OP_GET_GLOBAL_PROP), VM public API (setGlobal/getGlobal), DAP debugger (vora-dap.exe), interactive build scripts, MSI VORA_STD_PATH, std/math import |
+| v0.28+ | Planned / 规划中 | async/await, generational GC, guard conditions, JIT compilation, vpm package manager |
 
 ---
 
