@@ -704,8 +704,25 @@ void SemanticAnalyzer::visitErrorStmt(const ErrorStmt& /*stmt*/) {
 // SemanticAnalyzer — Expr visitors
 // ═══════════════════════════════════════════════════════════════════════════
 
-void SemanticAnalyzer::visitLiteralExpr(const LiteralExpr& /*expr*/) {
-    // No symbols or references.
+void SemanticAnalyzer::visitLiteralExpr(const LiteralExpr& expr) {
+    // String interpolation: "${var}" and "${obj.prop}" reference variables.
+    // LiteralExpr has no position info, so we use (0,0) for the token.
+    if (expr.value.isGcString()) {
+        const auto& str = expr.value.asGcString()->value;
+        size_t pos = 0;
+        while ((pos = str.find("${", pos)) != std::string::npos) {
+            size_t end = str.find('}', pos + 2);
+            if (end == std::string::npos) break;
+            std::string inner = str.substr(pos + 2, end - pos - 2);
+            auto dot = inner.find('.');
+            std::string varName = (dot != std::string::npos) ? inner.substr(0, dot) : inner;
+            if (!varName.empty() && (std::isalpha(static_cast<unsigned char>(varName[0])) || varName[0] == '_')) {
+                Token tok(TokenType::IDENTIFIER, varName, 0, 0);
+                addReference(varName, tok, false);
+            }
+            pos = end + 1;
+        }
+    }
 }
 
 void SemanticAnalyzer::visitBinaryExpr(const BinaryExpr& expr) {
