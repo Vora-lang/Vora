@@ -70,6 +70,14 @@
                 <RegistryValue Name="Version" Value="@PROJECT_VERSION@" Type="string" />
               </RegistryKey>
             </Component>
+
+            <!-- VORA_STD_PATH — points to std\ for module imports -->
+            <Component Id="StdPathEnv" Guid="A8F3D916-E805-4C95-BF2F-59E8D4C95E93">
+              <Environment Id="StdPathEntry" Name="VORA_STD_PATH" Value="[INSTALLFOLDER]std" Action="set" Part="all" System="yes" Permanent="no" />
+              <RegistryKey Root="HKLM" Key="Software\Vora-lang\Vora\Environment">
+                <RegistryValue Name="VORA_STD_PATH" Value="[INSTALLFOLDER]std" Type="string" KeyPath="yes" />
+              </RegistryKey>
+            </Component>
           </Directory>
 
           <!-- lib/ — static library for C++ embedding -->
@@ -127,6 +135,7 @@
       <ComponentRef Id="DapExe" />
       <ComponentRef Id="Launcher" />
       <ComponentRef Id="PathEnv" />
+      <ComponentRef Id="StdPathEnv" />
       <!-- lib -->
       <ComponentRef Id="VoraLib" />
       <!-- include -->

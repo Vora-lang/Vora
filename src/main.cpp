@@ -151,8 +151,8 @@ static std::string findStdDir() {
     }
 #endif
 
-    // Fallback: relative to current working directory
-    return "./std";
+    // Fallback: compile-time default (set by CMake)
+    return VORA_DEFAULT_STD_DIR;
 }
 
 static int runScript(

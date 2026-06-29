@@ -112,6 +112,16 @@ target_compile_definitions(
     Vora PRIVATE VORA_VERSION="${PROJECT_VERSION}"
 )
 
+# Default std/ directory (can be overridden at runtime by VORA_STD_PATH env var).
+# On Linux: follows FHS — std/ is installed to share/vora/std relative to prefix.
+# On Windows: relative to the executable (MSI layout: bin/ + std/).
+if(UNIX AND NOT APPLE)
+    target_compile_definitions(Vora PRIVATE
+        VORA_DEFAULT_STD_DIR="${CMAKE_INSTALL_FULL_DATADIR}/vora/std")
+else()
+    target_compile_definitions(Vora PRIVATE VORA_DEFAULT_STD_DIR="./std")
+endif()
+
 # ──────────────────────────────────────────────────
 # Install — 导出可执行文件、静态库、头文件、std/ 库
 # ──────────────────────────────────────────────────
