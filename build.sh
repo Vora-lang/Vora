@@ -176,11 +176,11 @@ else
     echo "[4/5] Package skipped — use -p to generate installer"
 fi
 
-# ── Run ─────────────────────────────────────────────────────────────────────
-echo "[5/5] Running Vora..."
+# ── Summary ──────────────────────────────────────────────────────────────────
+echo "[5/5] Build complete"
 echo ""
 
-# Find executable (single-config: build/<preset>/Vora; multi-config: build/<preset>/<Config>/Vora)
+# Print artifact locations
 EXE_PATH=""
 for candidate in \
     "$BUILD_DIR/Vora" \
@@ -190,19 +190,17 @@ for candidate in \
     "$BUILD_DIR/Release/Vora"; do
     if [[ -f "$candidate" ]]; then
         EXE_PATH="$candidate"
+        echo "  Executable  : $EXE_PATH"
         break
     fi
 done
 
-if [[ -z "$EXE_PATH" ]]; then
-    echo ""
-    echo "Executable not found. Searched:"
-    echo "  $BUILD_DIR/Vora"
-    echo "  $BUILD_DIR/{debug,release,Debug,Release}/Vora"
-    exit 1
+LIB_PATH="$BUILD_DIR/libvora_lib.a"
+if [[ -f "$BUILD_DIR/vora_lib.a" ]]; then
+    echo "  Static lib  : $BUILD_DIR/vora_lib.a"
+elif [[ -f "$BUILD_DIR/libvora_lib.a" ]]; then
+    echo "  Static lib  : $BUILD_DIR/libvora_lib.a"
 fi
-
-"$EXE_PATH" "$@"
 
 echo ""
 echo "==== Build Success ===="

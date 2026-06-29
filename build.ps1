@@ -133,18 +133,18 @@ if ($Package) {
 # Run executable
 # ----------------------------------------
 
-Write-Host "[5/5] Running Vora..." -ForegroundColor Yellow
+Write-Host "[5/5] Build complete" -ForegroundColor Yellow
 Write-Host ""
 
 $exePath = "$buildDir\$Config\Vora.exe"
 
 if (Test-Path $exePath) {
-    & $exePath @args
+    Write-Host "  Executable : $exePath" -ForegroundColor Green
     Write-Host ""
     Write-Host "==== Build Success ====" -ForegroundColor Green
 } else {
     Write-Host ""
-    Write-Host "Executable not found: $exePath" -ForegroundColor Red
+    Write-Host "Executable not found" -ForegroundColor Red
 }
 
 # Show available presets hint
