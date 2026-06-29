@@ -111,8 +111,9 @@ static std::string findStdDir() {
     const char* env = std::getenv("VORA_STD_PATH");
     if (env && env[0] != '\0') return env;
 
-    // Search relative to the executable first (installed layout: bin/vora.exe, std/)
-    // This handles MSI / package installations where CWD is not the install dir.
+    // Search relative to the executable by walking up parent directories.
+    // Handles dev builds (deep in build/<preset>/<Config>/) and
+    // installed layouts (bin/vora.exe with ../std/).
 #ifdef _WIN32
     char exePath[MAX_PATH];
     DWORD len = GetModuleFileNameA(nullptr, exePath, MAX_PATH);
@@ -121,14 +122,18 @@ static std::string findStdDir() {
         auto slash = exeDir.find_last_of("\\/");
         if (slash != std::string::npos) {
             exeDir = exeDir.substr(0, slash);
-            // If in a "bin" subdirectory, std/ is at ../std relative to bin/
-            std::string cand = exeDir + "/../std";
-            std::ifstream test(cand + "/math.va");
-            if (test.good()) return normalizePath(cand);
-            // Also try std/ in the same directory as the exe
-            cand = exeDir + "/std";
-            test.open(cand + "/math.va");
-            if (test.good()) return normalizePath(cand);
+            // Walk up from exe dir until we find a std/ sibling directory.
+            // Handles both deep dev builds (build/preset/Config/) and
+            // installed layouts (bin/ with ../std/).
+            std::string dir = exeDir;
+            while (!dir.empty()) {
+                std::string cand = dir + "/std";
+                std::ifstream test(cand + "/math.va");
+                if (test.good()) return normalizePath(cand);
+                auto s = dir.find_last_of("\\/");
+                if (s == std::string::npos) break;
+                dir = dir.substr(0, s);
+            }
         }
     }
 #else
@@ -141,12 +146,15 @@ static std::string findStdDir() {
         auto slash = exeDir.find_last_of('/');
         if (slash != std::string::npos) {
             exeDir = exeDir.substr(0, slash);
-            std::string cand = exeDir + "/../std";
-            std::ifstream test(cand + "/math.va");
-            if (test.good()) return normalizePath(cand);
-            cand = exeDir + "/std";
-            test.open(cand + "/math.va");
-            if (test.good()) return normalizePath(cand);
+            std::string dir = exeDir;
+            while (!dir.empty()) {
+                std::string cand = dir + "/std";
+                std::ifstream test(cand + "/math.va");
+                if (test.good()) return normalizePath(cand);
+                auto s = dir.find_last_of('/');
+                if (s == std::string::npos) break;
+                dir = dir.substr(0, s);
+            }
         }
     }
 #endif
