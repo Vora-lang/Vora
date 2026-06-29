@@ -19,7 +19,50 @@ param(
     [switch]$Clean
 )
 
+
+
+
 $ErrorActionPreference = "Stop"
+
+# Interactive mode -- when run without arguments, ask the user
+$isInteractive = (-not $PSBoundParameters.ContainsKey('Architecture')) -and
+                 (-not $PSBoundParameters.ContainsKey('Config')) -and
+                 (-not $Package.IsPresent) -and
+                 (-not $Clean.IsPresent)
+
+if ($isInteractive) {
+    Write-Host ""
+    Write-Host "==== Vora Build (Interactive) ====" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Target architecture:" -ForegroundColor Yellow
+    Write-Host "  [1] x64   (default)"
+    Write-Host "  [2] x86"
+    Write-Host "  [3] arm64"
+    $choice = Read-Host "Choice [1-3]"
+    switch ($choice) {
+        "2" { $Architecture = "x86" }
+        "3" { $Architecture = "arm64" }
+        default { $Architecture = "x64" }
+    }
+    Write-Host ""
+    Write-Host "Build configuration:" -ForegroundColor Yellow
+    Write-Host "  [1] Debug   (default)"
+    Write-Host "  [2] Release"
+    $choice = Read-Host "Choice [1-2]"
+    switch ($choice) {
+        "2" { $Config = "Release" }
+        default { $Config = "Debug" }
+    }
+    if ($Config -eq "Release") {
+        Write-Host ""
+        Write-Host "Generate .msi installer?" -ForegroundColor Yellow
+        Write-Host "  [1] No   (default)"
+        Write-Host "  [2] Yes"
+        $choice = Read-Host "Choice [1-2]"
+        if ($choice -eq "2") { $Package = $true }
+    }
+    Write-Host ""
+}
 
 Write-Host ""
 Write-Host "==== Vora Build System ====" -ForegroundColor Cyan
@@ -106,5 +149,5 @@ if (Test-Path $exePath) {
 
 # Show available presets hint
 Write-Host ""
-Write-Host "Available presets: cmake --list-presets" -ForegroundColor Gray
+Write-Host "Run without arguments for interactive mode" -ForegroundColor Gray
 Write-Host "Usage  : .\build.ps1 -Architecture arm64 -Config Release -Package -Clean" -ForegroundColor Gray

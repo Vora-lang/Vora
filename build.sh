@@ -13,8 +13,8 @@
 set -euo pipefail
 
 # ── Defaults ────────────────────────────────────────────────────────────────
-ARCH="x64"
-CONFIG="debug"
+ARCH=""
+CONFIG=""
 PACKAGE=0
 CLEAN=0
 
@@ -59,7 +59,46 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+ARCH="${ARCH:-x64}"
+CONFIG="${CONFIG:-debug}"
 # Validate arch
+
+# ==== Interactive mode (no arguments) ====
+if [[ -z "${ARCH:-}" && -z "${CONFIG:-}" && $PACKAGE -eq 0 && $CLEAN -eq 0 ]]; then
+    echo ""
+    echo "==== Vora Build (Interactive) ===="
+    echo ""
+    echo "Target architecture:"
+    echo "  [1] x64       (default)"
+    echo "  [2] x86       (32-bit)"
+    echo "  [3] aarch64   (ARM 64-bit)"
+    echo "  [4] armhf     (ARM 32-bit)"
+    read -rp "Choice [1-4] (default 1): " arch_choice
+    case "${arch_choice:-1}" in
+        2) ARCH="x86" ;;
+        3) ARCH="aarch64" ;;
+        4) ARCH="armhf" ;;
+        *) ARCH="x64" ;;
+    esac
+    echo ""
+    echo "Build configuration:"
+    echo "  [1] Debug   (default)"
+    echo "  [2] Release"
+    read -rp "Choice [1-2] (default 1): " config_choice
+    case "${config_choice:-1}" in
+        2) CONFIG="release" ;;
+        *) CONFIG="debug" ;;
+    esac
+    if [[ "$CONFIG" == "release" ]]; then
+        echo ""
+        echo "Generate installer package?"
+        echo "  [1] No    (default)"
+        echo "  [2] Yes   (.deb / .rpm / .pkg.tar.xz)"
+        read -rp "Choice [1-2] (default 1): " pkg_choice
+        if [[ "${pkg_choice:-1}" == "2" ]]; then PACKAGE=1; fi
+    fi
+    echo ""
+fi
 case "$ARCH" in
     x64|x86|aarch64|armhf) ;;
     *)
@@ -170,5 +209,5 @@ echo "==== Build Success ===="
 
 # Show available presets hint
 echo ""
-echo "Available presets: cmake --list-presets"
-echo "Usage  : $0 -a arm64 -c release -p"
+echo "Run without arguments for interactive mode"
+echo "Usage  : $0 [-a ARCH] [-c CONFIG] [-p] [-C] [-- vora args...]"
