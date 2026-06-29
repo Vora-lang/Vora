@@ -36,6 +36,7 @@ struct FunctionPrototype : GcObject {
     bool isGenerator = false;  // true if function body contains yield
     bool hasRest = false;      // true if function has ...rest parameter
     std::vector<std::string> paramNames;  // fixed param names in definition order (excludes rest)
+    std::vector<std::string> localNames;  // all local var names in declaration order (for debugger)
 
     void trace(std::vector<GcObject*>& wl) override {
         // FunctionPrototype doesn't directly reference other GcObjects.

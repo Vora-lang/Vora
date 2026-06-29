@@ -507,6 +507,120 @@ void VM::registerNativeFunction(const std::string& name,
     defineNative(name, -1, std::move(fn));
 }
 
+// ── Debugger API ────────────────────────────────────────────────────────────
+
+void VM::debugSetBreakpoint(size_t offset) { breakpoints_.insert(offset); }
+void VM::debugRemoveBreakpoint(size_t offset) { breakpoints_.erase(offset); }
+void VM::debugClearBreakpoints() { breakpoints_.clear(); }
+bool VM::debugHasBreakpoint(size_t offset) const { return breakpoints_.count(offset) > 0; }
+
+void VM::debugSetStepMode(StepMode mode) {
+    stepMode_ = mode;
+    if (mode == StepMode::StepOver) {
+        stepOverDepth_ = static_cast<int>(frames.size());
+    } else if (mode == StepMode::StepOut) {
+        stepOutDepth_ = static_cast<int>(frames.size());
+    }
+}
+void VM::debugResume() { debugPaused_ = false; }
+void VM::debugPause() { interruptFlag = 1; }
+
+int VM::debugFrameCount() const { return static_cast<int>(frames.size()) + 1; } // +1 for top-level
+
+std::string VM::debugFrameName(int frameIndex) const {
+    if (frameIndex < 0 || frameIndex >= debugFrameCount()) return "<unknown>";
+    if (frameIndex == 0) return "<script>";
+    int idx = frameIndex - 1;
+    if (idx >= static_cast<int>(frames.size())) return "<unknown>";
+    auto& fn = frames[idx].function;
+    return fn ? fn->name() : "<native>";
+}
+
+int VM::debugFrameLine(int frameIndex) const {
+    if (frameIndex < 0 || frameIndex >= debugFrameCount()) return 1;
+    // Decode line from current chunk's RLE table
+    size_t offset;
+    const Chunk* chunk;
+    if (frameIndex == 0) {
+        offset = ip ? (ip - currentChunk->code.data()) : 0;
+        chunk = currentChunk;
+    } else {
+        int idx = frameIndex - 1;
+        if (idx >= static_cast<int>(frames.size())) return 1;
+        auto& frame = frames[idx];
+        offset = frame.returnIp ? (frame.returnIp - frame.callerChunk->code.data()) : 0;
+        chunk = frame.callerChunk;
+    }
+    if (!chunk || chunk->lines.empty() || offset >= chunk->code.size()) return 1;
+    // RLE decode: find line at bytecode offset
+    size_t pos = 0;
+    for (size_t i = 0; i < chunk->lines.size(); i += 2) {
+        int runLen = chunk->lines[i];
+        if (offset < pos + static_cast<size_t>(runLen)) return chunk->lines[i + 1];
+        pos += runLen;
+    }
+    return 1;
+}
+
+size_t VM::debugFrameBytecodeOffset(int frameIndex) const {
+    if (frameIndex == 0) return ip ? (ip - currentChunk->code.data()) : 0;
+    int idx = frameIndex - 1;
+    if (idx >= static_cast<int>(frames.size())) return 0;
+    auto& frame = frames[idx];
+    return frame.returnIp ? (frame.returnIp - frame.callerChunk->code.data()) : 0;
+}
+
+std::vector<std::string> VM::debugLocalNames(int frameIndex) const {
+    if (frameIndex == 0) return {}; // top-level: no locals (use globals)
+    int idx = frameIndex - 1;
+    if (idx >= static_cast<int>(frames.size())) return {};
+    auto& fn = frames[idx].function;
+    if (!fn) return {};
+    auto* proto = fn->getPrototype();
+    if (!proto) return {};
+    return proto->localNames;
+}
+
+Value VM::debugLocalValue(int frameIndex, int slot) const {
+    if (frameIndex == 0 || frameIndex - 1 >= static_cast<int>(frames.size()))
+        return nullptr;
+    auto& frame = frames[frameIndex - 1];
+    size_t localIdx = frame.frameBase + static_cast<size_t>(slot);
+    if (localIdx >= stackTopIndex) return nullptr;
+    return stack[localIdx];
+}
+
+size_t VM::debugCurrentOffset() const {
+    return ip ? (ip - currentChunk->code.data()) : 0;
+}
+
+InterpretResult VM::debugEvaluate(const std::string& expr, Value& result) {
+    // Compile and execute a simple expression in a temporary VM
+    // seeded with the current global state.
+    std::string source = "return (" + expr + ");";
+    StderrErrorReporter reporter(source);
+    Lexer lexer(source, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    auto prog = parser.parse();
+    if (parser.hasError()) return InterpretResult::COMPILE_ERROR;
+
+    Compiler compiler(reporter);
+    compiler.seedGlobals(globalNames);
+    auto chunk = compiler.compile(prog.get());
+    if (compiler.hadError) return InterpretResult::COMPILE_ERROR;
+
+    // Create temp VM with current global state
+    VM tempVM;
+    tempVM.adoptGlobals(globalNames, globalValues, globalDefined, globalIndex);
+    tempVM.initGlobals(compiler.getGlobalNames());
+    InterpretResult res = tempVM.interpret(chunk);
+    if (res == InterpretResult::OK && tempVM.stackTopIndex > 0) {
+        result = tempVM.pop();
+    }
+    return res;
+}
+
 void VM::initGlobals(const std::vector<std::string>& names) {
     // Merge: only add globals that don't already exist, preserving
     // existing values. This is critical for REPL where multiple lines
@@ -1190,6 +1304,39 @@ InterpretResult VM::run() {
             pendingResume = false;
             // Fall through: next loop iteration will fetch instruction
             // from the generator's bytecode
+        }
+
+        // ── Debugger: breakpoint / step check ───────────────────────────
+        if ((!breakpoints_.empty() || stepMode_ != StepMode::None) && currentChunk) {
+            size_t offset = ip ? (ip - currentChunk->code.data()) : 0;
+            bool shouldStop = false;
+
+            if (breakpoints_.count(offset)) {
+                shouldStop = true;
+            }
+
+            switch (stepMode_) {
+                case StepMode::StepIn:
+                    shouldStop = true;
+                    break;
+                case StepMode::StepOver:
+                    if (frames.size() <= static_cast<size_t>(stepOverDepth_))
+                        shouldStop = true;
+                    break;
+                case StepMode::StepOut:
+                    if (frames.size() < static_cast<size_t>(stepOutDepth_))
+                        shouldStop = true;
+                    break;
+                case StepMode::None:
+                    break;
+            }
+
+            if (shouldStop) {
+                stepMode_ = StepMode::None;
+                debugPaused_ = true;
+                // Rewind ip since we haven't read the opcode yet
+                return InterpretResult::DEBUG_STOPPED;
+            }
         }
 
         OpCode instruction = static_cast<OpCode>(READ_BYTE());

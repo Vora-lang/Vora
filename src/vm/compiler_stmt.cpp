@@ -1100,6 +1100,12 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
         if (param.isRest) break;
         proto.paramNames.push_back(param.name);
     }
+    // Collect local variable names for debugger
+    for (const auto& local : fnCompiler.locals) {
+        if (local.depth >= 0) {
+            proto.localNames.push_back(local.name);
+        }
+    }
 
     // Store prototype in constant pool
     size_t protoIndex = addFunctionPrototype(std::move(proto));

@@ -4,6 +4,7 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "chunk.h"
@@ -18,7 +19,11 @@ enum class InterpretResult {
     OK,
     COMPILE_ERROR,
     RUNTIME_ERROR,
+    DEBUG_STOPPED,   // debugger breakpoint or step triggered
 };
+
+// VM debug step mode
+enum class StepMode { None, StepIn, StepOver, StepOut };
 
 // A call frame for function execution
 struct CallFrame {
@@ -94,6 +99,13 @@ class VM {
     // execute a single defer closure to completion within throwException().
     int deferExecutionLimit = -1;
 
+    // ── Debugger state ─────────────────────────────────────────────────
+    std::unordered_set<size_t> breakpoints_;     // bytecode offsets
+    StepMode stepMode_ = StepMode::None;
+    int stepOutDepth_ = 0;                       // frame count to fall below
+    int stepOverDepth_ = 0;                      // frame depth to match
+    bool debugPaused_ = false;
+
 public:
     VM();
     ~VM() = default;
@@ -154,6 +166,37 @@ public:
     // Signal the VM to interrupt execution at the next safe point.
     // Thread-safe: may be called from a signal handler.
     static void requestInterrupt() { interruptFlag = 1; }
+
+    // ── Debugger API (DAP) ───────────────────────────────────────────────
+
+    // Breakpoints
+    void debugSetBreakpoint(size_t bytecodeOffset);
+    void debugRemoveBreakpoint(size_t bytecodeOffset);
+    void debugClearBreakpoints();
+    bool debugHasBreakpoint(size_t bytecodeOffset) const;
+
+    // Step control
+    void debugSetStepMode(StepMode mode);
+    StepMode debugStepMode() const { return stepMode_; }
+    bool debugIsPaused() const { return debugPaused_; }
+    void debugResume();
+    void debugPause();
+
+    // State inspection (for DAP stackTrace/scopes/variables)
+    int debugFrameCount() const;
+    std::string debugFrameName(int frameIndex) const;
+    int debugFrameLine(int frameIndex) const;
+    size_t debugFrameBytecodeOffset(int frameIndex) const;
+
+    // Local variable names for a frame (from FunctionPrototype)
+    std::vector<std::string> debugLocalNames(int frameIndex) const;
+    Value debugLocalValue(int frameIndex, int slot) const;
+
+    // Current instruction offset
+    size_t debugCurrentOffset() const;
+
+    // Evaluate an expression in the current frame context
+    InterpretResult debugEvaluate(const std::string& expr, Value& result);
 
     // Run a constructor chunk with a given instance and arguments.
     // Used by ClassConstructor to execute parent and own constructors
