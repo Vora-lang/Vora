@@ -110,7 +110,12 @@ cmake --preset $PresetName
 
 Write-Host "[3/5] Building project..." -ForegroundColor Yellow
 
-cmake --build --preset $PresetName --config $Config
+# Release: skip tests (Vora_tests not needed for packaging)
+if ($Config -eq "Release") {
+    cmake --build --preset $PresetName --config $Config --target Vora vora_lib vora_hpp
+} else {
+    cmake --build --preset $PresetName --config $Config
+}
 
 # ----------------------------------------
 # Build LSP + DAP from Vora-LSP repo (Release only)
@@ -120,21 +125,23 @@ $lspRepo = "$PSScriptRoot\..\Vora-LSP"
 if ($Package -and $Config -eq "Release") {
     Write-Host "[4/6] Building vora-lsp + vora-dap from Vora-LSP..." -ForegroundColor Yellow
     if (Test-Path "$lspRepo\CMakeLists.txt") {
+        # Compute absolute paths BEFORE Push-Location (relative paths break inside it)
+        $absBuildDir = "$PSScriptRoot\$buildDir"
+        $releaseDir = "$absBuildDir\Release"
         Push-Location $lspRepo
         try {
             # Force reconfigure: remove stale cache so VORA_BUILD takes effect
-            if (Test-Path "$lspRepo\build\CMakeCache.txt") {
-                Remove-Item "$lspRepo\build\CMakeCache.txt" -Force
+            if (Test-Path "build\CMakeCache.txt") {
+                Remove-Item "build\CMakeCache.txt" -Force
             }
-            cmake -B build -DVORA_BUILD="$PSScriptRoot\$buildDir" 2>&1 | Out-Null
+            cmake -B build -DVORA_BUILD="$absBuildDir" 2>&1 | Out-Null
             cmake --build build --config Release --target vora-lsp vora-dap
             if ($LASTEXITCODE -eq 0) {
-                $releaseDir = "$buildDir\Release"
                 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-                Copy-Item -Force "$lspRepo\build\Release\vora-lsp.exe" "$releaseDir\" -ErrorAction SilentlyContinue
-                Copy-Item -Force "$lspRepo\build\Release\vora-dap.exe" "$releaseDir\" -ErrorAction SilentlyContinue
-                Copy-Item -Force "$lspRepo\vora-lsp.exe" "$releaseDir\" -ErrorAction SilentlyContinue
-                Copy-Item -Force "$lspRepo\vora-dap.exe" "$releaseDir\" -ErrorAction SilentlyContinue
+                Copy-Item -Force "build\Release\vora-lsp.exe" "$releaseDir\" -ErrorAction SilentlyContinue
+                Copy-Item -Force "build\Release\vora-dap.exe" "$releaseDir\" -ErrorAction SilentlyContinue
+                Copy-Item -Force "vora-lsp.exe" "$releaseDir\" -ErrorAction SilentlyContinue
+                Copy-Item -Force "vora-dap.exe" "$releaseDir\" -ErrorAction SilentlyContinue
                 Write-Host "  vora-lsp + vora-dap rebuilt and staged" -ForegroundColor Green
             } else {
                 Write-Host "  Warning: Vora-LSP build failed, using existing binaries if present" -ForegroundColor Yellow
