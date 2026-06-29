@@ -176,18 +176,34 @@ if ($Package) {
 Write-Host "[6/6] Build complete" -ForegroundColor Yellow
 Write-Host ""
 
-$exePath = "$buildDir\$Config\Vora.exe"
+$artifacts = @(
+    @{Path="$buildDir\$Config\Vora.exe";         Label="Vora"},
+    @{Path="$buildDir\$Config\vora_lib.lib";    Label="Static lib"},
+    @{Path="$buildDir\$Config\vora-lsp.exe";    Label="LSP server"},
+    @{Path="$buildDir\$Config\vora-dap.exe";    Label="DAP debugger"}
+)
+if ($Package -and $Config -eq "Release") {
+    $msiPattern = "vora-$($versionMatch.Groups[1].Value)-*.msi"
+    $msi = Get-ChildItem "$buildDir\$msiPattern" 2>$null | Sort-Object Name -Descending | Select-Object -First 1
+    if ($msi) { $artifacts += @{Path=$msi.FullName; Label="Installer"} }
+}
 
-if (Test-Path $exePath) {
-    Write-Host "  Executable : $exePath" -ForegroundColor Green
+$found = $false
+foreach ($a in $artifacts) {
+    if (Test-Path $a.Path) {
+        Write-Host "  $($a.Label) : $($a.Path)" -ForegroundColor Green
+        $found = $true
+    }
+}
+
+if ($found) {
     Write-Host ""
     Write-Host "==== Build Success ====" -ForegroundColor Green
 } else {
     Write-Host ""
-    Write-Host "Executable not found" -ForegroundColor Red
+    Write-Host "No artifacts found" -ForegroundColor Red
 }
 
-# Show available presets hint
 Write-Host ""
 Write-Host "Run without arguments for interactive mode" -ForegroundColor Gray
 Write-Host "Usage  : .\build.ps1 -Architecture arm64 -Config Release -Package -Clean" -ForegroundColor Gray

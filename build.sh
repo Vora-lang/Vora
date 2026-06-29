@@ -200,27 +200,22 @@ fi
 echo "[6/6] Build complete"
 echo ""
 
-# Print artifact locations
-EXE_PATH=""
-for candidate in \
-    "$BUILD_DIR/Vora" \
-    "$BUILD_DIR/debug/Vora" \
-    "$BUILD_DIR/release/Vora" \
-    "$BUILD_DIR/Debug/Vora" \
-    "$BUILD_DIR/Release/Vora"; do
-    if [[ -f "$candidate" ]]; then
-        EXE_PATH="$candidate"
-        echo "  Executable  : $EXE_PATH"
-        break
-    fi
-done
+_found=0
+_print_artifact() { local label="$1" path="$2"
+    if [[ -f "$path" ]]; then echo "  $label : $path"; _found=1; fi
+}
 
-LIB_PATH="$BUILD_DIR/libvora_lib.a"
-if [[ -f "$BUILD_DIR/vora_lib.a" ]]; then
-    echo "  Static lib  : $BUILD_DIR/vora_lib.a"
-elif [[ -f "$BUILD_DIR/libvora_lib.a" ]]; then
-    echo "  Static lib  : $BUILD_DIR/libvora_lib.a"
-fi
+# Vora executable
+for c in "$BUILD_DIR/Vora" "$BUILD_DIR/debug/Vora" "$BUILD_DIR/release/Vora" "$BUILD_DIR/Debug/Vora" "$BUILD_DIR/Release/Vora"; do
+    if [[ -f "$c" ]]; then _print_artifact "Vora       " "$c"; break; fi
+done
+# Static lib
+for c in "$BUILD_DIR/vora_lib.a" "$BUILD_DIR/libvora_lib.a" "$BUILD_DIR/Release/vora_lib.a" "$BUILD_DIR/Debug/vora_lib.a"; do
+    if [[ -f "$c" ]]; then _print_artifact "Static lib " "$c"; break; fi
+done
+# LSP / DAP
+_print_artifact "LSP server " "$BUILD_DIR/Release/vora-lsp"
+_print_artifact "DAP debug  " "$BUILD_DIR/Release/vora-dap"
 
 echo ""
 echo "==== Build Success ===="
