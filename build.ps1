@@ -35,7 +35,7 @@ if ($Jobs -le 0) {
 }
 
 # Read project version from CMakeLists.txt (used for MSI filtering + summary)
-$versionMatch = [regex]::Match((Get-Content "$PSScriptRoot\CMakeLists.txt" -Raw), 'project\(Vora VERSION (\d+\.\d+\.\d+)\)')
+$versionMatch = [regex]::Match((Get-Content "$PSScriptRoot\CMakeLists.txt" -Raw), 'project\(Vora VERSION (\d+\.\d+\.\d+)')
 $projectVersion = if ($versionMatch.Success) { $versionMatch.Groups[1].Value } else { "0.0.0" }
 
 # Interactive mode -- when run without arguments, ask the user
