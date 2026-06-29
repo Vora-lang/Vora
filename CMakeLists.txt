@@ -140,11 +140,17 @@ install(TARGETS vora_lib
 
 # ── 生成单文件 vora.hpp（合并所有头文件） ────────────────────────────────
 find_package(Python3 COMPONENTS Interpreter QUIET)
+find_package(Python COMPONENTS Interpreter QUIET)
 if(Python3_FOUND)
+    set(_python_exe "${Python3_EXECUTABLE}")
+elseif(Python_FOUND)
+    set(_python_exe "${Python_EXECUTABLE}")
+endif()
+if(DEFINED _python_exe)
     set(VORA_HPP "${CMAKE_BINARY_DIR}/vora.hpp")
     add_custom_command(
         OUTPUT "${VORA_HPP}"
-        COMMAND "${Python3_EXECUTABLE}"
+        COMMAND "${_python_exe}"
                 "${CMAKE_SOURCE_DIR}/scripts/amalgamate_headers.py"
                 -o "${VORA_HPP}"
         DEPENDS
