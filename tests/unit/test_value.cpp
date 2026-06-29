@@ -11,44 +11,44 @@ using namespace vora;
 
 TEST_CASE("value_nullptr_holds") {
     Value v(nullptr);
-    CHECK(std::holds_alternative<std::nullptr_t>(v));
+    CHECK(v.isNull());
     CHECK_FALSE(isNumeric(v));
-    CHECK_FALSE(std::holds_alternative<double>(v));
-    CHECK_FALSE(std::holds_alternative<int64_t>(v));
+    CHECK_FALSE(v.isDouble());
+    CHECK_FALSE(v.isInt());
 }
 
 TEST_CASE("value_int64_holds") {
     Value v(static_cast<int64_t>(42));
-    CHECK(std::holds_alternative<int64_t>(v));
+    CHECK(v.isInt());
     CHECK(isNumeric(v));
-    CHECK_FALSE(std::holds_alternative<double>(v));
+    CHECK_FALSE(v.isDouble());
 }
 
 TEST_CASE("value_double_holds") {
     Value v(3.14);
-    CHECK(std::holds_alternative<double>(v));
+    CHECK(v.isDouble());
     CHECK(isNumeric(v));
-    CHECK_FALSE(std::holds_alternative<int64_t>(v));
+    CHECK_FALSE(v.isInt());
 }
 
 TEST_CASE("value_bool_holds") {
     Value v(true);
-    CHECK(std::holds_alternative<bool>(v));
+    CHECK(v.isBool());
     CHECK_FALSE(isNumeric(v));
     Value w(false);
-    CHECK(std::holds_alternative<bool>(w));
+    CHECK(w.isBool());
 }
 
 TEST_CASE("value_string_holds") {
     Value v(GcHeap::instance().alloc<GcString>("hello"));
-    CHECK(std::holds_alternative<GcPtr<GcString>>(v));
+    CHECK(v.isGcString());
     CHECK_FALSE(isNumeric(v));
 }
 
 TEST_CASE("value_array_holds") {
     auto arr = GcHeap::instance().alloc<Array>();
     Value v(arr);
-    CHECK(std::holds_alternative<GcPtr<Array>>(v));
+    CHECK(v.isArray());
     CHECK_FALSE(isNumeric(v));
 }
 
@@ -68,21 +68,21 @@ TEST_CASE("value_toDouble_double") {
 
 TEST_CASE("value_promoteToFloat_int") {
     Value result = promoteToFloat(Value(static_cast<int64_t>(5)));
-    CHECK(std::holds_alternative<double>(result));
-    CHECK(std::get<double>(result) == 5.0);
+    CHECK(result.isDouble());
+    CHECK(result.asDouble() == 5.0);
 }
 
 TEST_CASE("value_promoteToFloat_double_identity") {
     Value v(3.14);
     Value result = promoteToFloat(v);
-    CHECK(std::holds_alternative<double>(result));
-    CHECK(std::get<double>(result) == 3.14);
+    CHECK(result.isDouble());
+    CHECK(result.asDouble() == 3.14);
 }
 
 TEST_CASE("value_promoteToFloat_non_numeric_identity") {
     Value v(true);
     Value result = promoteToFloat(v);
-    CHECK(std::holds_alternative<bool>(result));
+    CHECK(result.isBool());
 }
 
 TEST_CASE("value_isNumeric_coverage") {

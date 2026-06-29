@@ -513,8 +513,8 @@ std::unique_ptr<BindingPattern> Parser::convertDictExprToBinding(const DictExpr&
         // The key should be a string literal (auto-converted from identifier in dict parsing)
         std::string propName;
         if (auto* lit = dynamic_cast<const LiteralExpr*>(key.get())) {
-            if (std::holds_alternative<GcPtr<GcString>>(lit->value)) {
-                propName = std::get<GcPtr<GcString>>(lit->value)->value;
+            if (lit->value.isGcString()) {
+                propName = lit->value.asGcString()->value;
             } else {
                 return nullptr;  // non-string key in pattern — invalid
             }

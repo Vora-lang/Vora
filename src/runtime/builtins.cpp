@@ -49,38 +49,38 @@ void registerBuiltins(VM& vm) {
 
     vm.defineNative("type", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            return std::visit([](auto&& arg) -> GcPtr<GcString> {
-                using T = std::decay_t<decltype(arg)>;
-                if constexpr (std::is_same_v<T, std::nullptr_t>) return GcHeap::instance().alloc<GcString>("null");
-                else if constexpr (std::is_same_v<T, double>) return GcHeap::instance().alloc<GcString>("float");
-                else if constexpr (std::is_same_v<T, int64_t>) return GcHeap::instance().alloc<GcString>("int");
-                else if constexpr (std::is_same_v<T, bool>) return GcHeap::instance().alloc<GcString>("boolean");
-                else if constexpr (std::is_same_v<T, GcPtr<GcString>>) return GcHeap::instance().alloc<GcString>("string");
-                else if constexpr (std::is_same_v<T, GcPtr<Array>>) return GcHeap::instance().alloc<GcString>("array");
-                else if constexpr (std::is_same_v<T, GcPtr<Dict>>) return GcHeap::instance().alloc<GcString>("dict");
-                else if constexpr (std::is_same_v<T, GcPtr<Set>>) return GcHeap::instance().alloc<GcString>("set");
-                else if constexpr (std::is_same_v<T, GcPtr<Map>>) return GcHeap::instance().alloc<GcString>("map");
-                else if constexpr (std::is_same_v<T, GcPtr<Callable>>) return GcHeap::instance().alloc<GcString>("function");
-                else if constexpr (std::is_same_v<T, GcPtr<ObjectInstance>>) return GcHeap::instance().alloc<GcString>("object");
-                else if constexpr (std::is_same_v<T, GcPtr<FunctionPrototype>>) return GcHeap::instance().alloc<GcString>("function");
-                else if constexpr (std::is_same_v<T, GcPtr<ClassDefinition>>) return GcHeap::instance().alloc<GcString>("class");
-                else return GcHeap::instance().alloc<GcString>("unknown");
-            }, arguments[0]);
+            const auto& v = arguments[0];
+            switch (v.dispatchTag()) {
+                case DispatchTag::Null:   return GcHeap::instance().alloc<GcString>("null");
+                case DispatchTag::Bool:   return GcHeap::instance().alloc<GcString>("boolean");
+                case DispatchTag::Int:    return GcHeap::instance().alloc<GcString>("int");
+                case DispatchTag::Double: return GcHeap::instance().alloc<GcString>("float");
+                case DispatchTag::GcString: return GcHeap::instance().alloc<GcString>("string");
+                case DispatchTag::Array:  return GcHeap::instance().alloc<GcString>("array");
+                case DispatchTag::Dict:   return GcHeap::instance().alloc<GcString>("dict");
+                case DispatchTag::Set:    return GcHeap::instance().alloc<GcString>("set");
+                case DispatchTag::Map:    return GcHeap::instance().alloc<GcString>("map");
+                case DispatchTag::Callable: return GcHeap::instance().alloc<GcString>("function");
+                case DispatchTag::ObjectInstance: return GcHeap::instance().alloc<GcString>("object");
+                case DispatchTag::FunctionPrototype: return GcHeap::instance().alloc<GcString>("function");
+                case DispatchTag::ClassDefinition: return GcHeap::instance().alloc<GcString>("class");
+                default: return GcHeap::instance().alloc<GcString>("unknown");
+            }
         });
 
     vm.defineNative("len", 1,
         [](const std::vector<Value>& arguments) -> Value {
             const auto& v = arguments[0];
-            if (std::holds_alternative<GcPtr<Array>>(v))
-                return static_cast<int64_t>(std::get<GcPtr<Array>>(v)->elements.size());
-            if (std::holds_alternative<GcPtr<GcString>>(v))
-                return static_cast<int64_t>(std::get<GcPtr<GcString>>(v)->value.size());
-            if (std::holds_alternative<GcPtr<Dict>>(v))
-                return static_cast<int64_t>(std::get<GcPtr<Dict>>(v)->pairs.size());
-            if (std::holds_alternative<GcPtr<Set>>(v))
-                return static_cast<int64_t>(std::get<GcPtr<Set>>(v)->elements.size());
-            if (std::holds_alternative<GcPtr<Map>>(v))
-                return static_cast<int64_t>(std::get<GcPtr<Map>>(v)->pairs.size());
+            if (v.isArray())
+                return static_cast<int64_t>(v.asArray()->elements.size());
+            if (v.isGcString())
+                return static_cast<int64_t>(v.asGcString()->value.size());
+            if (v.isDict())
+                return static_cast<int64_t>(v.asDict()->pairs.size());
+            if (v.isSet())
+                return static_cast<int64_t>(v.asSet()->elements.size());
+            if (v.isMap())
+                return static_cast<int64_t>(v.asMap()->pairs.size());
             return nullptr;  // will be caught by runtime
         });
 
@@ -96,8 +96,8 @@ void registerBuiltins(VM& vm) {
             if (arguments.empty()) return nullptr;
             if (!isTruthy(arguments[0])) {
                 std::string msg = "Assertion failed";
-                if (arguments.size() >= 2 && std::holds_alternative<GcPtr<GcString>>(arguments[1])) {
-                    msg = std::get<GcPtr<GcString>>(arguments[1])->value;
+                if (arguments.size() >= 2 && arguments[1].isGcString()) {
+                    msg = arguments[1].asGcString()->value;
                 }
                 // Route through VM exception mechanism so assert failures
                 // are catchable by try/catch (consistent with interpreter).
@@ -111,36 +111,36 @@ void registerBuiltins(VM& vm) {
     vm.defineNative("int", 1,
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
-            if (std::holds_alternative<int64_t>(arg))
+            if (arg.isInt())
                 return arg;
-            if (std::holds_alternative<double>(arg))
-                return static_cast<int64_t>(std::trunc(std::get<double>(arg)));
-            if (std::holds_alternative<GcPtr<GcString>>(arg)) {
+            if (arg.isDouble())
+                return static_cast<int64_t>(std::trunc(arg.asDouble()));
+            if (arg.isGcString()) {
                 try {
-                    return static_cast<int64_t>(std::trunc(std::stod(std::get<GcPtr<GcString>>(arg)->value)));
+                    return static_cast<int64_t>(std::trunc(std::stod(arg.asGcString()->value)));
                 } catch (const std::exception&) {
                     return nullptr;
                 }
             }
-            if (std::holds_alternative<bool>(arg))
-                return std::get<bool>(arg) ? static_cast<int64_t>(1) : static_cast<int64_t>(0);
+            if (arg.isBool())
+                return arg.asBool() ? static_cast<int64_t>(1) : static_cast<int64_t>(0);
             return nullptr;
         });
 
     vm.defineNative("float", 1,
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
-            if (std::holds_alternative<int64_t>(arg)) return static_cast<double>(std::get<int64_t>(arg));
-            if (std::holds_alternative<double>(arg)) return arg;
-            if (std::holds_alternative<GcPtr<GcString>>(arg)) {
+            if (arg.isInt()) return static_cast<double>(arg.asInt());
+            if (arg.isDouble()) return arg;
+            if (arg.isGcString()) {
                 try {
-                    return std::stod(std::get<GcPtr<GcString>>(arg)->value);
+                    return std::stod(arg.asGcString()->value);
                 } catch (const std::exception&) {
                     return nullptr;
                 }
             }
-            if (std::holds_alternative<bool>(arg))
-                return std::get<bool>(arg) ? 1.0 : 0.0;
+            if (arg.isBool())
+                return arg.asBool() ? 1.0 : 0.0;
             return nullptr;
         });
 
@@ -150,7 +150,7 @@ void registerBuiltins(VM& vm) {
             // If all arguments are integers and step is integer, produce ints.
             bool useInt = true;
             for (auto& arg : arguments) {
-                if (!std::holds_alternative<int64_t>(arg)) {
+                if (!arg.isInt()) {
                     useInt = false;
                     break;
                 }
@@ -161,19 +161,19 @@ void registerBuiltins(VM& vm) {
             if (useInt) {
                 int64_t start = 0, end = 0, step = 1;
                 if (arguments.size() >= 1) {
-                    if (!std::holds_alternative<int64_t>(arguments[0])) return nullptr;
-                    end = std::get<int64_t>(arguments[0]);
+                    if (!arguments[0].isInt()) return nullptr;
+                    end = arguments[0].asInt();
                 }
                 if (arguments.size() >= 2) {
-                    if (!std::holds_alternative<int64_t>(arguments[1])) return nullptr;
-                    start = std::get<int64_t>(arguments[0]);
-                    end = std::get<int64_t>(arguments[1]);
+                    if (!arguments[1].isInt()) return nullptr;
+                    start = arguments[0].asInt();
+                    end = arguments[1].asInt();
                 }
                 if (arguments.size() >= 3) {
-                    if (!std::holds_alternative<int64_t>(arguments[2])) return nullptr;
-                    start = std::get<int64_t>(arguments[0]);
-                    end = std::get<int64_t>(arguments[1]);
-                    step = std::get<int64_t>(arguments[2]);
+                    if (!arguments[2].isInt()) return nullptr;
+                    start = arguments[0].asInt();
+                    end = arguments[1].asInt();
+                    step = arguments[2].asInt();
                 }
                 if (step == 0) return nullptr;
                 if (step > 0) {
@@ -235,10 +235,10 @@ void registerBuiltins(VM& vm) {
     vm.defineNative("bin", 1,
         [](const std::vector<Value>& arguments) -> Value {
             int64_t n;
-            if (std::holds_alternative<int64_t>(arguments[0]))
-                n = std::get<int64_t>(arguments[0]);
-            else if (std::holds_alternative<double>(arguments[0]))
-                n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
+            if (arguments[0].isInt())
+                n = arguments[0].asInt();
+            else if (arguments[0].isDouble())
+                n = static_cast<int64_t>(std::trunc(arguments[0].asDouble()));
             else
                 return nullptr;  // non-numeric argument
             if (n == 0) return GcHeap::instance().alloc<GcString>("0b0");
@@ -254,10 +254,10 @@ void registerBuiltins(VM& vm) {
     vm.defineNative("oct", 1,
         [](const std::vector<Value>& arguments) -> Value {
             int64_t n;
-            if (std::holds_alternative<int64_t>(arguments[0]))
-                n = std::get<int64_t>(arguments[0]);
-            else if (std::holds_alternative<double>(arguments[0]))
-                n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
+            if (arguments[0].isInt())
+                n = arguments[0].asInt();
+            else if (arguments[0].isDouble())
+                n = static_cast<int64_t>(std::trunc(arguments[0].asDouble()));
             else
                 return nullptr;  // non-numeric argument
             if (n == 0) return GcHeap::instance().alloc<GcString>("0o0");
@@ -271,10 +271,10 @@ void registerBuiltins(VM& vm) {
     vm.defineNative("hex", 1,
         [](const std::vector<Value>& arguments) -> Value {
             int64_t n;
-            if (std::holds_alternative<int64_t>(arguments[0]))
-                n = std::get<int64_t>(arguments[0]);
-            else if (std::holds_alternative<double>(arguments[0]))
-                n = static_cast<int64_t>(std::trunc(std::get<double>(arguments[0])));
+            if (arguments[0].isInt())
+                n = arguments[0].asInt();
+            else if (arguments[0].isDouble())
+                n = static_cast<int64_t>(std::trunc(arguments[0].asDouble()));
             else
                 return nullptr;  // non-numeric argument
             if (n == 0) return GcHeap::instance().alloc<GcString>("0x0");
@@ -298,13 +298,13 @@ void registerBuiltins(VM& vm) {
             const Value& arg = arguments[0];
 
             // iter(iterator) → itself
-            if (std::holds_alternative<GcPtr<Iterator>>(arg)) {
+            if (arg.isIterator()) {
                 return arg;
             }
 
             // iter(generator) → the generator itself (it is its own iterator,
             // driven by next() which already handles Generator)
-            if (std::holds_alternative<GcPtr<Generator>>(arg)) {
+            if (arg.isGenerator()) {
                 return arg;
             }
 
@@ -313,31 +313,35 @@ void registerBuiltins(VM& vm) {
             it->index = 0;
 
             // Snapshot dict keys for stable iteration order
-            if (auto* d = std::get_if<GcPtr<Dict>>(&arg)) {
-                it->dictKeys.reserve((*d)->pairs.size());
-                for (const auto& [k, v] : (*d)->pairs) {
+            if (arg.isDict()) {
+                auto d = arg.asDict();
+                it->dictKeys.reserve(d->pairs.size());
+                for (const auto& [k, v] : d->pairs) {
                     it->dictKeys.push_back(k);
                 }
-            } else if (auto* s = std::get_if<GcPtr<Set>>(&arg)) {
+            } else if (arg.isSet()) {
+                auto s = arg.asSet();
                 // Snapshot set elements for stable iteration
-                it->valueKeys.reserve((*s)->elements.size());
-                for (const auto& e : (*s)->elements) {
+                it->valueKeys.reserve(s->elements.size());
+                for (const auto& e : s->elements) {
                     it->valueKeys.push_back(e);
                 }
-            } else if (auto* m = std::get_if<GcPtr<Map>>(&arg)) {
+            } else if (arg.isMap()) {
+                auto m = arg.asMap();
                 // Snapshot map keys for stable iteration
-                it->valueKeys.reserve((*m)->pairs.size());
-                for (const auto& [k, v] : (*m)->pairs) {
+                it->valueKeys.reserve(m->pairs.size());
+                for (const auto& [k, v] : m->pairs) {
                     it->valueKeys.push_back(k);
                 }
-            } else if (auto* inst = std::get_if<GcPtr<ObjectInstance>>(&arg)) {
+            } else if (arg.isObjectInstance()) {
+                auto inst = arg.asObjectInstance();
                 // Snapshot object property keys for stable iteration
-                it->dictKeys.reserve((*inst)->properties.size());
-                for (const auto& [k, v] : (*inst)->properties) {
+                it->dictKeys.reserve(inst->properties.size());
+                for (const auto& [k, v] : inst->properties) {
                     it->dictKeys.push_back(k);
                 }
-            } else if (!std::holds_alternative<GcPtr<Array>>(arg) &&
-                       !std::holds_alternative<GcPtr<GcString>>(arg)) {
+            } else if (!arg.isArray() &&
+                       !arg.isGcString()) {
                 // iter() on non-iterable → null (caller can check)
                 // We still return an iterator — next() will throw StopIteration
             }
@@ -353,8 +357,8 @@ void registerBuiltins(VM& vm) {
             const Value& arg = arguments[0];
 
             // --- Generator path ---
-            if (auto* genPtr = std::get_if<GcPtr<Generator>>(&arg)) {
-                auto gen = *genPtr;
+            if (arg.isGenerator()) {
+                auto gen = arg.asGenerator();
                 if (!gen) {
                     vm.nativeError = true;
                     vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("TypeError: next() argument is null");
@@ -388,40 +392,42 @@ void registerBuiltins(VM& vm) {
             }
 
             // --- Iterator path ---
-            if (!std::holds_alternative<GcPtr<Iterator>>(arg)) {
+            if (!arg.isIterator()) {
                 vm.nativeError = true;
                 vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("TypeError: next() requires an iterator or generator");
                 return nullptr;
             }
 
-            auto it = std::get<GcPtr<Iterator>>(arg);
+            auto it = arg.asIterator();
             const Value& source = it->source;
             size_t idx = it->index;
 
             // Array iteration
-            if (auto* arr = std::get_if<GcPtr<Array>>(&source)) {
-                if (idx >= (*arr)->elements.size()) {
+            if (source.isArray()) {
+                auto arr = source.asArray();
+                if (idx >= arr->elements.size()) {
                     vm.nativeError = true;
                     vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
                     return nullptr;
                 }
                 it->index = idx + 1;
-                return (*arr)->elements[idx];
+                return arr->elements[idx];
             }
 
             // String iteration — returns 1-char strings (consistent with for-in)
-            if (auto* s = std::get_if<GcPtr<GcString>>(&source)) {
-                if (idx >= (*s)->value.size()) {
+            if (source.isGcString()) {
+                auto s = source.asGcString();
+                if (idx >= s->value.size()) {
                     vm.nativeError = true;
                     vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
                     return nullptr;
                 }
                 it->index = idx + 1;
-                return GcHeap::instance().alloc<GcString>(std::string(1, (*s)->value[idx]));
+                return GcHeap::instance().alloc<GcString>(std::string(1, s->value[idx]));
             }
 
             // Dict iteration — iterates over keys (snapshot taken at iter() time)
-            if (std::holds_alternative<GcPtr<Dict>>(source)) {
+            if (source.isDict()) {
                 if (idx >= it->dictKeys.size()) {
                     vm.nativeError = true;
                     vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
@@ -432,7 +438,7 @@ void registerBuiltins(VM& vm) {
             }
 
             // Set iteration — iterates over elements
-            if (std::holds_alternative<GcPtr<Set>>(source)) {
+            if (source.isSet()) {
                 if (idx >= it->valueKeys.size()) {
                     vm.nativeError = true;
                     vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
@@ -443,7 +449,7 @@ void registerBuiltins(VM& vm) {
             }
 
             // Map iteration — iterates over keys
-            if (std::holds_alternative<GcPtr<Map>>(source)) {
+            if (source.isMap()) {
                 if (idx >= it->valueKeys.size()) {
                     vm.nativeError = true;
                     vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
@@ -454,7 +460,7 @@ void registerBuiltins(VM& vm) {
             }
 
             // ObjectInstance iteration — iterates over property keys
-            if (std::holds_alternative<GcPtr<ObjectInstance>>(source)) {
+            if (source.isObjectInstance()) {
                 if (idx >= it->dictKeys.size()) {
                     vm.nativeError = true;
                     vm.nativeErrorValue = GcHeap::instance().alloc<GcString>("StopIteration");
@@ -476,18 +482,18 @@ void registerBuiltins(VM& vm) {
             auto set = GcHeap::instance().alloc<Set>();
             if (!arguments.empty()) {
                 const auto& arg = arguments[0];
-                if (std::holds_alternative<GcPtr<Array>>(arg)) {
-                    for (const auto& e : std::get<GcPtr<Array>>(arg)->elements) {
+                if (arg.isArray()) {
+                    for (const auto& e : arg.asArray()->elements) {
                         set->elements.insert(e);
                     }
-                } else if (std::holds_alternative<GcPtr<GcString>>(arg)) {
-                    for (char c : std::get<GcPtr<GcString>>(arg)->value) {
+                } else if (arg.isGcString()) {
+                    for (char c : arg.asGcString()->value) {
                         set->elements.insert(GcHeap::instance().alloc<GcString>(std::string(1, c)));
                     }
-                } else if (std::holds_alternative<GcPtr<Set>>(arg)) {
-                    set->elements = std::get<GcPtr<Set>>(arg)->elements;
-                } else if (std::holds_alternative<GcPtr<Dict>>(arg)) {
-                    for (const auto& [k, v] : std::get<GcPtr<Dict>>(arg)->pairs) {
+                } else if (arg.isSet()) {
+                    set->elements = arg.asSet()->elements;
+                } else if (arg.isDict()) {
+                    for (const auto& [k, v] : arg.asDict()->pairs) {
                         set->elements.insert(GcHeap::instance().alloc<GcString>(k));
                     }
                 }
@@ -576,16 +582,16 @@ GcPtr<NativeFunction> getArrayMethod(
         return GcHeap::instance().alloc<NativeFunction>("indexOf", 1,
             [arr](const std::vector<Value>& args) -> Value {
                 for (size_t i = 0; i < arr->elements.size(); ++i) {
-                    if (arr->elements[i].index() == args[0].index()) {
-                        if (std::holds_alternative<std::nullptr_t>(arr->elements[i])) return static_cast<int64_t>(i);
-                        if (std::holds_alternative<bool>(arr->elements[i]) &&
-                            std::get<bool>(arr->elements[i]) == std::get<bool>(args[0])) return static_cast<int64_t>(i);
-                        if (std::holds_alternative<int64_t>(arr->elements[i]) &&
-                            std::get<int64_t>(arr->elements[i]) == std::get<int64_t>(args[0])) return static_cast<int64_t>(i);
-                        if (std::holds_alternative<double>(arr->elements[i]) &&
-                            std::get<double>(arr->elements[i]) == std::get<double>(args[0])) return static_cast<int64_t>(i);
-                        if (std::holds_alternative<GcPtr<GcString>>(arr->elements[i]) &&
-                            std::get<GcPtr<GcString>>(arr->elements[i])->value == std::get<GcPtr<GcString>>(args[0])->value) return static_cast<int64_t>(i);
+                    if (arr->elements[i].dispatchTag() == args[0].dispatchTag()) {
+                        if (arr->elements[i].isNull()) return static_cast<int64_t>(i);
+                        if (arr->elements[i].isBool() &&
+                            arr->elements[i].asBool() == args[0].asBool()) return static_cast<int64_t>(i);
+                        if (arr->elements[i].isInt() &&
+                            arr->elements[i].asInt() == args[0].asInt()) return static_cast<int64_t>(i);
+                        if (arr->elements[i].isDouble() &&
+                            arr->elements[i].asDouble() == args[0].asDouble()) return static_cast<int64_t>(i);
+                        if (arr->elements[i].isGcString() &&
+                            arr->elements[i].asGcString()->value == args[0].asGcString()->value) return static_cast<int64_t>(i);
                     }
                     if (isNumeric(arr->elements[i]) && isNumeric(args[0]) &&
                         toDouble(arr->elements[i]) == toDouble(args[0])) return static_cast<int64_t>(i);
@@ -800,23 +806,23 @@ GcPtr<NativeFunction> getStringMethod(
     if (name == "include") {
         return GcHeap::instance().alloc<NativeFunction>("include", 1,
             [str](const std::vector<Value>& args) -> Value {
-                if (!std::holds_alternative<GcPtr<GcString>>(args[0])) return false;
-                return str.find(std::get<GcPtr<GcString>>(args[0])->value) != std::string::npos;
+                if (!args[0].isGcString()) return false;
+                return str.find(args[0].asGcString()->value) != std::string::npos;
             });
     }
     if (name == "startsWith") {
         return GcHeap::instance().alloc<NativeFunction>("startsWith", 1,
             [str](const std::vector<Value>& args) -> Value {
-                if (!std::holds_alternative<GcPtr<GcString>>(args[0])) return false;
-                const auto& prefix = std::get<GcPtr<GcString>>(args[0])->value;
+                if (!args[0].isGcString()) return false;
+                const auto& prefix = args[0].asGcString()->value;
                 return str.size() >= prefix.size() && str.compare(0, prefix.size(), prefix) == 0;
             });
     }
     if (name == "endsWith") {
         return GcHeap::instance().alloc<NativeFunction>("endsWith", 1,
             [str](const std::vector<Value>& args) -> Value {
-                if (!std::holds_alternative<GcPtr<GcString>>(args[0])) return false;
-                const auto& suffix = std::get<GcPtr<GcString>>(args[0])->value;
+                if (!args[0].isGcString()) return false;
+                const auto& suffix = args[0].asGcString()->value;
                 return str.size() >= suffix.size() && str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
             });
     }
@@ -850,10 +856,10 @@ GcPtr<NativeFunction> getStringMethod(
     if (name == "replace") {
         return GcHeap::instance().alloc<NativeFunction>("replace", 2,
             [str](const std::vector<Value>& args) -> Value {
-                if (!std::holds_alternative<GcPtr<GcString>>(args[0]) || !std::holds_alternative<GcPtr<GcString>>(args[1]))
+                if (!args[0].isGcString() || !args[1].isGcString())
                     return GcHeap::instance().alloc<GcString>(str);
-                const auto& oldStr = std::get<GcPtr<GcString>>(args[0])->value;
-                const auto& newStr = std::get<GcPtr<GcString>>(args[1])->value;
+                const auto& oldStr = args[0].asGcString()->value;
+                const auto& newStr = args[1].asGcString()->value;
                 if (oldStr.empty()) return GcHeap::instance().alloc<GcString>(str);
                 size_t pos = str.find(oldStr);
                 if (pos == std::string::npos) return GcHeap::instance().alloc<GcString>(str);
@@ -865,10 +871,10 @@ GcPtr<NativeFunction> getStringMethod(
     if (name == "replaceAll") {
         return GcHeap::instance().alloc<NativeFunction>("replaceAll", 2,
             [str](const std::vector<Value>& args) -> Value {
-                if (!std::holds_alternative<GcPtr<GcString>>(args[0]) || !std::holds_alternative<GcPtr<GcString>>(args[1]))
+                if (!args[0].isGcString() || !args[1].isGcString())
                     return GcHeap::instance().alloc<GcString>(str);
-                const auto& oldStr = std::get<GcPtr<GcString>>(args[0])->value;
-                const auto& newStr = std::get<GcPtr<GcString>>(args[1])->value;
+                const auto& oldStr = args[0].asGcString()->value;
+                const auto& newStr = args[1].asGcString()->value;
                 if (oldStr.empty()) return GcHeap::instance().alloc<GcString>(str);
                 std::string result = str;
                 size_t pos = 0;
@@ -883,11 +889,11 @@ GcPtr<NativeFunction> getStringMethod(
         return GcHeap::instance().alloc<NativeFunction>("split", 1,
             [str](const std::vector<Value>& args) -> Value {
                 auto result = GcHeap::instance().alloc<Array>();
-                if (!std::holds_alternative<GcPtr<GcString>>(args[0])) {
+                if (!args[0].isGcString()) {
                     result->elements.push_back(GcHeap::instance().alloc<GcString>(str));
                     return result;
                 }
-                const auto& delim = std::get<GcPtr<GcString>>(args[0])->value;
+                const auto& delim = args[0].asGcString()->value;
                 if (delim.empty()) {
                     for (char c : str) result->elements.push_back(GcHeap::instance().alloc<GcString>(std::string(1, c)));
                     return result;
@@ -914,12 +920,12 @@ void registerMathBuiltins(VM& vm) {
     vm.defineNative("abs", 1,
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
-            if (std::holds_alternative<int64_t>(arg)) {
-                int64_t v = std::get<int64_t>(arg);
+            if (arg.isInt()) {
+                int64_t v = arg.asInt();
                 return (v < 0) ? -v : v;
             }
-            if (std::holds_alternative<double>(arg)) {
-                double v = std::get<double>(arg);
+            if (arg.isDouble()) {
+                double v = arg.asDouble();
                 return (v < 0.0) ? -v : v;
             }
             return nullptr;  // non-numeric → null (treated as error by user)
@@ -930,10 +936,10 @@ void registerMathBuiltins(VM& vm) {
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
             double x = 0.0;
-            if (std::holds_alternative<int64_t>(arg))
-                x = static_cast<double>(std::get<int64_t>(arg));
-            else if (std::holds_alternative<double>(arg))
-                x = std::get<double>(arg);
+            if (arg.isInt())
+                x = static_cast<double>(arg.asInt());
+            else if (arg.isDouble())
+                x = arg.asDouble();
             else
                 return nullptr;
             if (x < 0.0) return nullptr;
@@ -945,10 +951,10 @@ void registerMathBuiltins(VM& vm) {
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
             double x = 0.0;
-            if (std::holds_alternative<int64_t>(arg))
-                x = static_cast<double>(std::get<int64_t>(arg));
-            else if (std::holds_alternative<double>(arg))
-                x = std::get<double>(arg);
+            if (arg.isInt())
+                x = static_cast<double>(arg.asInt());
+            else if (arg.isDouble())
+                x = arg.asDouble();
             else
                 return nullptr;
             return std::sin(x);
@@ -959,10 +965,10 @@ void registerMathBuiltins(VM& vm) {
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
             double x = 0.0;
-            if (std::holds_alternative<int64_t>(arg))
-                x = static_cast<double>(std::get<int64_t>(arg));
-            else if (std::holds_alternative<double>(arg))
-                x = std::get<double>(arg);
+            if (arg.isInt())
+                x = static_cast<double>(arg.asInt());
+            else if (arg.isDouble())
+                x = arg.asDouble();
             else
                 return nullptr;
             return std::cos(x);
@@ -972,24 +978,24 @@ void registerMathBuiltins(VM& vm) {
     vm.defineNative("min", 1,
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
-            if (!std::holds_alternative<GcPtr<Array>>(arg))
+            if (!arg.isArray())
                 return nullptr;
-            const auto& elems = std::get<GcPtr<Array>>(arg)->elements;
+            const auto& elems = arg.asArray()->elements;
             if (elems.empty()) return nullptr;
 
             Value minVal = elems[0];
             for (size_t i = 1; i < elems.size(); i++) {
                 double a = 0.0, b = 0.0;
-                if (std::holds_alternative<int64_t>(elems[i]))
-                    a = static_cast<double>(std::get<int64_t>(elems[i]));
-                else if (std::holds_alternative<double>(elems[i]))
-                    a = std::get<double>(elems[i]);
+                if (elems[i].isInt())
+                    a = static_cast<double>(elems[i].asInt());
+                else if (elems[i].isDouble())
+                    a = elems[i].asDouble();
                 else
                     return nullptr;
-                if (std::holds_alternative<int64_t>(minVal))
-                    b = static_cast<double>(std::get<int64_t>(minVal));
-                else if (std::holds_alternative<double>(minVal))
-                    b = std::get<double>(minVal);
+                if (minVal.isInt())
+                    b = static_cast<double>(minVal.asInt());
+                else if (minVal.isDouble())
+                    b = minVal.asDouble();
                 else
                     return nullptr;
                 if (a < b) minVal = elems[i];
@@ -1001,24 +1007,24 @@ void registerMathBuiltins(VM& vm) {
     vm.defineNative("max", 1,
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
-            if (!std::holds_alternative<GcPtr<Array>>(arg))
+            if (!arg.isArray())
                 return nullptr;
-            const auto& elems = std::get<GcPtr<Array>>(arg)->elements;
+            const auto& elems = arg.asArray()->elements;
             if (elems.empty()) return nullptr;
 
             Value maxVal = elems[0];
             for (size_t i = 1; i < elems.size(); i++) {
                 double a = 0.0, b = 0.0;
-                if (std::holds_alternative<int64_t>(elems[i]))
-                    a = static_cast<double>(std::get<int64_t>(elems[i]));
-                else if (std::holds_alternative<double>(elems[i]))
-                    a = std::get<double>(elems[i]);
+                if (elems[i].isInt())
+                    a = static_cast<double>(elems[i].asInt());
+                else if (elems[i].isDouble())
+                    a = elems[i].asDouble();
                 else
                     return nullptr;
-                if (std::holds_alternative<int64_t>(maxVal))
-                    b = static_cast<double>(std::get<int64_t>(maxVal));
-                else if (std::holds_alternative<double>(maxVal))
-                    b = std::get<double>(maxVal);
+                if (maxVal.isInt())
+                    b = static_cast<double>(maxVal.asInt());
+                else if (maxVal.isDouble())
+                    b = maxVal.asDouble();
                 else
                     return nullptr;
                 if (a > b) maxVal = elems[i];
@@ -1030,15 +1036,15 @@ void registerMathBuiltins(VM& vm) {
     vm.defineNative("random_int", 2,
         [](const std::vector<Value>& arguments) -> Value {
             double minD = 0.0, maxD = 0.0;
-            if (std::holds_alternative<int64_t>(arguments[0]))
-                minD = static_cast<double>(std::get<int64_t>(arguments[0]));
-            else if (std::holds_alternative<double>(arguments[0]))
-                minD = std::get<double>(arguments[0]);
+            if (arguments[0].isInt())
+                minD = static_cast<double>(arguments[0].asInt());
+            else if (arguments[0].isDouble())
+                minD = arguments[0].asDouble();
             else return nullptr;
-            if (std::holds_alternative<int64_t>(arguments[1]))
-                maxD = static_cast<double>(std::get<int64_t>(arguments[1]));
-            else if (std::holds_alternative<double>(arguments[1]))
-                maxD = std::get<double>(arguments[1]);
+            if (arguments[1].isInt())
+                maxD = static_cast<double>(arguments[1].asInt());
+            else if (arguments[1].isDouble())
+                maxD = arguments[1].asDouble();
             else return nullptr;
 
             int64_t minVal = static_cast<int64_t>(minD);
@@ -1054,22 +1060,22 @@ void registerMathBuiltins(VM& vm) {
             double minVal = 0.0, maxVal = 0.0;
             int decimals = 0;
 
-            if (std::holds_alternative<int64_t>(arguments[0]))
-                minVal = static_cast<double>(std::get<int64_t>(arguments[0]));
-            else if (std::holds_alternative<double>(arguments[0]))
-                minVal = std::get<double>(arguments[0]);
+            if (arguments[0].isInt())
+                minVal = static_cast<double>(arguments[0].asInt());
+            else if (arguments[0].isDouble())
+                minVal = arguments[0].asDouble();
             else return nullptr;
 
-            if (std::holds_alternative<int64_t>(arguments[1]))
-                maxVal = static_cast<double>(std::get<int64_t>(arguments[1]));
-            else if (std::holds_alternative<double>(arguments[1]))
-                maxVal = std::get<double>(arguments[1]);
+            if (arguments[1].isInt())
+                maxVal = static_cast<double>(arguments[1].asInt());
+            else if (arguments[1].isDouble())
+                maxVal = arguments[1].asDouble();
             else return nullptr;
 
-            if (std::holds_alternative<int64_t>(arguments[2]))
-                decimals = static_cast<int>(std::get<int64_t>(arguments[2]));
-            else if (std::holds_alternative<double>(arguments[2]))
-                decimals = static_cast<int>(std::get<double>(arguments[2]));
+            if (arguments[2].isInt())
+                decimals = static_cast<int>(arguments[2].asInt());
+            else if (arguments[2].isDouble())
+                decimals = static_cast<int>(arguments[2].asDouble());
             else return nullptr;
 
             if (minVal > maxVal || decimals < 0) return nullptr;
@@ -1137,48 +1143,51 @@ Value jsonToValue(const nlohmann::json& j) {
 /// Mapping (reverse of above).  Functions, objects, classes, and other
 /// non-serializable Vora types are mapped to JSON null.
 nlohmann::json valueToJson(const Value& val) {
-    return std::visit([](auto&& arg) -> nlohmann::json {
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, std::nullptr_t>) {
+    if (val.isDouble()) {
+        return val.asDouble();
+    }
+    switch (val.tag()) {
+        case ValueTag::Null:
             return nullptr;
-        } else if constexpr (std::is_same_v<T, bool>) {
-            return arg;
-        } else if constexpr (std::is_same_v<T, int64_t>) {
-            return arg;
-        } else if constexpr (std::is_same_v<T, double>) {
-            return arg;
-        } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
-            return arg->value;
-        } else if constexpr (std::is_same_v<T, GcPtr<Array>>) {
+        case ValueTag::Bool:
+            return val.asBool();
+        case ValueTag::Int:
+            return val.asInt();
+        case ValueTag::GcString:
+            return val.asGcString()->value;
+        case ValueTag::Array: {
             nlohmann::json arr = nlohmann::json::array();
-            for (const auto& e : arg->elements)
+            for (const auto& e : val.asArray()->elements)
                 arr.push_back(valueToJson(e));
             return arr;
-        } else if constexpr (std::is_same_v<T, GcPtr<Dict>>) {
+        }
+        case ValueTag::Dict: {
             nlohmann::json obj = nlohmann::json::object();
-            for (const auto& [k, v] : arg->pairs)
+            for (const auto& [k, v] : val.asDict()->pairs)
                 obj[k] = valueToJson(v);
             return obj;
-        } else if constexpr (std::is_same_v<T, GcPtr<Set>>) {
+        }
+        case ValueTag::Set: {
             nlohmann::json arr = nlohmann::json::array();
-            for (const auto& e : arg->elements)
+            for (const auto& e : val.asSet()->elements)
                 arr.push_back(valueToJson(e));
             return arr;
-        } else if constexpr (std::is_same_v<T, GcPtr<Map>>) {
+        }
+        case ValueTag::Map: {
             // Serialize as array of [key, value] pairs (lossless for non-string keys)
             nlohmann::json arr = nlohmann::json::array();
-            for (const auto& [k, v] : arg->pairs) {
+            for (const auto& [k, v] : val.asMap()->pairs) {
                 nlohmann::json pair = nlohmann::json::array();
                 pair.push_back(valueToJson(k));
                 pair.push_back(valueToJson(v));
                 arr.push_back(std::move(pair));
             }
             return arr;
-        } else {
+        }
+        default:
             // Functions, objects, classes, generators, etc. → JSON null
             return nullptr;
-        }
-    }, val);
+    }
 }
 
 } // anonymous namespace
@@ -1188,9 +1197,9 @@ void registerJsonBuiltins(VM& vm) {
     /// Returns null on parse error (including empty string or non-string input).
     vm.defineNative("jsonParse", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+            if (!arguments[0].isGcString())
                 return nullptr;
-            const auto& str = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& str = arguments[0].asGcString()->value;
             try {
                 nlohmann::json j = nlohmann::json::parse(str);
                 return jsonToValue(j);
@@ -1213,10 +1222,10 @@ void registerJsonBuiltins(VM& vm) {
                 nlohmann::json j = valueToJson(arguments[0]);
                 int indent = -1;  // compact by default
                 if (arguments.size() >= 2) {
-                    if (std::holds_alternative<int64_t>(arguments[1]))
-                        indent = static_cast<int>(std::get<int64_t>(arguments[1]));
-                    else if (std::holds_alternative<double>(arguments[1]))
-                        indent = static_cast<int>(std::get<double>(arguments[1]));
+                    if (arguments[1].isInt())
+                        indent = static_cast<int>(arguments[1].asInt());
+                    else if (arguments[1].isDouble())
+                        indent = static_cast<int>(arguments[1].asDouble());
                 }
                 std::string result = (indent >= 0) ? j.dump(indent) : j.dump();
                 return GcHeap::instance().alloc<GcString>(result);
@@ -1234,9 +1243,9 @@ void registerFsBuiltins(VM& vm) {
     // readFile(path) — read entire file as string, returns null on error
     vm.defineNative("vora_fs_readFile", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+            if (!arguments[0].isGcString())
                 return nullptr;
-            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& path = arguments[0].asGcString()->value;
             std::ifstream file(path, std::ios::binary);
             if (!file.is_open()) return nullptr;
             std::stringstream ss;
@@ -1247,11 +1256,11 @@ void registerFsBuiltins(VM& vm) {
     // writeFile(path, content) — write string to file, returns true on success
     vm.defineNative("vora_fs_writeFile", 2,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]) ||
-                !std::holds_alternative<GcPtr<GcString>>(arguments[1]))
+            if (!arguments[0].isGcString() ||
+                !arguments[1].isGcString())
                 return false;
-            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
-            const auto& content = std::get<GcPtr<GcString>>(arguments[1])->value;
+            const auto& path = arguments[0].asGcString()->value;
+            const auto& content = arguments[1].asGcString()->value;
             std::ofstream file(path, std::ios::binary);
             if (!file.is_open()) return false;
             file << content;
@@ -1261,9 +1270,9 @@ void registerFsBuiltins(VM& vm) {
     // exists(path) — check if file or directory exists
     vm.defineNative("vora_fs_exists", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+            if (!arguments[0].isGcString())
                 return false;
-            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& path = arguments[0].asGcString()->value;
             std::error_code ec;
             bool result = std::filesystem::exists(path, ec);
             return result && !ec;
@@ -1272,9 +1281,9 @@ void registerFsBuiltins(VM& vm) {
     // listDir(path) — list directory contents, returns array of filenames
     vm.defineNative("vora_fs_listDir", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+            if (!arguments[0].isGcString())
                 return nullptr;
-            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& path = arguments[0].asGcString()->value;
             auto arr = GcHeap::instance().alloc<Array>();
             try {
                 for (const auto& entry : std::filesystem::directory_iterator(path)) {
@@ -1291,9 +1300,9 @@ void registerFsBuiltins(VM& vm) {
     // mkdir(path) — create directory, returns true on success
     vm.defineNative("vora_fs_mkdir", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+            if (!arguments[0].isGcString())
                 return false;
-            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& path = arguments[0].asGcString()->value;
             std::error_code ec;
             bool ok = std::filesystem::create_directory(path, ec);
             return ok && !ec;
@@ -1302,9 +1311,9 @@ void registerFsBuiltins(VM& vm) {
     // remove(path) — remove file or empty directory, returns true on success
     vm.defineNative("vora_fs_remove", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+            if (!arguments[0].isGcString())
                 return false;
-            const auto& path = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& path = arguments[0].asGcString()->value;
             std::error_code ec;
             bool ok = std::filesystem::remove(path, ec);
             return ok && !ec;
@@ -1330,9 +1339,9 @@ void registerOsBuiltins(VM& vm) {
     // getenv(name) — get environment variable, returns null if not set
     vm.defineNative("vora_os_getenv", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+            if (!arguments[0].isGcString())
                 return nullptr;
-            const auto& name = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& name = arguments[0].asGcString()->value;
             const char* val = std::getenv(name.c_str());
             if (!val) return nullptr;
             return GcHeap::instance().alloc<GcString>(std::string(val));
@@ -1351,10 +1360,10 @@ void registerOsBuiltins(VM& vm) {
     vm.defineNative("vora_os_exit", 1,
         [](const std::vector<Value>& arguments) -> Value {
             int code = 0;
-            if (std::holds_alternative<int64_t>(arguments[0]))
-                code = static_cast<int>(std::get<int64_t>(arguments[0]));
-            else if (std::holds_alternative<double>(arguments[0]))
-                code = static_cast<int>(std::get<double>(arguments[0]));
+            if (arguments[0].isInt())
+                code = static_cast<int>(arguments[0].asInt());
+            else if (arguments[0].isDouble())
+                code = static_cast<int>(arguments[0].asDouble());
             std::exit(code);
             return nullptr;
         });
@@ -1362,9 +1371,9 @@ void registerOsBuiltins(VM& vm) {
     // shell(cmd) — execute shell command and capture stdout, returns string
     vm.defineNative("vora_os_shell", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]))
+            if (!arguments[0].isGcString())
                 return nullptr;
-            const auto& cmd = std::get<GcPtr<GcString>>(arguments[0])->value;
+            const auto& cmd = arguments[0].asGcString()->value;
 #ifdef _WIN32
             std::string fullCmd = "cmd /c \"" + cmd + "\" 2>&1";
 #else
@@ -1434,11 +1443,11 @@ void registerRegexBuiltins(VM& vm) {
     // match(pattern, text) — test if regex pattern matches anywhere in text
     vm.defineNative("vora_regex_match", 2,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]) ||
-                !std::holds_alternative<GcPtr<GcString>>(arguments[1]))
+            if (!arguments[0].isGcString() ||
+                !arguments[1].isGcString())
                 return false;
-            const auto& pattern = std::get<GcPtr<GcString>>(arguments[0])->value;
-            const auto& text = std::get<GcPtr<GcString>>(arguments[1])->value;
+            const auto& pattern = arguments[0].asGcString()->value;
+            const auto& text = arguments[1].asGcString()->value;
             try {
                 std::regex re(pattern);
                 return std::regex_search(text, re);
@@ -1450,11 +1459,11 @@ void registerRegexBuiltins(VM& vm) {
     // find(pattern, text) — find all regex matches, returns array of match strings
     vm.defineNative("vora_regex_find", 2,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]) ||
-                !std::holds_alternative<GcPtr<GcString>>(arguments[1]))
+            if (!arguments[0].isGcString() ||
+                !arguments[1].isGcString())
                 return nullptr;
-            const auto& pattern = std::get<GcPtr<GcString>>(arguments[0])->value;
-            const auto& text = std::get<GcPtr<GcString>>(arguments[1])->value;
+            const auto& pattern = arguments[0].asGcString()->value;
+            const auto& text = arguments[1].asGcString()->value;
             try {
                 std::regex re(pattern);
                 auto arr = GcHeap::instance().alloc<Array>();
@@ -1473,13 +1482,13 @@ void registerRegexBuiltins(VM& vm) {
     // replace(pattern, text, replacement) — replace all regex matches
     vm.defineNative("vora_regex_replace", 3,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]) ||
-                !std::holds_alternative<GcPtr<GcString>>(arguments[1]) ||
-                !std::holds_alternative<GcPtr<GcString>>(arguments[2]))
+            if (!arguments[0].isGcString() ||
+                !arguments[1].isGcString() ||
+                !arguments[2].isGcString())
                 return nullptr;
-            const auto& pattern = std::get<GcPtr<GcString>>(arguments[0])->value;
-            const auto& text = std::get<GcPtr<GcString>>(arguments[1])->value;
-            const auto& replacement = std::get<GcPtr<GcString>>(arguments[2])->value;
+            const auto& pattern = arguments[0].asGcString()->value;
+            const auto& text = arguments[1].asGcString()->value;
+            const auto& replacement = arguments[2].asGcString()->value;
             try {
                 std::regex re(pattern);
                 std::string result = std::regex_replace(text, re, replacement);
@@ -1492,11 +1501,11 @@ void registerRegexBuiltins(VM& vm) {
     // split(pattern, text) — split string by regex delimiter
     vm.defineNative("vora_regex_split", 2,
         [](const std::vector<Value>& arguments) -> Value {
-            if (!std::holds_alternative<GcPtr<GcString>>(arguments[0]) ||
-                !std::holds_alternative<GcPtr<GcString>>(arguments[1]))
+            if (!arguments[0].isGcString() ||
+                !arguments[1].isGcString())
                 return nullptr;
-            const auto& pattern = std::get<GcPtr<GcString>>(arguments[0])->value;
-            const auto& text = std::get<GcPtr<GcString>>(arguments[1])->value;
+            const auto& pattern = arguments[0].asGcString()->value;
+            const auto& text = arguments[1].asGcString()->value;
             try {
                 std::regex re(pattern);
                 auto arr = GcHeap::instance().alloc<Array>();

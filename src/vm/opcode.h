@@ -47,6 +47,12 @@ enum class OpCode : uint8_t {
     OP_SET_LOCAL,      // set local var, leave value on stack (operand: uint8_t slot index)
     OP_POPN,           // pop N values from stack (operand: uint8_t count)
 
+    // Superinstructions — fused pair opcodes (reduce dispatch overhead)
+    OP_GET_LOCAL_PROP,       // OP_GET_LOCAL + OP_GET_PROPERTY (u8 localSlot, u8 nameIdx)
+    OP_GET_LOCAL_PROP_WIDE,  // same, wide name (u8 localSlot, u16 nameIdx)
+    OP_GET_GLOBAL_PROP,      // OP_GET_GLOBAL + OP_GET_PROPERTY (u8 globalSlot, u8 nameIdx)
+    OP_GET_GLOBAL_PROP_WIDE, // same, wide global (u16 globalSlot, u8 nameIdx)
+
     // Globals
     OP_DEFINE_GLOBAL,     // define global var (operand: uint8_t name index)
     OP_GET_GLOBAL,        // push global var (operand: uint8_t name index)

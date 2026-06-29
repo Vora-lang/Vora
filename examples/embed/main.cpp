@@ -85,8 +85,8 @@ static int runString(VM& vm, const std::string& source,
 
 // ── Helper: Value → number ─────────────────────────────────────────────
 static double toNumber(const Value& v) {
-    if (std::holds_alternative<double>(v)) return std::get<double>(v);
-    if (std::holds_alternative<int64_t>(v)) return static_cast<double>(std::get<int64_t>(v));
+    if (v.isDouble()) return v.asDouble();
+    if (v.isInt()) return static_cast<double>(v.asInt());
     return 0.0;
 }
 
@@ -133,7 +133,7 @@ static void demo2_native_functions() {
 
     vm.defineNative("cpp_greet", 1,
         [](const std::vector<Value>& args) -> Value {
-            auto& s = std::get<GcPtr<GcString>>(args[0]);
+            auto& s = args[0].asGcString();
             return GcHeap::instance().alloc<GcString>(
                 "Hello, " + s->value + "! (from C++)"
             );
@@ -188,10 +188,10 @@ static void demo3_bidirectional_exchange() {
 
     vm.defineNative("game_set_score", 1,
         [state](const std::vector<Value>& args) -> Value {
-            if (std::holds_alternative<int64_t>(args[0]))
-                state->score = static_cast<int>(std::get<int64_t>(args[0]));
-            else if (std::holds_alternative<double>(args[0]))
-                state->score = static_cast<int>(std::get<double>(args[0]));
+            if (args[0].isInt())
+                state->score = static_cast<int>(args[0].asInt());
+            else if (args[0].isDouble())
+                state->score = static_cast<int>(args[0].asDouble());
             return nullptr;
         });
 

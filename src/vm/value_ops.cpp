@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <variant>
 
 #include "../gc/gc_heap.h"
 
@@ -18,15 +17,15 @@ namespace vora {
 // =========================================================================
 
 bool isTruthy(const Value& value) {
-    if (std::holds_alternative<std::nullptr_t>(value)) return false;
-    if (std::holds_alternative<bool>(value)) return std::get<bool>(value);
-    if (std::holds_alternative<int64_t>(value)) return std::get<int64_t>(value) != 0;
-    if (std::holds_alternative<double>(value)) return std::get<double>(value) != 0.0;
-    if (std::holds_alternative<GcPtr<GcString>>(value)) return !std::get<GcPtr<GcString>>(value)->value.empty();
-    if (std::holds_alternative<GcPtr<Array>>(value)) return !std::get<GcPtr<Array>>(value)->elements.empty();
-    if (std::holds_alternative<GcPtr<Dict>>(value)) return !std::get<GcPtr<Dict>>(value)->pairs.empty();
-    if (std::holds_alternative<GcPtr<Set>>(value)) return !std::get<GcPtr<Set>>(value)->elements.empty();
-    if (std::holds_alternative<GcPtr<Map>>(value)) return !std::get<GcPtr<Map>>(value)->pairs.empty();
+    if (value.isNull()) return false;
+    if (value.isBool()) return value.asBool();
+    if (value.isInt()) return value.asInt() != 0;
+    if (value.isDouble()) return value.asDouble() != 0.0;
+    if (value.isGcString()) return !value.asGcString()->value.empty();
+    if (value.isArray()) return !value.asArray()->elements.empty();
+    if (value.isDict()) return !value.asDict()->pairs.empty();
+    if (value.isSet()) return !value.asSet()->elements.empty();
+    if (value.isMap()) return !value.asMap()->pairs.empty();
     return true;
 }
 
@@ -39,32 +38,34 @@ bool valuesEqual(const Value& a, const Value& b) {
     if (isNumeric(a) && isNumeric(b))
         return toDouble(a) == toDouble(b);
 
-    if (a.index() != b.index()) return false;
+    if (a.dispatchTag() != b.dispatchTag()) return false;
 
-    if (std::holds_alternative<std::nullptr_t>(a)) return true;
-    if (std::holds_alternative<bool>(a)) return std::get<bool>(a) == std::get<bool>(b);
-    if (std::holds_alternative<GcPtr<GcString>>(a)) return std::get<GcPtr<GcString>>(a)->value == std::get<GcPtr<GcString>>(b)->value;
+    if (a.isDouble()) return a.raw() == b.raw();
+    if (a.isNull()) return true;
+    if (a.isBool()) return a.asBool() == b.asBool();
+    if (a.isInt()) return a.asInt() == b.asInt();
+    if (a.isGcString()) return a.asGcString()->value == b.asGcString()->value;
 
-    if (std::holds_alternative<GcPtr<Array>>(a))
-        return std::get<GcPtr<Array>>(a) == std::get<GcPtr<Array>>(b);
-    if (std::holds_alternative<GcPtr<Dict>>(a))
-        return std::get<GcPtr<Dict>>(a) == std::get<GcPtr<Dict>>(b);
-    if (std::holds_alternative<GcPtr<Callable>>(a))
-        return std::get<GcPtr<Callable>>(a) == std::get<GcPtr<Callable>>(b);
-    if (std::holds_alternative<GcPtr<ObjectInstance>>(a))
-        return std::get<GcPtr<ObjectInstance>>(a) == std::get<GcPtr<ObjectInstance>>(b);
-    if (std::holds_alternative<GcPtr<FunctionPrototype>>(a))
-        return std::get<GcPtr<FunctionPrototype>>(a) == std::get<GcPtr<FunctionPrototype>>(b);
-    if (std::holds_alternative<GcPtr<ClassDefinition>>(a))
-        return std::get<GcPtr<ClassDefinition>>(a) == std::get<GcPtr<ClassDefinition>>(b);
-    if (std::holds_alternative<GcPtr<Iterator>>(a))
-        return std::get<GcPtr<Iterator>>(a) == std::get<GcPtr<Iterator>>(b);
-    if (std::holds_alternative<GcPtr<Generator>>(a))
-        return std::get<GcPtr<Generator>>(a) == std::get<GcPtr<Generator>>(b);
-    if (std::holds_alternative<GcPtr<Set>>(a))
-        return std::get<GcPtr<Set>>(a) == std::get<GcPtr<Set>>(b);
-    if (std::holds_alternative<GcPtr<Map>>(a))
-        return std::get<GcPtr<Map>>(a) == std::get<GcPtr<Map>>(b);
+    if (a.isArray())
+        return a.asArray() == b.asArray();
+    if (a.isDict())
+        return a.asDict() == b.asDict();
+    if (a.isCallable())
+        return a.asCallable() == b.asCallable();
+    if (a.isObjectInstance())
+        return a.asObjectInstance() == b.asObjectInstance();
+    if (a.isFunctionPrototype())
+        return a.asFunctionPrototype() == b.asFunctionPrototype();
+    if (a.isClassDefinition())
+        return a.asClassDefinition() == b.asClassDefinition();
+    if (a.isIterator())
+        return a.asIterator() == b.asIterator();
+    if (a.isGenerator())
+        return a.asGenerator() == b.asGenerator();
+    if (a.isSet())
+        return a.asSet() == b.asSet();
+    if (a.isMap())
+        return a.asMap() == b.asMap();
 
     return false;
 }
@@ -93,101 +94,100 @@ Value addValues(const Value& a, const Value& b, bool& error) {
 
     // int + int → int (with overflow detection); otherwise promote to double
     if (isNumeric(a) && isNumeric(b)) {
-        if (std::holds_alternative<int64_t>(a) && std::holds_alternative<int64_t>(b)) {
-            int64_t av = std::get<int64_t>(a);
-            int64_t bv = std::get<int64_t>(b);
+        if (a.isInt() && b.isInt()) {
+            int64_t av = a.asInt();
+            int64_t bv = b.asInt();
             // Detect signed overflow: (av > 0 && bv > INT64_MAX - av) ||
             //                       (av < 0 && bv < INT64_MIN - av)
             if ((bv > 0 && av > INT64_MAX - bv) ||
                 (bv < 0 && av < INT64_MIN - bv)) {
-                return static_cast<double>(av) + static_cast<double>(bv);
+                return Value(static_cast<double>(av) + static_cast<double>(bv));
             }
-            return av + bv;
+            return Value(av + bv);
         }
-        return toDouble(a) + toDouble(b);
+        return Value(toDouble(a) + toDouble(b));
     }
 
-    if (std::holds_alternative<GcPtr<GcString>>(a) && std::holds_alternative<GcPtr<GcString>>(b)) {
+    if (a.isGcString() && b.isGcString()) {
         // Single allocation: copy a, then append b in-place
-        std::string result = std::get<GcPtr<GcString>>(a)->value;
-        result += std::get<GcPtr<GcString>>(b)->value;
-        return GcHeap::instance().alloc<GcString>(std::move(result));
+        std::string result = a.asGcString()->value;
+        result += b.asGcString()->value;
+        return Value(GcHeap::instance().alloc<GcString>(std::move(result)));
     }
 
-    if (std::holds_alternative<GcPtr<GcString>>(a)) {
+    if (a.isGcString()) {
         // Single allocation: copy a, then stream-append b
-        std::string result = std::get<GcPtr<GcString>>(a)->value;
+        std::string result = a.asGcString()->value;
         valueToStringAppend(result, b);
-        return GcHeap::instance().alloc<GcString>(std::move(result));
+        return Value(GcHeap::instance().alloc<GcString>(std::move(result)));
     }
-    if (std::holds_alternative<GcPtr<GcString>>(b)) {
-        // Two-alloc tradeoff: stringify a, then append b (order matters for semantics)
-        // We stream a into a fresh string, then append b's raw value
+    if (b.isGcString()) {
+        // Two-alloc tradeoff: stringify a, then append b
         std::string result;
         valueToStringAppend(result, a);
-        result += std::get<GcPtr<GcString>>(b)->value;
-        return GcHeap::instance().alloc<GcString>(std::move(result));
+        result += b.asGcString()->value;
+        return Value(GcHeap::instance().alloc<GcString>(std::move(result)));
     }
 
-    if (std::holds_alternative<GcPtr<Array>>(a) && std::holds_alternative<GcPtr<Array>>(b)) {
+    if (a.isArray() && b.isArray()) {
         auto result = GcHeap::instance().alloc<Array>();
-        const auto& leftArr = std::get<GcPtr<Array>>(a)->elements;
-        const auto& rightArr = std::get<GcPtr<Array>>(b)->elements;
+        const auto& leftArr = a.asArray()->elements;
+        const auto& rightArr = b.asArray()->elements;
         result->elements.reserve(leftArr.size() + rightArr.size());
         result->elements.insert(result->elements.end(), leftArr.begin(), leftArr.end());
         result->elements.insert(result->elements.end(), rightArr.begin(), rightArr.end());
-        return result;
+        return Value(result);
     }
 
-    if (std::holds_alternative<GcPtr<Dict>>(a) && std::holds_alternative<GcPtr<Dict>>(b)) {
+    if (a.isDict() && b.isDict()) {
         auto result = GcHeap::instance().alloc<Dict>();
-        const auto& leftDict = std::get<GcPtr<Dict>>(a)->pairs;
-        const auto& rightDict = std::get<GcPtr<Dict>>(b)->pairs;
+        const auto& leftDict = a.asDict()->pairs;
+        const auto& rightDict = b.asDict()->pairs;
         result->pairs = leftDict;
         for (const auto& [k, v] : rightDict) {
             result->pairs[k] = v;  // right overwrites left
         }
-        return result;
+        return Value(result);
     }
 
-    if (std::holds_alternative<GcPtr<Set>>(a) && std::holds_alternative<GcPtr<Set>>(b)) {
+    if (a.isSet() && b.isSet()) {
         auto result = GcHeap::instance().alloc<Set>();
-        result->elements = std::get<GcPtr<Set>>(a)->elements;
-        for (const auto& e : std::get<GcPtr<Set>>(b)->elements) {
+        result->elements = a.asSet()->elements;
+        for (const auto& e : b.asSet()->elements) {
             result->elements.insert(e);
         }
-        return result;
+        return Value(result);
     }
 
-    if (std::holds_alternative<GcPtr<Map>>(a) && std::holds_alternative<GcPtr<Map>>(b)) {
+    if (a.isMap() && b.isMap()) {
         auto result = GcHeap::instance().alloc<Map>();
-        result->pairs = std::get<GcPtr<Map>>(a)->pairs;
-        for (const auto& [k, v] : std::get<GcPtr<Map>>(b)->pairs) {
+        result->pairs = a.asMap()->pairs;
+        for (const auto& [k, v] : b.asMap()->pairs) {
             result->pairs[k] = v;  // right overwrites left
         }
-        return result;
+        return Value(result);
     }
 
-    if (std::holds_alternative<GcPtr<Array>>(a)) {
+    if (a.isArray()) {
         auto result = GcHeap::instance().alloc<Array>();
-        const auto& leftArr = std::get<GcPtr<Array>>(a)->elements;
+        const auto& leftArr = a.asArray()->elements;
         result->elements.reserve(leftArr.size() + 1);
         result->elements.insert(result->elements.end(), leftArr.begin(), leftArr.end());
         result->elements.push_back(b);
-        return result;
+        return Value(result);
     }
 
-    if (std::holds_alternative<GcPtr<Array>>(b)) {
+    if (b.isArray()) {
         auto result = GcHeap::instance().alloc<Array>();
-        const auto& rightArr = std::get<GcPtr<Array>>(b)->elements;
+        const auto& rightArr = b.asArray()->elements;
         result->elements.reserve(1 + rightArr.size());
         result->elements.push_back(a);
         result->elements.insert(result->elements.end(), rightArr.begin(), rightArr.end());
-        return result;
+        return Value(result);
     }
 
     error = true;
-    return nullptr;
+    return Value(nullptr);
 }
 
 } // namespace vora

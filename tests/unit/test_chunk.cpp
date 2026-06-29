@@ -164,6 +164,6 @@ TEST_CASE("chunk_writeConstant_emits_opcode_and_index") {
     CHECK(c.code[0] == static_cast<uint8_t>(OpCode::OP_CONSTANT));
     CHECK(c.code[1] == 0);  // first constant gets index 0
     REQUIRE(c.constants.size() == 1);
-    CHECK(std::holds_alternative<int64_t>(c.constants[0]));
-    CHECK(std::get<int64_t>(c.constants[0]) == 42);
+    CHECK(c.constants[0].isInt());
+    CHECK(c.constants[0].asInt() == 42);
 }

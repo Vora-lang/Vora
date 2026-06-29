@@ -116,6 +116,21 @@ public:
     void defineNative(const std::string& name, int arity,
                       std::function<Value(const std::vector<Value>&)> fn);
 
+    // --- Embedding API: direct global variable access ---
+
+    // Read a global variable. Returns nullptr (Value null) if not defined.
+    Value getGlobal(const std::string& name) const;
+
+    // Write a global variable. Creates the slot if it does not exist.
+    void setGlobal(const std::string& name, const Value& value);
+
+    // Check whether a global variable exists and is defined.
+    bool hasGlobal(const std::string& name) const;
+
+    // Convenience alias for defineNative(name, -1, fn) — variadic by default.
+    void registerNativeFunction(const std::string& name,
+                                std::function<Value(const std::vector<Value>&)> fn);
+
     // Initialize global slots from compiler's interning table.
     void initGlobals(const std::vector<std::string>& names);
 

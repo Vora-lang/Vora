@@ -37,67 +37,37 @@ std::string ASTPrinter::print(const Program* program) {
 // ExprVisitor<std::string> — visit methods return strings directly
 // =========================================================================
 
-std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
-
-    return std::visit([](auto&& arg) -> std::string {
-
-        using T = std::decay_t<decltype(arg)>;
-
-        if constexpr (std::is_same_v<T, std::nullptr_t>) {
-            return "null";
-        } else if constexpr (std::is_same_v<T, bool>) {
-            return arg ? "true" : "false";
-        } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
-            return arg->value;
-        } else if constexpr (std::is_same_v<T, GcPtr<Array>>) {
+static std::string literalToShortString(const Value& v) {
+    if (v.isDouble()) return std::to_string(v.asDouble());
+    switch (v.tag()) {
+        case ValueTag::Null:   return "null";
+        case ValueTag::Bool:   return v.asBool() ? "true" : "false";
+        case ValueTag::Int:    return std::to_string(v.asInt());
+        case ValueTag::GcString: return v.asGcString()->value;
+        case ValueTag::Array: {
             std::string out = "[";
-            for (size_t i = 0; i < arg->elements.size(); ++i) {
-                if (i > 0) {
-                    out += ", ";
-                }
-                out += std::visit([](auto&& inner) -> std::string {
-                    using U = std::decay_t<decltype(inner)>;
-                    if constexpr (std::is_same_v<U, std::nullptr_t>) return "null";
-                    else if constexpr (std::is_same_v<U, bool>) return inner ? "true" : "false";
-                    else if constexpr (std::is_same_v<U, GcPtr<GcString>>) return inner->value;
-                    else if constexpr (std::is_same_v<U, GcPtr<Callable>>) return "<fn>";
-                    else if constexpr (std::is_same_v<U, GcPtr<Array>>) return "[array]";
-                    else if constexpr (std::is_same_v<U, GcPtr<ObjectInstance>>) return "<object>";
-                    else if constexpr (std::is_same_v<U, GcPtr<FunctionPrototype>>) return "<proto>";
-                    else if constexpr (std::is_same_v<U, GcPtr<Dict>>) return "{dict}";
-                    else if constexpr (std::is_same_v<U, GcPtr<Set>>) return "[set]";
-                    else if constexpr (std::is_same_v<U, GcPtr<Map>>) return "[map]";
-                    else if constexpr (std::is_same_v<U, GcPtr<ClassDefinition>>) return "<class>";
-                    else if constexpr (std::is_same_v<U, GcPtr<Iterator>>) return "<iterator>";
-                    else if constexpr (std::is_same_v<U, GcPtr<Generator>>) return "<generator>";
-                    else return std::to_string(inner);
-                }, arg->elements[i]);
+            for (size_t i = 0; i < v.asArray()->elements.size(); ++i) {
+                if (i > 0) out += ", ";
+                out += literalToShortString(v.asArray()->elements[i]);
             }
             out += "]";
             return out;
-        } else if constexpr (std::is_same_v<T, GcPtr<Callable>>) {
-            return "<fn>";
-        } else if constexpr (std::is_same_v<T, GcPtr<ObjectInstance>>) {
-            return "<" + arg->className + " object>";
-        } else if constexpr (std::is_same_v<T, GcPtr<FunctionPrototype>>) {
-            return "<proto " + arg->name + ">";
-        } else if constexpr (std::is_same_v<T, GcPtr<Dict>>) {
-            return "{dict}";
-        } else if constexpr (std::is_same_v<T, GcPtr<Set>>) {
-            return "[set]";
-        } else if constexpr (std::is_same_v<T, GcPtr<Map>>) {
-            return "[map]";
-        } else if constexpr (std::is_same_v<T, GcPtr<ClassDefinition>>) {
-            return "<class " + arg->name + ">";
-        } else if constexpr (std::is_same_v<T, GcPtr<Iterator>>) {
-            return "<iterator>";
-        } else if constexpr (std::is_same_v<T, GcPtr<Generator>>) {
-            return "<generator>";
-        } else {
-            return std::to_string(arg);
         }
+        case ValueTag::Callable:         return "<fn>";
+        case ValueTag::ObjectInstance:   return "<" + v.asObjectInstance()->className + " object>";
+        case ValueTag::FunctionPrototype: return "<proto " + v.asFunctionPrototype()->name + ">";
+        case ValueTag::Dict:             return "{dict}";
+        case ValueTag::Set:              return "[set]";
+        case ValueTag::Map:              return "[map]";
+        case ValueTag::ClassDefinition:  return "<class>";
+        case ValueTag::Iterator:         return "<iterator>";
+        case ValueTag::Generator:        return "<generator>";
+    }
+    return "<value>";
+}
 
-    }, expr.value);
+std::string ASTPrinter::visitLiteralExpr(const LiteralExpr& expr) {
+    return literalToShortString(expr.value);
 }
 
 std::string ASTPrinter::visitVariableExpr(const VariableExpr& expr) {

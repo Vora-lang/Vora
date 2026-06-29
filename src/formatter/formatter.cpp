@@ -233,56 +233,50 @@ std::string SourceFormatter::formatParams(const std::vector<ParamDecl>& params) 
 // =====================================================================
 
 std::string SourceFormatter::visitLiteralExpr(const LiteralExpr& expr) {
-    return std::visit([](auto&& arg) -> std::string {
-        using T = std::decay_t<decltype(arg)>;
-
-        if constexpr (std::is_same_v<T, std::nullptr_t>) {
-            return "null";
-        } else if constexpr (std::is_same_v<T, bool>) {
-            return arg ? "true" : "false";
-        } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
-            // Output as a quoted string literal. The value stored is the
-            // decoded string content (no surrounding quotes), so we add them.
-            // Simple escaping: backslash + double-quote.
-            std::string out = "\"";
-            for (char c : arg->value) {
-                if (c == '"') {
-                    out += "\\\"";
-                } else if (c == '\\') {
-                    out += "\\\\";
-                } else if (c == '\n') {
-                    out += "\\n";
-                } else if (c == '\r') {
-                    out += "\\r";
-                } else if (c == '\t') {
-                    out += "\\t";
-                } else {
-                    out += c;
-                }
+    const auto& v = expr.value;
+    if (v.isNull()) return "null";
+    if (v.isBool()) return v.asBool() ? "true" : "false";
+    if (v.isGcString()) {
+        // Output as a quoted string literal. The value stored is the
+        // decoded string content (no surrounding quotes), so we add them.
+        // Simple escaping: backslash + double-quote.
+        std::string out = "\"";
+        for (char c : v.asGcString()->value) {
+            if (c == '"') {
+                out += "\\\"";
+            } else if (c == '\\') {
+                out += "\\\\";
+            } else if (c == '\n') {
+                out += "\\n";
+            } else if (c == '\r') {
+                out += "\\r";
+            } else if (c == '\t') {
+                out += "\\t";
+            } else {
+                out += c;
             }
-            out += "\"";
-            return out;
-        } else if constexpr (std::is_same_v<T, int64_t>) {
-            return std::to_string(arg);
-        } else if constexpr (std::is_same_v<T, double>) {
-            // Format doubles compactly — avoid trailing zeros.
-            std::stringstream ss;
-            ss << arg;
-            std::string s = ss.str();
-            // If it has a decimal point and no exponent, strip trailing zeros
-            if (s.find('.') != std::string::npos &&
-                s.find('e') == std::string::npos &&
-                s.find('E') == std::string::npos) {
-                while (s.back() == '0') s.pop_back();
-                if (s.back() == '.') s.pop_back();
-            }
-            return s;
-        } else {
-            // All other Value types (GcPtr<Array>, GcPtr<Dict>, etc.)
-            // should not appear as literal expressions at format time.
-            return "<value>";
         }
-    }, expr.value);
+        out += "\"";
+        return out;
+    }
+    if (v.isInt()) return std::to_string(v.asInt());
+    if (v.isDouble()) {
+        // Format doubles compactly — avoid trailing zeros.
+        std::stringstream ss;
+        ss << v.asDouble();
+        std::string s = ss.str();
+        // If it has a decimal point and no exponent, strip trailing zeros
+        if (s.find('.') != std::string::npos &&
+            s.find('e') == std::string::npos &&
+            s.find('E') == std::string::npos) {
+            while (s.back() == '0') s.pop_back();
+            if (s.back() == '.') s.pop_back();
+        }
+        return s;
+    }
+    // All other Value types (GcPtr<Array>, GcPtr<Dict>, etc.)
+    // should not appear as literal expressions at format time.
+    return "<value>";
 }
 
 std::string SourceFormatter::visitBinaryExpr(const BinaryExpr& expr) {
@@ -384,8 +378,8 @@ std::string SourceFormatter::visitDictExpr(const DictExpr& expr) {
         // both represent plain string keys, so output without quotes.
         const Expr* key = expr.pairs[i].first.get();
         if (auto* lit = dynamic_cast<const LiteralExpr*>(key)) {
-            if (std::holds_alternative<GcPtr<GcString>>(lit->value)) {
-                ss << std::get<GcPtr<GcString>>(lit->value)->value;
+            if (lit->value.isGcString()) {
+                ss << lit->value.asGcString()->value;
             } else {
                 ss << formatExpr(*key, 0);
             }

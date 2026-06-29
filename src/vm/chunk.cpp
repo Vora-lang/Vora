@@ -43,6 +43,10 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_LESS:           return "OP_LESS";
         case OpCode::OP_GET_LOCAL:      return "OP_GET_LOCAL";
         case OpCode::OP_SET_LOCAL:      return "OP_SET_LOCAL";
+        case OpCode::OP_GET_LOCAL_PROP:       return "OP_GET_LOCAL_PROP";
+        case OpCode::OP_GET_LOCAL_PROP_WIDE:  return "OP_GET_LOCAL_PROP_WIDE";
+        case OpCode::OP_GET_GLOBAL_PROP:      return "OP_GET_GLOBAL_PROP";
+        case OpCode::OP_GET_GLOBAL_PROP_WIDE: return "OP_GET_GLOBAL_PROP_WIDE";
         case OpCode::OP_DEFINE_GLOBAL:  return "OP_DEFINE_GLOBAL";
         case OpCode::OP_GET_GLOBAL:      return "OP_GET_GLOBAL";
         case OpCode::OP_SET_GLOBAL:      return "OP_SET_GLOBAL";
@@ -90,39 +94,39 @@ static const char* opcodeName(OpCode op) {
 // =========================================================================
 
 static std::string constantToString(const Value& value) {
-    if (std::holds_alternative<std::nullptr_t>(value)) return "null";
-    if (std::holds_alternative<bool>(value)) return std::get<bool>(value) ? "true" : "false";
-    if (std::holds_alternative<int64_t>(value)) {
-        return std::to_string(std::get<int64_t>(value));
+    if (value.isNull()) return "null";
+    if (value.isBool()) return value.asBool() ? "true" : "false";
+    if (value.isInt()) {
+        return std::to_string(value.asInt());
     }
-    if (std::holds_alternative<double>(value)) {
-        double d = std::get<double>(value);
+    if (value.isDouble()) {
+        double d = value.asDouble();
         if (std::floor(d) == d) return std::to_string(static_cast<int64_t>(d));
         return std::to_string(d);
     }
-    if (std::holds_alternative<GcPtr<GcString>>(value)) {
-        return "'" + std::get<GcPtr<GcString>>(value)->value + "'";
+    if (value.isGcString()) {
+        return "'" + value.asGcString()->value + "'";
     }
-    if (std::holds_alternative<GcPtr<FunctionPrototype>>(value)) {
-        return "<proto " + std::get<GcPtr<FunctionPrototype>>(value)->name + ">";
+    if (value.isFunctionPrototype()) {
+        return "<proto " + value.asFunctionPrototype()->name + ">";
     }
-    if (std::holds_alternative<GcPtr<ClassDefinition>>(value)) {
-        return "<class " + std::get<GcPtr<ClassDefinition>>(value)->name + ">";
+    if (value.isClassDefinition()) {
+        return "<class " + value.asClassDefinition()->name + ">";
     }
-    if (std::holds_alternative<GcPtr<Array>>(value)) {
+    if (value.isArray()) {
         return "[array]";
     }
-    if (std::holds_alternative<GcPtr<Set>>(value)) {
+    if (value.isSet()) {
         return "[set]";
     }
-    if (std::holds_alternative<GcPtr<Map>>(value)) {
+    if (value.isMap()) {
         return "[map]";
     }
-    if (std::holds_alternative<GcPtr<Callable>>(value)) {
+    if (value.isCallable()) {
         return "<callable>";
     }
-    if (std::holds_alternative<GcPtr<ObjectInstance>>(value)) {
-        return "<instance " + std::get<GcPtr<ObjectInstance>>(value)->className + ">";
+    if (value.isObjectInstance()) {
+        return "<instance " + value.asObjectInstance()->className + ">";
     }
     return "[unknown]";
 }
@@ -177,22 +181,23 @@ void Chunk::writeAt(size_t offset, uint8_t byte) {
 
 size_t Chunk::addConstant(Value value) {
     // O(1) hash lookup for string constants.
-    if (auto* s = std::get_if<GcPtr<GcString>>(&value)) {
-        auto it = stringConstantIndices_.find((*s)->value);
+    if (value.isGcString()) {
+        auto it = stringConstantIndices_.find(value.asGcString()->value);
         if (it != stringConstantIndices_.end()) return it->second;
     }
 
     // O(1) hash lookup for int64_t constants (very common).
-    if (auto* iv = std::get_if<int64_t>(&value)) {
-        auto it = intConstantIndices_.find(*iv);
+    if (value.isInt()) {
+        auto it = intConstantIndices_.find(value.asInt());
         if (it != intConstantIndices_.end()) return it->second;
     }
 
     // O(1) hash lookup for double constants.
     // NaN is excluded — NaN != NaN per IEEE 754, so it can never be a duplicate.
-    if (auto* dv = std::get_if<double>(&value)) {
-        if (!std::isnan(*dv)) {
-            auto it = doubleConstantIndices_.find(*dv);
+    if (value.isDouble()) {
+        double d = value.asDouble();
+        if (!std::isnan(d)) {
+            auto it = doubleConstantIndices_.find(d);
             if (it != doubleConstantIndices_.end()) return it->second;
         }
     }
@@ -203,16 +208,13 @@ size_t Chunk::addConstant(Value value) {
     // FunctionPrototype/ClassDefinition/etc. objects will ever compare equal,
     // so the linear scan would waste cycles without ever finding a match.
     // double and int64_t are handled exclusively by their hash maps above.
-    if (value.index() <= 3) {  // nullptr_t(0), double(1), int64_t(2), bool(3)
+    if (value.isNull() || value.isBool()) {
         for (size_t i = 0; i < constants.size(); i++) {
             const auto& existing = constants[i];
-            if (existing.index() != value.index()) continue;
-
-            if (std::holds_alternative<std::nullptr_t>(value)) {
+            if (value.isNull() && existing.isNull()) {
                 return i;
             }
-            if (std::holds_alternative<bool>(value) &&
-                std::get<bool>(existing) == std::get<bool>(value)) {
+            if (value.isBool() && existing.isBool() && existing.asBool() == value.asBool()) {
                 return i;
             }
         }
@@ -222,13 +224,14 @@ size_t Chunk::addConstant(Value value) {
     size_t idx = constants.size();
     constants.push_back(value);
 
-    if (auto* s = std::get_if<GcPtr<GcString>>(&constants[idx])) {
-        stringConstantIndices_[(*s)->value] = idx;
-    } else if (auto* iv = std::get_if<int64_t>(&constants[idx])) {
-        intConstantIndices_[*iv] = idx;
-    } else if (auto* dv = std::get_if<double>(&constants[idx])) {
-        if (!std::isnan(*dv)) {
-            doubleConstantIndices_[*dv] = idx;
+    if (value.isGcString()) {
+        stringConstantIndices_[value.asGcString()->value] = idx;
+    } else if (value.isInt()) {
+        intConstantIndices_[value.asInt()] = idx;
+    } else if (value.isDouble()) {
+        double d = value.asDouble();
+        if (!std::isnan(d)) {
+            doubleConstantIndices_[d] = idx;
         }
     }
 
@@ -326,6 +329,33 @@ size_t Chunk::disassembleInstruction(size_t offset) const {
             uint8_t index = code[offset + 1];
             std::printf("%-16s %4d\n", opcodeName(instruction), index);
             return offset + 2;
+        }
+        // Superinstructions: fused GET_LOCAL/GET_GLOBAL + GET_PROPERTY
+        case OpCode::OP_GET_LOCAL_PROP: {
+            uint8_t slot = code[offset + 1];
+            uint8_t nameIdx = code[offset + 2];
+            std::printf("%-16s slot=%-3d name=%-4d\n", opcodeName(instruction), slot, nameIdx);
+            return offset + 3;
+        }
+        case OpCode::OP_GET_LOCAL_PROP_WIDE: {
+            uint8_t slot = code[offset + 1];
+            uint16_t nameIdx = static_cast<uint16_t>(code[offset + 2])
+                             | (static_cast<uint16_t>(code[offset + 3]) << 8);
+            std::printf("%-16s slot=%-3d name=%-4d\n", opcodeName(instruction), slot, nameIdx);
+            return offset + 4;
+        }
+        case OpCode::OP_GET_GLOBAL_PROP: {
+            uint8_t slot = code[offset + 1];
+            uint8_t nameIdx = code[offset + 2];
+            std::printf("%-16s slot=%-3d name=%-4d\n", opcodeName(instruction), slot, nameIdx);
+            return offset + 3;
+        }
+        case OpCode::OP_GET_GLOBAL_PROP_WIDE: {
+            uint16_t slot = static_cast<uint16_t>(code[offset + 1])
+                          | (static_cast<uint16_t>(code[offset + 2]) << 8);
+            uint8_t nameIdx = code[offset + 3];
+            std::printf("%-16s slot=%-3d name=%-4d\n", opcodeName(instruction), slot, nameIdx);
+            return offset + 4;
         }
         case OpCode::OP_POPN: {
             uint8_t index = code[offset + 1];

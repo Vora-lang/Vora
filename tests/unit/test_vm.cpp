@@ -153,16 +153,16 @@ TEST_CASE("vm_addValues_int_plus_int") {
     Value result = addValues(Value(static_cast<int64_t>(3)),
                              Value(static_cast<int64_t>(4)), err);
     CHECK_FALSE(err);
-    CHECK(std::holds_alternative<int64_t>(result));
-    CHECK(std::get<int64_t>(result) == 7);
+    CHECK(result.isInt());
+    CHECK(result.asInt() == 7);
 }
 
 TEST_CASE("vm_addValues_int_plus_double") {
     bool err = false;
     Value result = addValues(Value(static_cast<int64_t>(3)), Value(4.5), err);
     CHECK_FALSE(err);
-    CHECK(std::holds_alternative<double>(result));
-    CHECK(std::get<double>(result) == 7.5);
+    CHECK(result.isDouble());
+    CHECK(result.asDouble() == 7.5);
 }
 
 TEST_CASE("vm_addValues_string_concat") {
@@ -170,8 +170,8 @@ TEST_CASE("vm_addValues_string_concat") {
     Value result = addValues(Value(GcHeap::instance().alloc<GcString>("hello ")),
                              Value(GcHeap::instance().alloc<GcString>("world")), err);
     CHECK_FALSE(err);
-    CHECK(std::holds_alternative<GcPtr<GcString>>(result));
-    CHECK(std::get<GcPtr<GcString>>(result)->value == "hello world");
+    CHECK(result.isGcString());
+    CHECK(result.asGcString()->value == "hello world");
 }
 
 TEST_CASE("vm_addValues_string_plus_int") {
@@ -179,8 +179,8 @@ TEST_CASE("vm_addValues_string_plus_int") {
     Value result = addValues(Value(GcHeap::instance().alloc<GcString>("x=")),
                              Value(static_cast<int64_t>(42)), err);
     CHECK_FALSE(err);
-    CHECK(std::holds_alternative<GcPtr<GcString>>(result));
-    CHECK(std::get<GcPtr<GcString>>(result)->value == "x=42");
+    CHECK(result.isGcString());
+    CHECK(result.asGcString()->value == "x=42");
 }
 
 TEST_CASE("vm_addValues_array_concat") {
@@ -191,11 +191,11 @@ TEST_CASE("vm_addValues_array_concat") {
     b->elements.push_back(Value(static_cast<int64_t>(2)));
     Value result = addValues(Value(a), Value(b), err);
     CHECK_FALSE(err);
-    CHECK(std::holds_alternative<GcPtr<Array>>(result));
-    auto arr = std::get<GcPtr<Array>>(result);
+    CHECK(result.isArray());
+    auto arr = result.asArray();
     REQUIRE(arr->elements.size() == 2);
-    CHECK(std::get<int64_t>(arr->elements[0]) == 1);
-    CHECK(std::get<int64_t>(arr->elements[1]) == 2);
+    CHECK(arr->elements[0].asInt() == 1);
+    CHECK(arr->elements[1].asInt() == 2);
 }
 
 // ============================================================================

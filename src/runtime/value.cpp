@@ -20,69 +20,69 @@ static inline void hashCombine(size_t& seed, size_t h) {
 }
 
 size_t ValueHash::operator()(const Value& v) const {
-    return std::visit([](auto&& arg) -> size_t {
-        using T = std::decay_t<decltype(arg)>;
-
-        if constexpr (std::is_same_v<T, std::nullptr_t>) {
-            return 0;
-        } else if constexpr (std::is_same_v<T, bool>) {
-            return std::hash<bool>{}(arg);
-        } else if constexpr (std::is_same_v<T, int64_t>) {
-            return std::hash<int64_t>{}(arg);
-        } else if constexpr (std::is_same_v<T, double>) {
-            // Normalize -0.0 to 0.0, and integer-valued doubles to int64
-            double d = (arg == -0.0) ? 0.0 : arg;
-            if (d == static_cast<double>(static_cast<int64_t>(d))
-                && d >= static_cast<double>(INT64_MIN)
-                && d < static_cast<double>(INT64_MAX)) {
-                return std::hash<int64_t>{}(static_cast<int64_t>(d));
-            }
-            return std::hash<double>{}(d);
-        } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
-            return std::hash<std::string>{}(arg->value);
-        } else if constexpr (std::is_same_v<T, GcPtr<Array>>) {
-            size_t h = 0;
-            for (const auto& e : arg->elements) {
-                hashCombine(h, ValueHash{}(e));
-            }
-            return h;
-        } else if constexpr (std::is_same_v<T, GcPtr<Dict>>) {
-            // Dict iteration order is non-deterministic; sort keys for determinism
-            std::vector<std::string> keys;
-            keys.reserve(arg->pairs.size());
-            for (const auto& [k, v] : arg->pairs) keys.push_back(k);
-            std::sort(keys.begin(), keys.end());
-            size_t h = 0;
-            for (const auto& k : keys) {
-                hashCombine(h, std::hash<std::string>{}(k));
-                hashCombine(h, ValueHash{}(arg->pairs.at(k)));
-            }
-            return h;
-        } else if constexpr (std::is_same_v<T, GcPtr<Set>>) {
-            // Order-independent: XOR individual hashes
-            size_t h = 0;
-            for (const auto& e : arg->elements) {
-                h ^= ValueHash{}(e);
-            }
-            return h;
-        } else if constexpr (std::is_same_v<T, GcPtr<Map>>) {
-            // Order-independent XOR of (keyHash ^ valueHash)
-            size_t h = 0;
-            for (const auto& [k, v] : arg->pairs) {
-                h ^= (ValueHash{}(k) ^ ValueHash{}(v));
-            }
-            return h;
-        } else {
-            // Identity hash for functions, objects, classes, iterators, generators
-            // (GcPtr stores a raw pointer)
-            if constexpr (std::is_pointer_v<T>) {
-                return std::hash<const void*>{}(static_cast<const void*>(arg));
-            } else {
-                // GcPtr<T> — extract the raw pointer
-                return std::hash<const void*>{}(static_cast<const void*>(arg.get()));
-            }
+    if (v.isDouble()) {
+        double d = v.asDouble();
+        // Normalize -0.0 to 0.0, and integer-valued doubles to int64
+        d = (d == -0.0) ? 0.0 : d;
+        if (d == static_cast<double>(static_cast<int64_t>(d))
+            && d >= static_cast<double>(INT64_MIN)
+            && d < static_cast<double>(INT64_MAX)) {
+            return std::hash<int64_t>{}(static_cast<int64_t>(d));
         }
-    }, v);
+        return std::hash<double>{}(d);
+    }
+
+    switch (v.tag()) {
+    case ValueTag::Null:
+        return 0;
+    case ValueTag::Bool:
+        return std::hash<bool>{}(v.asBool());
+    case ValueTag::Int:
+        return std::hash<int64_t>{}(v.asInt());
+    case ValueTag::GcString:
+        return std::hash<std::string>{}(v.asGcString()->value);
+    case ValueTag::Array: {
+        size_t h = 0;
+        for (const auto& e : v.asArray()->elements) {
+            hashCombine(h, ValueHash{}(e));
+        }
+        return h;
+    }
+    case ValueTag::Dict: {
+        // Dict iteration order is non-deterministic; sort keys for determinism
+        std::vector<std::string> keys;
+        const auto& pairs = v.asDict()->pairs;
+        keys.reserve(pairs.size());
+        for (const auto& [k, val] : pairs) keys.push_back(k);
+        std::sort(keys.begin(), keys.end());
+        size_t h = 0;
+        for (const auto& k : keys) {
+            hashCombine(h, std::hash<std::string>{}(k));
+            hashCombine(h, ValueHash{}(pairs.at(k)));
+        }
+        return h;
+    }
+    case ValueTag::Set: {
+        // Order-independent: XOR individual hashes
+        size_t h = 0;
+        for (const auto& e : v.asSet()->elements) {
+            h ^= ValueHash{}(e);
+        }
+        return h;
+    }
+    case ValueTag::Map: {
+        // Order-independent XOR of (keyHash ^ valueHash)
+        size_t h = 0;
+        for (const auto& [k, val] : v.asMap()->pairs) {
+            h ^= (ValueHash{}(k) ^ ValueHash{}(val));
+        }
+        return h;
+    }
+    default:
+        // Identity hash for functions, objects, classes, iterators, generators
+        // (all GcObject-backed types with pointer identity)
+        return std::hash<const void*>{}(static_cast<const void*>(v.asObject()));
+    }
 }
 
 // =========================================================================
@@ -94,29 +94,37 @@ bool ValueEqual::operator()(const Value& a, const Value& b) const {
     if (isNumeric(a) && isNumeric(b))
         return toDouble(a) == toDouble(b);
 
-    // Different variant index → not equal
-    if (a.index() != b.index()) return false;
+    // Different dispatch tag → not equal
+    if (a.dispatchTag() != b.dispatchTag()) return false;
 
-    // Same index → dispatch by type
-    if (std::holds_alternative<std::nullptr_t>(a)) return true;
-    if (std::holds_alternative<bool>(a))
-        return std::get<bool>(a) == std::get<bool>(b);
-    if (std::holds_alternative<GcPtr<GcString>>(a))
-        return std::get<GcPtr<GcString>>(a)->value == std::get<GcPtr<GcString>>(b)->value;
+    if (a.isDouble()) {
+        // Both are doubles: bitwise compare
+        return a.raw() == b.raw();
+    }
 
-    // Containers: deep structural comparison
-    if (std::holds_alternative<GcPtr<Array>>(a)) {
-        const auto& ae = std::get<GcPtr<Array>>(a)->elements;
-        const auto& be = std::get<GcPtr<Array>>(b)->elements;
+    // Same type tag → dispatch by type
+    switch (a.tag()) {
+    case ValueTag::Null:
+        return true;
+    case ValueTag::Bool:
+        return a.asBool() == b.asBool();
+    case ValueTag::Int:
+        return a.asInt() == b.asInt();
+    case ValueTag::GcString:
+        return a.asGcString()->value == b.asGcString()->value;
+
+    case ValueTag::Array: {
+        const auto& ae = a.asArray()->elements;
+        const auto& be = b.asArray()->elements;
         if (ae.size() != be.size()) return false;
         for (size_t i = 0; i < ae.size(); i++) {
             if (!ValueEqual{}(ae[i], be[i])) return false;
         }
         return true;
     }
-    if (std::holds_alternative<GcPtr<Dict>>(a)) {
-        const auto& ap = std::get<GcPtr<Dict>>(a)->pairs;
-        const auto& bp = std::get<GcPtr<Dict>>(b)->pairs;
+    case ValueTag::Dict: {
+        const auto& ap = a.asDict()->pairs;
+        const auto& bp = b.asDict()->pairs;
         if (ap.size() != bp.size()) return false;
         for (const auto& [k, v] : ap) {
             auto it = bp.find(k);
@@ -125,18 +133,18 @@ bool ValueEqual::operator()(const Value& a, const Value& b) const {
         }
         return true;
     }
-    if (std::holds_alternative<GcPtr<Set>>(a)) {
-        const auto& as = std::get<GcPtr<Set>>(a)->elements;
-        const auto& bs = std::get<GcPtr<Set>>(b)->elements;
+    case ValueTag::Set: {
+        const auto& as = a.asSet()->elements;
+        const auto& bs = b.asSet()->elements;
         if (as.size() != bs.size()) return false;
         for (const auto& e : as) {
             if (bs.find(e) == bs.end()) return false;
         }
         return true;
     }
-    if (std::holds_alternative<GcPtr<Map>>(a)) {
-        const auto& ap = std::get<GcPtr<Map>>(a)->pairs;
-        const auto& bp = std::get<GcPtr<Map>>(b)->pairs;
+    case ValueTag::Map: {
+        const auto& ap = a.asMap()->pairs;
+        const auto& bp = b.asMap()->pairs;
         if (ap.size() != bp.size()) return false;
         for (const auto& [k, v] : ap) {
             auto it = bp.find(k);
@@ -147,54 +155,40 @@ bool ValueEqual::operator()(const Value& a, const Value& b) const {
     }
 
     // Reference types: pointer identity
-    if (std::holds_alternative<GcPtr<Callable>>(a))
-        return std::get<GcPtr<Callable>>(a) == std::get<GcPtr<Callable>>(b);
-    if (std::holds_alternative<GcPtr<ObjectInstance>>(a))
-        return std::get<GcPtr<ObjectInstance>>(a) == std::get<GcPtr<ObjectInstance>>(b);
-    if (std::holds_alternative<GcPtr<FunctionPrototype>>(a))
-        return std::get<GcPtr<FunctionPrototype>>(a) == std::get<GcPtr<FunctionPrototype>>(b);
-    if (std::holds_alternative<GcPtr<ClassDefinition>>(a))
-        return std::get<GcPtr<ClassDefinition>>(a) == std::get<GcPtr<ClassDefinition>>(b);
-    if (std::holds_alternative<GcPtr<Iterator>>(a))
-        return std::get<GcPtr<Iterator>>(a) == std::get<GcPtr<Iterator>>(b);
-    if (std::holds_alternative<GcPtr<Generator>>(a))
-        return std::get<GcPtr<Generator>>(a) == std::get<GcPtr<Generator>>(b);
+    case ValueTag::Callable:
+        return a.asCallable() == b.asCallable();
+    case ValueTag::ObjectInstance:
+        return a.asObjectInstance() == b.asObjectInstance();
+    case ValueTag::FunctionPrototype:
+        return a.asFunctionPrototype() == b.asFunctionPrototype();
+    case ValueTag::ClassDefinition:
+        return a.asClassDefinition() == b.asClassDefinition();
+    case ValueTag::Iterator:
+        return a.asIterator() == b.asIterator();
+    case ValueTag::Generator:
+        return a.asGenerator() == b.asGenerator();
+    }
 
     return false;
 }
 
 // =========================================================================
-// pushGcRefs — defined here because it needs complete types (Callable : GcObject)
+// pushGcRefs — extract all GcObject* references from a Value.
+//
+// With NaN-boxing, all 11 GcObject-backed types share the same payload
+// encoding (pointer in bits 45:0). This collapses what was an 11-branch
+// std::get_if chain into a single isObject() + asObject().
 // =========================================================================
 
 void pushGcRefs(const Value& v, std::vector<GcObject*>& worklist) {
-    if (auto* p = std::get_if<GcPtr<GcString>>(&v)) {
-        if (*p) worklist.push_back(p->get());
-    } else if (auto* p = std::get_if<GcPtr<Array>>(&v)) {
-        if (*p) worklist.push_back(p->get());
-    } else if (auto* p = std::get_if<GcPtr<Dict>>(&v)) {
-        if (*p) worklist.push_back(p->get());
-    } else if (auto* p = std::get_if<GcPtr<Set>>(&v)) {
-        if (*p) worklist.push_back(p->get());
-    } else if (auto* p = std::get_if<GcPtr<Map>>(&v)) {
-        if (*p) worklist.push_back(p->get());
-    } else if (auto* p = std::get_if<GcPtr<Callable>>(&v)) {
-        if (*p) worklist.push_back(static_cast<GcObject*>(p->get()));
-    } else if (auto* p = std::get_if<GcPtr<ObjectInstance>>(&v)) {
-        if (*p) worklist.push_back(p->get());
-    } else if (auto* p = std::get_if<GcPtr<FunctionPrototype>>(&v)) {
-        if (*p) worklist.push_back(p->get());
-    } else if (auto* p = std::get_if<GcPtr<ClassDefinition>>(&v)) {
-        if (*p) worklist.push_back(p->get());
-    } else if (auto* p = std::get_if<GcPtr<Iterator>>(&v)) {
-        if (*p) worklist.push_back(p->get());
-    } else if (auto* p = std::get_if<GcPtr<Generator>>(&v)) {
-        if (*p) worklist.push_back(p->get());
+    if (v.isObject()) {
+        GcObject* obj = v.asObject();
+        if (obj) worklist.push_back(obj);
     }
 }
 
 // =========================================================================
-// trace() implementations
+// trace() implementations — unchanged bodies (they call pushGcRefs above)
 // =========================================================================
 
 void Array::trace(std::vector<GcObject*>& wl) {
@@ -260,7 +254,6 @@ void Generator::trace(std::vector<GcObject*>& wl) {
 
 static constexpr int kMaxPrintDepth = 256;
 
-// Forward declaration for recursion within same TU
 static void appendValue(std::string& out, const Value& value, int depth);
 
 static void appendValue(std::string& out, const Value& value, int depth) {
@@ -269,90 +262,113 @@ static void appendValue(std::string& out, const Value& value, int depth) {
         return;
     }
 
-    std::visit([&out, depth](auto&& arg) {
-        using T = std::decay_t<decltype(arg)>;
+    if (value.isDouble()) {
+        double d = value.asDouble();
+        out += std::to_string(d);
+        return;
+    }
 
-        if constexpr (std::is_same_v<T, std::nullptr_t>) {
-            out += "null";
-        } else if constexpr (std::is_same_v<T, bool>) {
-            out += (arg ? "true" : "false");
-        } else if constexpr (std::is_same_v<T, GcPtr<GcString>>) {
-            out += arg->value;
-        } else if constexpr (std::is_same_v<T, GcPtr<Array>>) {
-            out += '[';
-            for (size_t i = 0; i < arg->elements.size(); ++i) {
-                if (i > 0) out += ", ";
-                appendValue(out, arg->elements[i], depth + 1);
-            }
-            out += ']';
-        } else if constexpr (std::is_same_v<T, GcPtr<Dict>>) {
-            out += '{';
-            size_t i = 0;
-            for (const auto& [k, v] : arg->pairs) {
-                if (i > 0) out += ", ";
-                out += k;
-                out += ": ";
-                appendValue(out, v, depth + 1);
-                i++;
-            }
-            out += '}';
-        } else if constexpr (std::is_same_v<T, GcPtr<Set>>) {
-            out += '{';
-            size_t i = 0;
-            for (const auto& e : arg->elements) {
-                if (i > 0) out += ", ";
-                appendValue(out, e, depth + 1);
-                i++;
-            }
-            out += '}';
-        } else if constexpr (std::is_same_v<T, GcPtr<Map>>) {
-            out += '{';
-            size_t i = 0;
-            for (const auto& [k, v] : arg->pairs) {
-                if (i > 0) out += ", ";
-                appendValue(out, k, depth + 1);
-                out += ": ";
-                appendValue(out, v, depth + 1);
-                i++;
-            }
-            out += '}';
-        } else if constexpr (std::is_same_v<T, GcPtr<Callable>>) {
-            if (auto native = dynamic_cast<NativeFunction*>(arg.get())) {
-                out += "<native fn ";
-                out += native->name();
-                out += '>';
-            } else if (auto fn = dynamic_cast<VoraFunction*>(arg.get())) {
-                out += "<fn ";
-                out += fn->name();
-                out += '>';
-            } else {
-                out += "<fn>";
-            }
-        } else if constexpr (std::is_same_v<T, GcPtr<ObjectInstance>>) {
-            out += '<';
-            out += arg->className;
-            out += " object>";
-        } else if constexpr (std::is_same_v<T, GcPtr<Iterator>>) {
-            out += "<iterator>";
-        } else if constexpr (std::is_same_v<T, GcPtr<Generator>>) {
-            out += "<generator ";
-            out += (arg->function ? arg->function->name() : "?");
-            out += '>';
-        } else if constexpr (std::is_same_v<T, GcPtr<FunctionPrototype>>) {
-            out += "<function prototype ";
-            out += arg->name;
-            out += '>';
-        } else if constexpr (std::is_same_v<T, GcPtr<ClassDefinition>>) {
-            out += "<class ";
-            out += arg->name;
-            out += '>';
-        } else if constexpr (std::is_same_v<T, int64_t>) {
-            out += std::to_string(arg);
-        } else {
-            // double
-            out += std::to_string(arg);
+    switch (value.tag()) {
+    case ValueTag::Null:
+        out += "null";
+        break;
+    case ValueTag::Bool:
+        out += (value.asBool() ? "true" : "false");
+        break;
+    case ValueTag::Int:
+        out += std::to_string(value.asInt());
+        break;
+    case ValueTag::GcString:
+        out += value.asGcString()->value;
+        break;
+    case ValueTag::Array: {
+        out += '[';
+        const auto& elements = value.asArray()->elements;
+        for (size_t i = 0; i < elements.size(); ++i) {
+            if (i > 0) out += ", ";
+            appendValue(out, elements[i], depth + 1);
         }
-    }, value);
+        out += ']';
+        break;
+    }
+    case ValueTag::Dict: {
+        out += '{';
+        size_t i = 0;
+        for (const auto& [k, v] : value.asDict()->pairs) {
+            if (i > 0) out += ", ";
+            out += k;
+            out += ": ";
+            appendValue(out, v, depth + 1);
+            i++;
+        }
+        out += '}';
+        break;
+    }
+    case ValueTag::Set: {
+        out += '{';
+        size_t i = 0;
+        for (const auto& e : value.asSet()->elements) {
+            if (i > 0) out += ", ";
+            appendValue(out, e, depth + 1);
+            i++;
+        }
+        out += '}';
+        break;
+    }
+    case ValueTag::Map: {
+        out += '{';
+        size_t i = 0;
+        for (const auto& [k, v] : value.asMap()->pairs) {
+            if (i > 0) out += ", ";
+            appendValue(out, k, depth + 1);
+            out += ": ";
+            appendValue(out, v, depth + 1);
+            i++;
+        }
+        out += '}';
+        break;
+    }
+    case ValueTag::Callable: {
+        auto callable = value.asCallable();
+        if (auto native = dynamic_cast<NativeFunction*>(callable.get())) {
+            out += "<native fn ";
+            out += native->name();
+            out += '>';
+        } else if (auto fn = dynamic_cast<VoraFunction*>(callable.get())) {
+            out += "<fn ";
+            out += fn->name();
+            out += '>';
+        } else {
+            out += "<fn>";
+        }
+        break;
+    }
+    case ValueTag::ObjectInstance:
+        out += '<';
+        out += value.asObjectInstance()->className;
+        out += " object>";
+        break;
+    case ValueTag::Iterator:
+        out += "<iterator>";
+        break;
+    case ValueTag::Generator: {
+        out += "<generator ";
+        auto gen = value.asGenerator();
+        out += (gen->function ? gen->function->name() : "?");
+        out += '>';
+        break;
+    }
+    case ValueTag::FunctionPrototype:
+        out += "<function prototype ";
+        out += value.asFunctionPrototype()->name;
+        out += '>';
+        break;
+    case ValueTag::ClassDefinition:
+        out += "<class ";
+        out += value.asClassDefinition()->name;
+        out += '>';
+        break;
+    }
 }
 
 void valueToStringAppend(std::string& out, const Value& value, int depth) {
@@ -378,4 +394,4 @@ std::string valueToString(const Value& value) {
     return out;
 }
 
-}
+} // namespace vora

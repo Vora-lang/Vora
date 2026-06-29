@@ -357,8 +357,8 @@ void VM::flushDeferStack() {
     while (!frames[frameIndex].deferStack.empty()) {
         Value closure = std::move(frames[frameIndex].deferStack.back());
         frames[frameIndex].deferStack.pop_back();
-        if (!std::holds_alternative<GcPtr<Callable>>(closure)) continue;
-        auto callable = std::get<GcPtr<Callable>>(closure);
+        if (!closure.isCallable()) continue;
+        auto callable = closure.asCallable();
         if (auto* vfn = dynamic_cast<VoraFunction*>(callable.get())) {
             size_t savedFramesSize = frames.size();
             bool savedExceptionInFlight = exceptionInFlight;
@@ -385,14 +385,16 @@ bool VM::throwException(const Value& value) {
     // Auto-inject stack trace into structured thrown values (dicts/objects)
     // so catch blocks can access e.stack for diagnostics.
     if (!lastErrorStackTrace.empty()) {
-        if (auto* dictPtr = std::get_if<GcPtr<Dict>>(&value)) {
-            if (*dictPtr) {
-                (*dictPtr)->pairs["stack"] =
+        if (value.isDict()) {
+            auto dictPtr = value.asDict();
+            if (dictPtr) {
+                dictPtr->pairs["stack"] =
                     GcHeap::instance().alloc<GcString>(lastErrorStackTrace);
             }
-        } else if (auto* objPtr = std::get_if<GcPtr<ObjectInstance>>(&value)) {
-            if (*objPtr) {
-                (*objPtr)->properties["stack"] =
+        } else if (value.isObjectInstance()) {
+            auto objPtr = value.asObjectInstance();
+            if (objPtr) {
+                objPtr->properties["stack"] =
                     GcHeap::instance().alloc<GcString>(lastErrorStackTrace);
             }
         }
@@ -469,6 +471,42 @@ void VM::defineNative(const std::string& name, int arity,
     globalDefined[static_cast<size_t>(slot)] = true;
 }
 
+Value VM::getGlobal(const std::string& name) const {
+    auto it = globalIndex.find(name);
+    if (it == globalIndex.end()) return nullptr;
+    int slot = it->second;
+    if (!globalDefined[static_cast<size_t>(slot)]) return nullptr;
+    return globalValues[static_cast<size_t>(slot)];
+}
+
+void VM::setGlobal(const std::string& name, const Value& value) {
+    auto it = globalIndex.find(name);
+    int slot;
+    if (it != globalIndex.end()) {
+        slot = it->second;
+    } else {
+        slot = static_cast<int>(globalNames.size());
+        globalNames.push_back(name);
+        globalValues.push_back(nullptr);
+        globalDefined.push_back(false);
+        globalIndex[name] = slot;
+    }
+    globalValues[static_cast<size_t>(slot)] = value;
+    globalDefined[static_cast<size_t>(slot)] = true;
+    markGlobalDirty(slot);
+}
+
+bool VM::hasGlobal(const std::string& name) const {
+    auto it = globalIndex.find(name);
+    if (it == globalIndex.end()) return false;
+    return globalDefined[static_cast<size_t>(it->second)];
+}
+
+void VM::registerNativeFunction(const std::string& name,
+                                std::function<Value(const std::vector<Value>&)> fn) {
+    defineNative(name, -1, std::move(fn));
+}
+
 void VM::initGlobals(const std::vector<std::string>& names) {
     // Merge: only add globals that don't already exist, preserving
     // existing values. This is critical for REPL where multiple lines
@@ -488,28 +526,28 @@ void VM::initGlobals(const std::vector<std::string>& names) {
     defineNative("_vora_len", 1,
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
-            if (std::holds_alternative<GcPtr<Array>>(arg)) {
+            if (arg.isArray()) {
                 return static_cast<double>(
-                    std::get<GcPtr<Array>>(arg)->elements.size());
+                    arg.asArray()->elements.size());
             }
-            if (std::holds_alternative<GcPtr<GcString>>(arg)) {
-                return static_cast<double>(std::get<GcPtr<GcString>>(arg)->value.size());
+            if (arg.isGcString()) {
+                return static_cast<double>(arg.asGcString()->value.size());
             }
-            if (std::holds_alternative<GcPtr<ObjectInstance>>(arg)) {
+            if (arg.isObjectInstance()) {
                 return static_cast<double>(
-                    std::get<GcPtr<ObjectInstance>>(arg)->properties.size());
+                    arg.asObjectInstance()->properties.size());
             }
-            if (std::holds_alternative<GcPtr<Dict>>(arg)) {
+            if (arg.isDict()) {
                 return static_cast<double>(
-                    std::get<GcPtr<Dict>>(arg)->pairs.size());
+                    arg.asDict()->pairs.size());
             }
-            if (std::holds_alternative<GcPtr<Set>>(arg)) {
+            if (arg.isSet()) {
                 return static_cast<double>(
-                    std::get<GcPtr<Set>>(arg)->elements.size());
+                    arg.asSet()->elements.size());
             }
-            if (std::holds_alternative<GcPtr<Map>>(arg)) {
+            if (arg.isMap()) {
                 return static_cast<double>(
-                    std::get<GcPtr<Map>>(arg)->pairs.size());
+                    arg.asMap()->pairs.size());
             }
             return 0.0;
         });
@@ -618,8 +656,8 @@ bool VM::callValue(const Value& callee, uint8_t argCount) {
         return false;
     }
 
-    if (std::holds_alternative<GcPtr<Callable>>(callee)) {
-        auto callable = std::get<GcPtr<Callable>>(callee);
+    if (callee.isCallable()) {
+        auto callable = callee.asCallable();
 
         // Bound method: dispatch through the current VM so globals
         // and builtins remain accessible (no temp VM).
@@ -849,7 +887,7 @@ InterpretResult VM::executeCallKw(uint8_t posCount, uint8_t kwCount,
     uint8_t totalArgs = posCount + kwCount;
     Value callee = peek(totalArgs);
 
-    if (!std::holds_alternative<GcPtr<Callable>>(callee)) {
+    if (!callee.isCallable()) {
         if (runtimeErrorOrThrow("Can only call functions")) return InterpretResult::OK;
         return InterpretResult::RUNTIME_ERROR;
     }
@@ -865,7 +903,7 @@ InterpretResult VM::executeCallKw(uint8_t posCount, uint8_t kwCount,
     }
     pop(); // callee
 
-    auto callable = std::get<GcPtr<Callable>>(callee);
+    auto callable = callee.asCallable();
 
     // Resolve FunctionPrototype to get parameter names
     FunctionPrototype const* proto = nullptr;
@@ -903,9 +941,9 @@ InterpretResult VM::executeCallKw(uint8_t posCount, uint8_t kwCount,
             size_t nameIdx = kwNameIndices[k];
             if (nameIdx < currentChunk->constants.size()) {
                 const Value& nameVal = currentChunk->constants[nameIdx];
-                if (std::holds_alternative<GcPtr<GcString>>(nameVal)) {
+                if (nameVal.isGcString()) {
                     const std::string& kwName =
-                        std::get<GcPtr<GcString>>(nameVal)->value;
+                        nameVal.asGcString()->value;
                     auto it = nameToSlot.find(kwName);
                     if (it != nameToSlot.end() && it->second == slot) {
                         filledByNamed = true;
@@ -924,13 +962,12 @@ InterpretResult VM::executeCallKw(uint8_t posCount, uint8_t kwCount,
     for (uint8_t k = 0; k < kwCount; k++) {
         size_t nameIdx = kwNameIndices[k];
         if (nameIdx >= currentChunk->constants.size() ||
-            !std::holds_alternative<GcPtr<GcString>>(
-                currentChunk->constants[nameIdx])) {
+            !currentChunk->constants[nameIdx].isGcString()) {
             runtimeErrorOrThrow("Invalid keyword argument name");
             return InterpretResult::RUNTIME_ERROR;
         }
         const std::string& kwName =
-            std::get<GcPtr<GcString>>(currentChunk->constants[nameIdx])->value;
+            currentChunk->constants[nameIdx].asGcString()->value;
         auto it = nameToSlot.find(kwName);
         if (it == nameToSlot.end()) {
             runtimeErrorOrThrow("Unknown parameter name: " + kwName);
@@ -1157,6 +1194,11 @@ InterpretResult VM::run() {
 
         OpCode instruction = static_cast<OpCode>(READ_BYTE());
 
+        // Shared variables for property-access opcodes (used by both fused
+        // superinstructions and regular GET_PROPERTY/GET_PROPERTY_SAFE/etc.)
+        uint16_t nameIndex;
+        Value obj;
+
         switch (instruction) {
             // --- Constants ---
             case OpCode::OP_CONSTANT: {
@@ -1177,7 +1219,7 @@ InterpretResult VM::run() {
                 // REPL mode: print top of stack (if non-null), then pop.
                 // Used by expression statements to echo results like Python.
                 Value v = pop();
-                if (!std::holds_alternative<std::nullptr_t>(v)) {
+                if (!v.isNull()) {
                     printValue(v);
                     std::cout << std::endl;
                 }
@@ -1222,15 +1264,15 @@ InterpretResult VM::run() {
 
             // --- Unary ---
             case OpCode::OP_NEGATE: {
-                if (std::holds_alternative<int64_t>(peek(0))) {
-                    int64_t v = std::get<int64_t>(pop());
+                if (peek(0).isInt()) {
+                    int64_t v = pop().asInt();
                     if (v == INT64_MIN) {
                         push(-static_cast<double>(v));
                     } else {
                         push(-v);
                     }
-                } else if (std::holds_alternative<double>(peek(0))) {
-                    push(-std::get<double>(pop()));
+                } else if (peek(0).isDouble()) {
+                    push(-pop().asDouble());
                 } else {
                     RUNTIME_ERROR_OR_THROW("Negation requires a number");
                 }
@@ -1247,15 +1289,15 @@ InterpretResult VM::run() {
                 Value v = pop();
                 switch (typeTag) {
                     case 0: { // float
-                        if (std::holds_alternative<int64_t>(v))
-                            push(static_cast<double>(std::get<int64_t>(v)));
-                        else if (std::holds_alternative<double>(v))
+                        if (v.isInt())
+                            push(static_cast<double>(v.asInt()));
+                        else if (v.isDouble())
                             push(v);
-                        else if (std::holds_alternative<bool>(v))
-                            push(std::get<bool>(v) ? 1.0 : 0.0);
-                        else if (std::holds_alternative<GcPtr<GcString>>(v)) {
+                        else if (v.isBool())
+                            push(v.asBool() ? 1.0 : 0.0);
+                        else if (v.isGcString()) {
                             try {
-                                push(std::stod(std::get<GcPtr<GcString>>(v)->value));
+                                push(std::stod(v.asGcString()->value));
                             } catch (const std::exception&) {
                                 push(0.0);
                             }
@@ -1265,16 +1307,16 @@ InterpretResult VM::run() {
                         break;
                     }
                     case 1: { // int
-                        if (std::holds_alternative<int64_t>(v))
+                        if (v.isInt())
                             push(v);
-                        else if (std::holds_alternative<double>(v))
-                            push(static_cast<int64_t>(std::trunc(std::get<double>(v))));
-                        else if (std::holds_alternative<bool>(v))
-                            push(std::get<bool>(v) ? static_cast<int64_t>(1) : static_cast<int64_t>(0));
-                        else if (std::holds_alternative<GcPtr<GcString>>(v)) {
+                        else if (v.isDouble())
+                            push(static_cast<int64_t>(std::trunc(v.asDouble())));
+                        else if (v.isBool())
+                            push(v.asBool() ? static_cast<int64_t>(1) : static_cast<int64_t>(0));
+                        else if (v.isGcString()) {
                             try {
                                 push(static_cast<int64_t>(std::trunc(
-                                    std::stod(std::get<GcPtr<GcString>>(v)->value))));
+                                    std::stod(v.asGcString()->value))));
                             } catch (const std::exception&) {
                                 push(static_cast<int64_t>(0));
                             }
@@ -1555,7 +1597,7 @@ InterpretResult VM::run() {
             }
             case OpCode::OP_JUMP_IF_NULL: {
                 uint16_t offset = readShort();
-                if (std::holds_alternative<std::nullptr_t>(pop())) {
+                if (pop().isNull()) {
                     ip += offset;
                 }
                 break;
@@ -1589,11 +1631,11 @@ InterpretResult VM::run() {
                 // Pop an Array from the stack, push each element individually,
                 // and accumulate the element count in the current spread counter.
                 Value top = pop();
-                if (!std::holds_alternative<GcPtr<Array>>(top)) {
+                if (!top.isArray()) {
                     runtimeErrorOrThrow("Spread operand must be an array");
                     return InterpretResult::RUNTIME_ERROR;
                 }
-                auto& elements = std::get<GcPtr<Array>>(top)->elements;
+                auto& elements = top.asArray()->elements;
                 int count = static_cast<int>(elements.size());
                 for (auto& elem : elements) {
                     push(elem);
@@ -1672,11 +1714,11 @@ InterpretResult VM::run() {
                 uint8_t argCount = READ_BYTE();
                 Value callee = peek(argCount);
 
-                if (!std::holds_alternative<GcPtr<Callable>>(callee)) {
+                if (!callee.isCallable()) {
                     RUNTIME_ERROR_OR_THROW("Can only call functions");
                 }
 
-                auto callable = std::get<GcPtr<Callable>>(callee);
+                auto callable = callee.asCallable();
                 auto voraFn = dynamic_cast<VoraFunction*>(callable.get());
 
                 // Only optimize VoraFunction tail calls. For native functions,
@@ -1906,10 +1948,10 @@ InterpretResult VM::run() {
             case OpCode::OP_CLOSURE: {
                 uint8_t constIndex = READ_BYTE();
                 Value protoVal = currentChunk->constants[constIndex];
-                if (!std::holds_alternative<GcPtr<FunctionPrototype>>(protoVal)) {
+                if (!protoVal.isFunctionPrototype()) {
                     RUNTIME_ERROR_OR_THROW("OP_CLOSURE: expected function prototype in constant pool");
                 }
-                auto protoPtr = std::get<GcPtr<FunctionPrototype>>(protoVal);
+                auto protoPtr = protoVal.asFunctionPrototype();
                 auto function = GcHeap::instance().alloc<VoraFunction>(
                     protoPtr->name, protoPtr->arity,
                     protoPtr->requiredArity, protoPtr->hasRest, protoPtr.get());
@@ -1952,10 +1994,10 @@ InterpretResult VM::run() {
             case OpCode::OP_CLOSURE_WIDE: {
                 uint16_t constIndex = READ_SHORT();
                 Value protoVal = currentChunk->constants[constIndex];
-                if (!std::holds_alternative<GcPtr<FunctionPrototype>>(protoVal)) {
+                if (!protoVal.isFunctionPrototype()) {
                     RUNTIME_ERROR_OR_THROW("OP_CLOSURE_WIDE: expected function prototype");
                 }
-                auto protoPtr = std::get<GcPtr<FunctionPrototype>>(protoVal);
+                auto protoPtr = protoVal.asFunctionPrototype();
                 auto function = GcHeap::instance().alloc<VoraFunction>(
                     protoPtr->name, protoPtr->arity,
                     protoPtr->requiredArity, protoPtr->hasRest, protoPtr.get());
@@ -2260,9 +2302,9 @@ InterpretResult VM::run() {
                 // unordered_map. The compiler-generated for-in loop uses
                 // Iterator snapshots (O(1) per step) — this path is for
                 // manual dict[i] indexing by user code.
-                if (std::holds_alternative<GcPtr<Dict>>(target)) {
+                if (target.isDict()) {
                     const auto& dpairs =
-                        std::get<GcPtr<Dict>>(target)->pairs;
+                        target.asDict()->pairs;
                     if (isNumeric(indexVal)) {
                         // Numeric index: return Nth key
                         size_t idx = static_cast<size_t>(toDouble(indexVal));
@@ -2285,8 +2327,8 @@ InterpretResult VM::run() {
                 }
 
                 // Map: key lookup by Value (arbitrary-type keys)
-                if (std::holds_alternative<GcPtr<Map>>(target)) {
-                    const auto& mpairs = std::get<GcPtr<Map>>(target)->pairs;
+                if (target.isMap()) {
+                    const auto& mpairs = target.asMap()->pairs;
                     if (isNumeric(indexVal)) {
                         double raw = toDouble(indexVal);
                         // If it's a clean non-negative integer, treat as positional
@@ -2312,7 +2354,7 @@ InterpretResult VM::run() {
                 }
 
                 // Set: numeric index for for-in iteration (positional access)
-                if (std::holds_alternative<GcPtr<Set>>(target)) {
+                if (target.isSet()) {
                     if (!isNumeric(indexVal)) {
                         RUNTIME_ERROR_OR_THROW("Set index must be a number");
                     }
@@ -2320,7 +2362,7 @@ InterpretResult VM::run() {
                     if (rawIndex < 0 || std::floor(rawIndex) != rawIndex) {
                         RUNTIME_ERROR_OR_THROW("Index must be a non-negative integer");
                     }
-                    const auto& selements = std::get<GcPtr<Set>>(target)->elements;
+                    const auto& selements = target.asSet()->elements;
                     size_t idx = static_cast<size_t>(rawIndex);
                     if (idx >= selements.size()) {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
@@ -2342,22 +2384,22 @@ InterpretResult VM::run() {
 
                 size_t index = static_cast<size_t>(rawIndex);
 
-                if (std::holds_alternative<GcPtr<GcString>>(target)) {
-                    const auto& str = std::get<GcPtr<GcString>>(target)->value;
+                if (target.isGcString()) {
+                    const auto& str = target.asGcString()->value;
                     if (index >= str.size()) {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
                     push(GcHeap::instance().alloc<GcString>(std::string(1, str[index])));
-                } else if (std::holds_alternative<GcPtr<Array>>(target)) {
+                } else if (target.isArray()) {
                     const auto& elements =
-                        std::get<GcPtr<Array>>(target)->elements;
+                        target.asArray()->elements;
                     if (index >= elements.size()) {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
                     push(elements[index]);
-                } else if (std::holds_alternative<GcPtr<ObjectInstance>>(target)) {
+                } else if (target.isObjectInstance()) {
                     const auto& props =
-                        std::get<GcPtr<ObjectInstance>>(target)->properties;
+                        target.asObjectInstance()->properties;
                     if (index >= props.size()) {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
@@ -2375,8 +2417,8 @@ InterpretResult VM::run() {
                 Value target = pop();
 
                 // Dict: string-keyed lookup (handled first since keys are non-numeric)
-                if (std::holds_alternative<GcPtr<Dict>>(target)) {
-                    const auto& dpairs = std::get<GcPtr<Dict>>(target)->pairs;
+                if (target.isDict()) {
+                    const auto& dpairs = target.asDict()->pairs;
                     if (isNumeric(indexVal)) {
                         double raw = toDouble(indexVal);
                         if (raw >= 0 && std::floor(raw) == raw) {
@@ -2410,8 +2452,8 @@ InterpretResult VM::run() {
                 }
 
                 // Map: key lookup by Value
-                if (std::holds_alternative<GcPtr<Map>>(target)) {
-                    const auto& mpairs = std::get<GcPtr<Map>>(target)->pairs;
+                if (target.isMap()) {
+                    const auto& mpairs = target.asMap()->pairs;
                     if (isNumeric(indexVal)) {
                         double raw = toDouble(indexVal);
                         if (raw >= 0 && std::floor(raw) == raw) {
@@ -2436,7 +2478,7 @@ InterpretResult VM::run() {
                 }
 
                 // Set: numeric index for for-in iteration
-                if (std::holds_alternative<GcPtr<Set>>(target)) {
+                if (target.isSet()) {
                     if (!isNumeric(indexVal)) {
                         push(nullptr);  // safe: non-numeric index on set
                         break;
@@ -2446,7 +2488,7 @@ InterpretResult VM::run() {
                         push(nullptr);  // safe: invalid index
                         break;
                     }
-                    const auto& selements = std::get<GcPtr<Set>>(target)->elements;
+                    const auto& selements = target.asSet()->elements;
                     size_t idx = static_cast<size_t>(rawIndex);
                     if (idx >= selements.size()) {
                         push(nullptr);  // safe: return null on bounds
@@ -2471,24 +2513,24 @@ InterpretResult VM::run() {
 
                 size_t index = static_cast<size_t>(rawIndex);
 
-                if (std::holds_alternative<GcPtr<GcString>>(target)) {
-                    const auto& str = std::get<GcPtr<GcString>>(target)->value;
+                if (target.isGcString()) {
+                    const auto& str = target.asGcString()->value;
                     if (index >= str.size()) {
                         push(nullptr);  // safe: return null on bounds
                     } else {
                         push(GcHeap::instance().alloc<GcString>(std::string(1, str[index])));
                     }
-                } else if (std::holds_alternative<GcPtr<Array>>(target)) {
+                } else if (target.isArray()) {
                     const auto& elements =
-                        std::get<GcPtr<Array>>(target)->elements;
+                        target.asArray()->elements;
                     if (index >= elements.size()) {
                         push(nullptr);  // safe: return null on bounds
                     } else {
                         push(elements[index]);
                     }
-                } else if (std::holds_alternative<GcPtr<ObjectInstance>>(target)) {
+                } else if (target.isObjectInstance()) {
                     const auto& props =
-                        std::get<GcPtr<ObjectInstance>>(target)->properties;
+                        target.asObjectInstance()->properties;
                     if (index >= props.size()) {
                         push(nullptr);  // safe: return null on bounds
                     } else {
@@ -2507,16 +2549,16 @@ InterpretResult VM::run() {
                 Value target = pop();
 
                 // Dict: string-keyed assignment (handled first since keys are non-numeric)
-                if (std::holds_alternative<GcPtr<Dict>>(target)) {
+                if (target.isDict()) {
                     std::string key = valueToString(indexVal);
-                    std::get<GcPtr<Dict>>(target)->pairs[key] = value;
+                    target.asDict()->pairs[key] = value;
                     push(value);
                     break;
                 }
 
                 // Map: arbitrary-key assignment
-                if (std::holds_alternative<GcPtr<Map>>(target)) {
-                    std::get<GcPtr<Map>>(target)->pairs[indexVal] = value;
+                if (target.isMap()) {
+                    target.asMap()->pairs[indexVal] = value;
                     push(value);
                     break;
                 }
@@ -2532,15 +2574,15 @@ InterpretResult VM::run() {
 
                 size_t index = static_cast<size_t>(rawIndex);
 
-                if (std::holds_alternative<GcPtr<Array>>(target)) {
+                if (target.isArray()) {
                     auto& elements =
-                        std::get<GcPtr<Array>>(target)->elements;
+                        target.asArray()->elements;
                     if (index >= elements.size()) {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
                     elements[index] = value;
                     push(value);
-                } else if (std::holds_alternative<GcPtr<GcString>>(target)) {
+                } else if (target.isGcString()) {
                     RUNTIME_ERROR_OR_THROW("Cannot assign to string index (strings are immutable)");
                 } else {
                     RUNTIME_ERROR_OR_THROW("Index assignment requires an array");
@@ -2549,23 +2591,51 @@ InterpretResult VM::run() {
             }
 
             // --- Objects ---
-            uint16_t nameIndex;
+
+            // --- Superinstructions: fused GET_LOCAL/GET_GLOBAL + GET_PROPERTY ---
+            case OpCode::OP_GET_LOCAL_PROP: {
+                uint8_t localSlot = READ_BYTE();
+                nameIndex = READ_BYTE();
+                obj = stack[frameBaseIndex + localSlot];
+                goto property_dispatch;
+            }
+            case OpCode::OP_GET_LOCAL_PROP_WIDE: {
+                uint8_t localSlot = READ_BYTE();
+                nameIndex = READ_SHORT();
+                obj = stack[frameBaseIndex + localSlot];
+                goto property_dispatch;
+            }
+            case OpCode::OP_GET_GLOBAL_PROP: {
+                uint8_t globalSlot = READ_BYTE();
+                nameIndex = READ_BYTE();
+                obj = globalValues[globalSlot];
+                goto property_dispatch;
+            }
+            case OpCode::OP_GET_GLOBAL_PROP_WIDE: {
+                uint16_t globalSlot = READ_SHORT();
+                nameIndex = READ_BYTE();
+                obj = globalValues[globalSlot];
+                goto property_dispatch;
+            }
+
             case OpCode::OP_GET_PROPERTY_WIDE:
                 nameIndex = READ_SHORT();
                 goto get_property_body;
             case OpCode::OP_GET_PROPERTY:
                 nameIndex = READ_BYTE();
-                get_property_body: {
-                if (!std::holds_alternative<GcPtr<GcString>>(currentChunk->constants[nameIndex])) {
+                get_property_body:
+                obj = pop();
+                // fall through to shared property dispatch
+                property_dispatch: {
+                if (!currentChunk->constants[nameIndex].isGcString()) {
                     RUNTIME_ERROR_OR_THROW("Invalid property name in constant pool");
                     return InterpretResult::RUNTIME_ERROR;
                 }
-                std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
-                Value obj = pop();
+                std::string propName = currentChunk->constants[nameIndex].asGcString()->value;
 
                 // Array built-in methods & properties
-                if (std::holds_alternative<GcPtr<Array>>(obj)) {
-                    auto arr = std::get<GcPtr<Array>>(obj);
+                if (obj.isArray()) {
+                    auto arr = obj.asArray();
                     if (propName == "length") {
                         push(static_cast<int64_t>(arr->elements.size()));
                         break;
@@ -2576,8 +2646,8 @@ InterpretResult VM::run() {
                 }
 
                 // String built-in methods & properties
-                if (std::holds_alternative<GcPtr<GcString>>(obj)) {
-                    const auto& str = std::get<GcPtr<GcString>>(obj)->value;
+                if (obj.isGcString()) {
+                    const auto& str = obj.asGcString()->value;
                     if (propName == "length") {
                         push(static_cast<int64_t>(str.size()));
                         break;
@@ -2588,8 +2658,8 @@ InterpretResult VM::run() {
                 }
 
                 // Dict built-in methods & properties
-                if (std::holds_alternative<GcPtr<Dict>>(obj)) {
-                    auto dict = std::get<GcPtr<Dict>>(obj);
+                if (obj.isDict()) {
+                    auto dict = obj.asDict();
                     if (propName == "length") {
                         push(static_cast<int64_t>(dict->pairs.size()));
                         break;
@@ -2606,8 +2676,8 @@ InterpretResult VM::run() {
                 }
 
                 // Set built-in methods & properties
-                if (std::holds_alternative<GcPtr<Set>>(obj)) {
-                    auto set = std::get<GcPtr<Set>>(obj);
+                if (obj.isSet()) {
+                    auto set = obj.asSet();
                     if (propName == "length" || propName == "size") {
                         push(static_cast<int64_t>(set->elements.size()));
                         break;
@@ -2618,8 +2688,8 @@ InterpretResult VM::run() {
                 }
 
                 // Map built-in methods & properties
-                if (std::holds_alternative<GcPtr<Map>>(obj)) {
-                    auto map = std::get<GcPtr<Map>>(obj);
+                if (obj.isMap()) {
+                    auto map = obj.asMap();
                     if (propName == "length" || propName == "size") {
                         push(static_cast<int64_t>(map->pairs.size()));
                         break;
@@ -2629,8 +2699,8 @@ InterpretResult VM::run() {
                     RUNTIME_ERROR_OR_THROW("Unknown map method: " + propName);
                 }
 
-                if (std::holds_alternative<GcPtr<ObjectInstance>>(obj)) {
-                    auto instance = std::get<GcPtr<ObjectInstance>>(obj);
+                if (obj.isObjectInstance()) {
+                    auto instance = obj.asObjectInstance();
                     // Check instance properties
                     auto it = instance->properties.find(propName);
                     if (it != instance->properties.end()) {
@@ -2669,10 +2739,10 @@ InterpretResult VM::run() {
                         }
                     }
                     RUNTIME_ERROR_OR_THROW("Undefined property: " + propName);
-                } else if (auto callable = std::get_if<GcPtr<Callable>>(&obj)) {
+                } else if (obj.isCallable()) { auto callable = obj.asCallable();
                     // Class constructor — check for static methods
-                    if (*callable) {
-                        auto classDef = (*callable)->getClassDef();
+                    if (callable) {
+                        auto classDef = callable->getClassDef();
                         if (classDef) {
                             auto smIt = classDef->staticMethods.find(propName);
                             if (smIt != classDef->staticMethods.end()) {
@@ -2686,7 +2756,7 @@ InterpretResult VM::run() {
                     RUNTIME_ERROR_OR_THROW("Can only access properties on objects");
                 }
                 break;
-            }
+            }  // property_dispatch block
             // --- Null-safe property access (for ?. optional chaining) ---
             case OpCode::OP_GET_PROPERTY_SAFE_WIDE:
                 nameIndex = READ_SHORT();
@@ -2694,16 +2764,16 @@ InterpretResult VM::run() {
             case OpCode::OP_GET_PROPERTY_SAFE:
                 nameIndex = READ_BYTE();
                 get_property_safe_body: {
-                if (!std::holds_alternative<GcPtr<GcString>>(currentChunk->constants[nameIndex])) {
+                if (!currentChunk->constants[nameIndex].isGcString()) {
                     RUNTIME_ERROR_OR_THROW("Invalid property name in constant pool");
                     return InterpretResult::RUNTIME_ERROR;
                 }
-                std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
+                std::string propName = currentChunk->constants[nameIndex].asGcString()->value;
                 Value obj = pop();
 
                 // Array built-in methods & properties
-                if (std::holds_alternative<GcPtr<Array>>(obj)) {
-                    auto arr = std::get<GcPtr<Array>>(obj);
+                if (obj.isArray()) {
+                    auto arr = obj.asArray();
                     if (propName == "length") {
                         push(static_cast<int64_t>(arr->elements.size()));
                         break;
@@ -2715,8 +2785,8 @@ InterpretResult VM::run() {
                 }
 
                 // String built-in methods & properties
-                if (std::holds_alternative<GcPtr<GcString>>(obj)) {
-                    const auto& str = std::get<GcPtr<GcString>>(obj)->value;
+                if (obj.isGcString()) {
+                    const auto& str = obj.asGcString()->value;
                     if (propName == "length") {
                         push(static_cast<int64_t>(str.size()));
                         break;
@@ -2728,8 +2798,8 @@ InterpretResult VM::run() {
                 }
 
                 // Dict built-in methods & properties
-                if (std::holds_alternative<GcPtr<Dict>>(obj)) {
-                    auto dict = std::get<GcPtr<Dict>>(obj);
+                if (obj.isDict()) {
+                    auto dict = obj.asDict();
                     if (propName == "length") {
                         push(static_cast<int64_t>(dict->pairs.size()));
                         break;
@@ -2746,8 +2816,8 @@ InterpretResult VM::run() {
                 }
 
                 // Set built-in methods & properties
-                if (std::holds_alternative<GcPtr<Set>>(obj)) {
-                    auto set = std::get<GcPtr<Set>>(obj);
+                if (obj.isSet()) {
+                    auto set = obj.asSet();
                     if (propName == "length" || propName == "size") {
                         push(static_cast<int64_t>(set->elements.size()));
                         break;
@@ -2759,8 +2829,8 @@ InterpretResult VM::run() {
                 }
 
                 // Map built-in methods & properties
-                if (std::holds_alternative<GcPtr<Map>>(obj)) {
-                    auto map = std::get<GcPtr<Map>>(obj);
+                if (obj.isMap()) {
+                    auto map = obj.asMap();
                     if (propName == "length" || propName == "size") {
                         push(static_cast<int64_t>(map->pairs.size()));
                         break;
@@ -2771,8 +2841,8 @@ InterpretResult VM::run() {
                     break;
                 }
 
-                if (std::holds_alternative<GcPtr<ObjectInstance>>(obj)) {
-                    auto instance = std::get<GcPtr<ObjectInstance>>(obj);
+                if (obj.isObjectInstance()) {
+                    auto instance = obj.asObjectInstance();
                     auto it = instance->properties.find(propName);
                     if (it != instance->properties.end()) {
                         push(it->second);
@@ -2809,10 +2879,10 @@ InterpretResult VM::run() {
                     }
                     push(nullptr);  // safe: return null for undefined property
                     break;
-                } else if (auto callable = std::get_if<GcPtr<Callable>>(&obj)) {
+                } else if (obj.isCallable()) { auto callable = obj.asCallable();
                     // Class constructor — check for static methods
-                    if (*callable) {
-                        auto classDef = (*callable)->getClassDef();
+                    if (callable) {
+                        auto classDef = callable->getClassDef();
                         if (classDef) {
                             auto smIt = classDef->staticMethods.find(propName);
                             if (smIt != classDef->staticMethods.end()) {
@@ -2834,16 +2904,16 @@ InterpretResult VM::run() {
             case OpCode::OP_SET_PROPERTY:
                 nameIndex = READ_BYTE();
                 set_property_body: {
-                if (!std::holds_alternative<GcPtr<GcString>>(currentChunk->constants[nameIndex])) {
+                if (!currentChunk->constants[nameIndex].isGcString()) {
                     RUNTIME_ERROR_OR_THROW("Invalid property name in constant pool");
                     return InterpretResult::RUNTIME_ERROR;
                 }
-                std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
+                std::string propName = currentChunk->constants[nameIndex].asGcString()->value;
                 Value value = pop();
                 Value obj = pop();
 
-                if (std::holds_alternative<GcPtr<ObjectInstance>>(obj)) {
-                    auto instance = std::get<GcPtr<ObjectInstance>>(obj);
+                if (obj.isObjectInstance()) {
+                    auto instance = obj.asObjectInstance();
                     instance->properties[propName] = value;
                     push(value);
                 } else {
@@ -2857,18 +2927,18 @@ InterpretResult VM::run() {
             case OpCode::OP_GET_SUPER:
                 nameIndex = READ_BYTE();
                 get_super_body: {
-                if (!std::holds_alternative<GcPtr<GcString>>(currentChunk->constants[nameIndex])) {
+                if (!currentChunk->constants[nameIndex].isGcString()) {
                     RUNTIME_ERROR_OR_THROW("Invalid property name in constant pool");
                     return InterpretResult::RUNTIME_ERROR;
                 }
-                std::string propName = std::get<GcPtr<GcString>>(currentChunk->constants[nameIndex])->value;
+                std::string propName = currentChunk->constants[nameIndex].asGcString()->value;
 
                 // Get 'this' from local slot 0 (must be in a method)
                 Value thisVal = stack[frameBaseIndex];
-                if (!std::holds_alternative<GcPtr<ObjectInstance>>(thisVal)) {
+                if (!thisVal.isObjectInstance()) {
                     RUNTIME_ERROR_OR_THROW("'super' used outside of method");
                 }
-                auto instance = std::get<GcPtr<ObjectInstance>>(thisVal);
+                auto instance = thisVal.asObjectInstance();
 
                 if (!instance->classDefinition) {
                     RUNTIME_ERROR_OR_THROW("Object has no class definition");
@@ -2936,10 +3006,10 @@ InterpretResult VM::run() {
                 class_body: {
                 Value classDefVal = currentChunk->constants[classIndex];
 
-                if (!std::holds_alternative<GcPtr<ClassDefinition>>(classDefVal)) {
+                if (!classDefVal.isClassDefinition()) {
                     RUNTIME_ERROR_OR_THROW("OP_CLASS: expected class definition in constant pool");
                 }
-                auto cd = std::get<GcPtr<ClassDefinition>>(classDefVal);
+                auto cd = classDefVal.asClassDefinition();
 
                 // Resolve parent classes from globals (integer-indexed lookup)
                 std::vector<GcPtr<ClassDefinition>> resolvedParents;
@@ -2950,9 +3020,9 @@ InterpretResult VM::run() {
                         if (static_cast<size_t>(pSlot) < globalValues.size() &&
                             globalDefined[static_cast<size_t>(pSlot)]) {
                             const auto& parentVal = globalValues[static_cast<size_t>(pSlot)];
-                            if (auto callable = std::get_if<GcPtr<Callable>>(&parentVal)) {
-                                if (*callable) {
-                                    auto parentDef = (*callable)->getClassDef();
+                            if (parentVal.isCallable()) { auto callable = parentVal.asCallable();
+                                if (callable) {
+                                    auto parentDef = callable->getClassDef();
                                     if (parentDef) {
                                         resolvedParents.push_back(parentDef);
                                         cd->parentClasses.push_back(parentDef);
@@ -3044,11 +3114,11 @@ InterpretResult VM::run() {
                 importNameIndex = READ_BYTE();
                 import_body: {
                 Value pathVal = currentChunk->constants[importPathIndex];
-                if (!std::holds_alternative<GcPtr<GcString>>(pathVal)) {
+                if (!pathVal.isGcString()) {
                     RUNTIME_ERROR_OR_THROW("OP_IMPORT: expected string constant for path");
                     break;
                 }
-                std::string rawPath = std::get<GcPtr<GcString>>(pathVal)->value;
+                std::string rawPath = pathVal.asGcString()->value;
 
                 // Resolve the absolute path
                 std::string resolved = resolveModulePath(rawPath);
@@ -3066,7 +3136,7 @@ InterpretResult VM::run() {
 
                 // Load, compile, and execute module
                 Value moduleObj = loadModule(resolved);
-                if (std::holds_alternative<std::nullptr_t>(moduleObj)) {
+                if (moduleObj.isNull()) {
                     std::string errMsg = loadModuleError;
                     loadModuleError.clear();
 

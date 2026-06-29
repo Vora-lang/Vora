@@ -4,7 +4,6 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
-#include <variant>
 
 #include "../gc/gc_heap.h"
 #include "../runtime/vora_function.h"
@@ -15,16 +14,16 @@ namespace vora {
 // =========================================================================
 void Compiler::visitLiteralExpr(const LiteralExpr& expr) {
     const auto& v = expr.value;
-    if (std::holds_alternative<std::nullptr_t>(v)) {
+    if (v.isNull()) {
         emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
-    } else if (std::holds_alternative<bool>(v)) {
-        emitByte(std::get<bool>(v)
+    } else if (v.isBool()) {
+        emitByte(v.asBool()
             ? static_cast<uint8_t>(OpCode::OP_TRUE)
             : static_cast<uint8_t>(OpCode::OP_FALSE));
-    } else if (std::holds_alternative<double>(v) || std::holds_alternative<int64_t>(v)) {
+    } else if (v.isDouble() || v.isInt()) {
         emitConstant(v);
-    } else if (std::holds_alternative<GcPtr<GcString>>(v)) {
-        const auto& str = std::get<GcPtr<GcString>>(v)->value;
+    } else if (v.isGcString()) {
+        const auto& str = v.asGcString()->value;
         // Check for ${...} interpolation patterns
         if (str.find("${") != std::string::npos) {
             compileInterpolatedString(str);
@@ -193,10 +192,10 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
         const auto& lv = leftLit->value;
         const auto& rv = rightLit->value;
         if (isNumeric(lv) && isNumeric(rv)) {
-            bool intOp = std::holds_alternative<int64_t>(lv) && std::holds_alternative<int64_t>(rv);
+            bool intOp = lv.isInt() && rv.isInt();
             if (intOp) {
-                int64_t a = std::get<int64_t>(lv);
-                int64_t b = std::get<int64_t>(rv);
+                int64_t a = lv.asInt();
+                int64_t b = rv.asInt();
                 switch (expr.op.type) {
                     case TokenType::PLUS:
                         // Check for signed overflow before folding
@@ -247,10 +246,10 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
                 }
             }
         }
-        if (std::holds_alternative<GcPtr<GcString>>(lv) && std::holds_alternative<GcPtr<GcString>>(rv)) {
+        if (lv.isGcString() && rv.isGcString()) {
             // String concatenation at compile time
             if (expr.op.type == TokenType::PLUS) {
-                emitConstant(GcHeap::instance().alloc<GcString>(std::get<GcPtr<GcString>>(lv)->value + std::get<GcPtr<GcString>>(rv)->value));
+                emitConstant(GcHeap::instance().alloc<GcString>(lv.asGcString()->value + rv.asGcString()->value));
                 return;
             }
         }
@@ -291,15 +290,15 @@ void Compiler::visitUnaryExpr(const UnaryExpr& expr) {
     if (auto* lit = dynamic_cast<const LiteralExpr*>(expr.right.get())) {
         if (expr.op.type == TokenType::MINUS &&
             isNumeric(lit->value)) {
-            if (std::holds_alternative<int64_t>(lit->value))
-                emitConstant(-std::get<int64_t>(lit->value));
+            if (lit->value.isInt())
+                emitConstant(-lit->value.asInt());
             else
-                emitConstant(-std::get<double>(lit->value));
+                emitConstant(-lit->value.asDouble());
             return;
         }
         if (expr.op.type == TokenType::NOT &&
-            std::holds_alternative<bool>(lit->value)) {
-            emitByte(std::get<bool>(lit->value)
+            lit->value.isBool()) {
+            emitByte(lit->value.asBool()
                 ? static_cast<uint8_t>(OpCode::OP_FALSE)
                 : static_cast<uint8_t>(OpCode::OP_TRUE));
             return;
@@ -982,6 +981,27 @@ void Compiler::visitPropertyExpr(const PropertyExpr& expr) {
         return;
     }
 
+    // --- Superinstruction fusion: GET_LOCAL/GET_GLOBAL + GET_PROPERTY ---
+    // When the object is a simple variable, fuse the variable lookup with the
+    // property access to save one VM dispatch iteration per property access.
+    if (auto* var = dynamic_cast<const VariableExpr*>(expr.object.get())) {
+        int localSlot = resolveLocal(var->name);
+        if (localSlot >= 0) {
+            size_t nameIndex = identifierConstant(expr.property);
+            emitGetLocalProp(localSlot, nameIndex);
+            return;
+        }
+        // Upvalues: skip fusion for now (less common, adds complexity)
+        int upvalueIdx = resolveUpvalue(this, var->name);
+        if (upvalueIdx < 0) {
+            int slot = resolveGlobal(var->name);
+            size_t nameIndex = identifierConstant(expr.property);
+            emitGetGlobalProp(slot, nameIndex);
+            return;
+        }
+    }
+
+    // Fallback: unfused sequence
     expr.object->accept(*this);
     size_t nameIndex = identifierConstant(expr.property);
     emitGetProperty(nameIndex);

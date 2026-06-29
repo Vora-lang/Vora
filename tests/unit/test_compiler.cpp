@@ -89,8 +89,8 @@ TEST_CASE("compiler_literal_string") {
     // Verify the constant is in the pool
     bool found = false;
     for (const auto& c : chunk.constants) {
-        if (std::holds_alternative<GcPtr<GcString>>(c) &&
-            std::get<GcPtr<GcString>>(c)->value == "hello") {
+        if (c.isGcString() &&
+            c.asGcString()->value == "hello") {
             found = true;
             break;
         }
@@ -130,8 +130,8 @@ TEST_CASE("compiler_constant_fold_string_concat") {
     // Constant-folded to "hello world" in one constant
     bool found = false;
     for (const auto& c : chunk.constants) {
-        if (std::holds_alternative<GcPtr<GcString>>(c) &&
-            std::get<GcPtr<GcString>>(c)->value == "hello world") {
+        if (c.isGcString() &&
+            c.asGcString()->value == "hello world") {
             found = true;
             break;
         }
@@ -226,7 +226,7 @@ TEST_CASE("compiler_function_closure_emission") {
     // Function prototype should be in constant pool
     bool found = false;
     for (const auto& c : chunk.constants) {
-        if (std::holds_alternative<GcPtr<FunctionPrototype>>(c)) {
+        if (c.isFunctionPrototype()) {
             found = true;
             break;
         }

@@ -3,6 +3,7 @@
 #include "gc_object.h"
 #include "gc_ptr.h"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -29,6 +30,11 @@ public:
     template <typename T, typename... Args>
     T* allocate(Args&&... args) {
         T* obj = new T(std::forward<Args>(args)...);
+        // NaN-boxing safety: pointer must fit in 46-bit payload (64 TB addressable).
+        // This is true for all current 64-bit platforms (x86-64: 47-bit user space,
+        // ARM64: 48-bit). If it ever fires, we need to box the pointer on heap.
+        assert((reinterpret_cast<uint64_t>(static_cast<void*>(obj)) & ~UINT64_C(0x3FFFFFFFFFFF)) == 0
+               && "GcObject allocated above 46-bit addressable range — NaN-boxing invariant broken");
         obj->gcNext = head_;
         head_ = obj;
         objectCount_++;

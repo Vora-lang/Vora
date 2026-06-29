@@ -169,6 +169,30 @@ void Compiler::emitSetProperty(size_t nameIndex) {
     }
 }
 
+void Compiler::emitGetLocalProp(int localSlot, size_t nameIndex) {
+    if (needsWide(nameIndex)) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_GET_LOCAL_PROP_WIDE));
+        emitByte(static_cast<uint8_t>(localSlot));
+        emitShort(static_cast<uint16_t>(nameIndex));
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_GET_LOCAL_PROP));
+        emitByte(static_cast<uint8_t>(localSlot));
+        emitByte(static_cast<uint8_t>(nameIndex));
+    }
+}
+
+void Compiler::emitGetGlobalProp(int globalSlot, size_t nameIndex) {
+    if (needsWide(globalSlot)) {
+        emitByte(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL_PROP_WIDE));
+        emitShort(static_cast<uint16_t>(globalSlot));
+        emitByte(static_cast<uint8_t>(nameIndex));
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_GET_GLOBAL_PROP));
+        emitByte(static_cast<uint8_t>(globalSlot));
+        emitByte(static_cast<uint8_t>(nameIndex));
+    }
+}
+
 void Compiler::emitGetSuper(size_t nameIndex) {
     if (needsWide(nameIndex)) {
         emitByte(static_cast<uint8_t>(OpCode::OP_GET_SUPER_WIDE));
