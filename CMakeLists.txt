@@ -572,19 +572,9 @@ if(WIN32)
         # Determine the WiX tools directory for -ext argument
         get_filename_component(WIX_TOOLS_DIR "${WIX_CANDLE}" DIRECTORY)
 
-        # Copy vora-dap.exe from Vora-LSP repo into the build output dir.
-        # The LSP repo is expected at ../Vora-LSP relative to the Vora root.
-        set(VORA_DAP_SRC "${CMAKE_SOURCE_DIR}/../Vora-LSP/vora-dap.exe")
-        set(VORA_LSP_SRC "${CMAKE_SOURCE_DIR}/../Vora-LSP/vora-lsp.exe")
-        set(VORA_DAP_DST "${CMAKE_BINARY_DIR}/Release/vora-dap.exe")
-        set(VORA_LSP_DST "${CMAKE_BINARY_DIR}/Release/vora-lsp.exe")
-
+        # LSP/DAP binaries are staged by build.ps1/build.sh before packaging.
+        # The WiX .wxs file references them from ${CMAKE_BINARY_DIR}/Release/.
         add_custom_target(msi
-            # Step 0: sync LSP/DAP binaries from Vora-LSP repo
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VORA_LSP_SRC}" "${VORA_LSP_DST}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VORA_DAP_SRC}" "${VORA_DAP_DST}"
             # Step 1: compile .wxs → .wixobj
             COMMAND "${WIX_CANDLE}" -nologo -arch x64
                 -out "${CMAKE_BINARY_DIR}/vora.wixobj"

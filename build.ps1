@@ -156,7 +156,7 @@ if ($Package -and $Config -eq "Release") {
 if ($Package) {
     if ($Config -eq "Release") {
         Write-Host "[5/6] Generating MSI..." -ForegroundColor Yellow
-        cmake --build $buildDir --target msi --config $Config
+        cmake --build $buildDir --target package --config $Config
 
         Write-Host ""
         Write-Host "Package:" -ForegroundColor Cyan
