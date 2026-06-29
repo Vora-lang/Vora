@@ -155,8 +155,10 @@ if ($Package) {
         cmake --build $buildDir --target msi --config $Config
 
         Write-Host ""
-        Write-Host "Packages:" -ForegroundColor Cyan
-        Get-ChildItem $buildDir\vora-*.msi 2>$null | ForEach-Object {
+        Write-Host "Package:" -ForegroundColor Cyan
+        $versionMatch = [regex]::Match((Get-Content "$PSScriptRoot\CMakeLists.txt" -Raw), 'project\(Vora VERSION (\d+\.\d+\.\d+)\)')
+        $pkgPattern = if ($versionMatch.Success) { "vora-$($versionMatch.Groups[1].Value)-*.msi" } else { "vora-*.msi" }
+        Get-ChildItem $buildDir\$pkgPattern 2>$null | Sort-Object Name -Descending | Select-Object -First 1 | ForEach-Object {
             $sizeMB = [math]::Round($_.Length / 1MB, 1)
             Write-Host "  $($_.Name)  ($sizeMB MB)" -ForegroundColor Green
         }
