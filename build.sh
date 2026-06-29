@@ -12,14 +12,12 @@
 
 set -euo pipefail
 
-# Parallel jobs: 2x CPU cores (matching make -j$(nproc)*2)
-JOBS=$(($(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) * 2))
-
 # ── Defaults ────────────────────────────────────────────────────────────────
 ARCH=""
 CONFIG=""
 PACKAGE=0
 CLEAN=0
+JOBS=0
 
 # ── Parse arguments ─────────────────────────────────────────────────────────
 usage() {
@@ -51,6 +49,8 @@ while [[ $# -gt 0 ]]; do
             PACKAGE=1; shift ;;
         -C|--clean)
             CLEAN=1; shift ;;
+        -j|--jobs)
+            JOBS="$2"; shift 2 ;;
         -h|--help)
             usage ;;
         --)
@@ -64,6 +64,13 @@ done
 
 ARCH="${ARCH:-x64}"
 CONFIG="${CONFIG:-debug}"
+# Parallel jobs: user override, else 2x CPU cores, fallback 4
+if [[ "$JOBS" -le 0 ]]; then
+    NCPU=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 0)
+    if [[ "$NCPU" -le 0 ]]; then NCPU=4; fi
+    JOBS=$((NCPU * 2))
+    if [[ "$JOBS" -lt 4 ]]; then JOBS=4; fi
+fi
 # Validate arch
 
 # ==== Interactive mode (no arguments) ====

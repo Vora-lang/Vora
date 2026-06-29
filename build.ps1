@@ -11,7 +11,10 @@ param(
     [switch]$Package,
 
     [Parameter(HelpMessage="Force clean build (delete build directory before configuring)")]
-    [switch]$Clean
+    [switch]$Clean,
+
+    [Parameter(HelpMessage="Parallel build jobs (default: 2x CPU cores, min 4)")]
+    [int]$Jobs = 0
 )
 
 # UTF-8 encoding setup (must come after param() for cross-platform pwsh compat)
@@ -24,9 +27,12 @@ if (Get-Command chcp -ErrorAction SilentlyContinue) {
 
 $ErrorActionPreference = "Stop"
 
-# Parallel jobs: 2x CPU cores (matching make -j$(nproc)*2)
-$cpuCores = try { [int]$env:NUMBER_OF_PROCESSORS } catch { 4 }
-$jobs = [Math]::Max(1, $cpuCores * 2)
+# Parallel jobs: -Jobs N override, else 2x CPU cores, fallback 4
+if ($Jobs -le 0) {
+    $cpuCores = try { [int]$env:NUMBER_OF_PROCESSORS } catch { 0 }
+    if ($cpuCores -le 0) { $cpuCores = 4 }
+    $Jobs = [Math]::Max(4, $cpuCores * 2)
+}
 
 # Read project version from CMakeLists.txt (used for MSI filtering + summary)
 $versionMatch = [regex]::Match((Get-Content "$PSScriptRoot\CMakeLists.txt" -Raw), 'project\(Vora VERSION (\d+\.\d+\.\d+)\)')
@@ -116,9 +122,9 @@ Write-Host "[3/5] Building project..." -ForegroundColor Yellow
 
 # Release: skip tests (Vora_tests not needed for packaging)
 if ($Config -eq "Release") {
-    cmake --build --preset $PresetName --config $Config --parallel $jobs --target Vora vora_lib vora_hpp
+    cmake --build --preset $PresetName --config $Config --parallel $Jobs --target Vora vora_lib vora_hpp
 } else {
-    cmake --build --preset $PresetName --config $Config --parallel $jobs
+    cmake --build --preset $PresetName --config $Config --parallel $Jobs
 }
 
 # ----------------------------------------
@@ -139,7 +145,7 @@ if ($Package -and $Config -eq "Release") {
                 Remove-Item "build\CMakeCache.txt" -Force
             }
             cmake -B build -DVORA_BUILD="$absBuildDir" 2>&1 | Out-Null
-            cmake --build build --config Release --target vora-lsp vora-dap --parallel $jobs
+            cmake --build build --config Release --target vora-lsp vora-dap --parallel $Jobs
             if ($LASTEXITCODE -eq 0) {
                 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
                 Copy-Item -Force "build\Release\vora-lsp.exe" "$releaseDir\" -ErrorAction SilentlyContinue
@@ -167,7 +173,7 @@ if ($Package -and $Config -eq "Release") {
 if ($Package) {
     if ($Config -eq "Release") {
         Write-Host "[5/6] Generating MSI..." -ForegroundColor Yellow
-        cmake --build $buildDir --target package --config $Config --parallel $jobs
+        cmake --build $buildDir --target package --config $Config --parallel $Jobs
 
         Write-Host ""
         Write-Host "Package:" -ForegroundColor Cyan
