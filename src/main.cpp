@@ -8,13 +8,18 @@
 
 #ifdef _WIN32
 // Set console to UTF-8 without pulling in windows.h (avoid macro pollution).
-// Use extern "C" to declare only the two functions we need.
+// Use extern "C" to declare only the functions we need.
 extern "C" {
     int __stdcall SetConsoleOutputCP(unsigned int);
     int __stdcall SetConsoleCP(unsigned int);
+    unsigned long __stdcall GetModuleFileNameA(void*, char*, unsigned long);
 }
-#define CP_UTF8 65001
+#define MAX_PATH 260
+using DWORD = unsigned long;
+#else
+#include <unistd.h>  // for readlink
 #endif
+#define CP_UTF8 65001
 
 #include "common/error_reporter.h"
 #include "lexer/lexer.h"
@@ -94,11 +99,59 @@ static std::string dirname(const std::string& path) {
 }
 
 // Determine the std/ library directory.
+// Simple path normalization (collapse backslashes to forward slashes)
+static std::string normalizePath(const std::string& p) {
+    std::string result = p;
+    for (auto& c : result) { if (c == '\\') c = '/'; }
+    return result;
+}
+
 static std::string findStdDir() {
     // Allow override via environment variable
     const char* env = std::getenv("VORA_STD_PATH");
     if (env && env[0] != '\0') return env;
-    // Default: relative to current working directory
+
+    // Search relative to the executable first (installed layout: bin/vora.exe, std/)
+    // This handles MSI / package installations where CWD is not the install dir.
+#ifdef _WIN32
+    char exePath[MAX_PATH];
+    DWORD len = GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
+        std::string exeDir(exePath, len);
+        auto slash = exeDir.find_last_of("\\/");
+        if (slash != std::string::npos) {
+            exeDir = exeDir.substr(0, slash);
+            // If in a "bin" subdirectory, std/ is at ../std relative to bin/
+            std::string cand = exeDir + "/../std";
+            std::ifstream test(cand + "/math.va");
+            if (test.good()) return normalizePath(cand);
+            // Also try std/ in the same directory as the exe
+            cand = exeDir + "/std";
+            test.open(cand + "/math.va");
+            if (test.good()) return normalizePath(cand);
+        }
+    }
+#else
+    // Linux/macOS: try relative to /proc/self/exe
+    char exePath[4096];
+    ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+    if (len > 0 && static_cast<size_t>(len) < sizeof(exePath)) {
+        exePath[len] = '\0';
+        std::string exeDir(exePath);
+        auto slash = exeDir.find_last_of('/');
+        if (slash != std::string::npos) {
+            exeDir = exeDir.substr(0, slash);
+            std::string cand = exeDir + "/../std";
+            std::ifstream test(cand + "/math.va");
+            if (test.good()) return normalizePath(cand);
+            cand = exeDir + "/std";
+            test.open(cand + "/math.va");
+            if (test.good()) return normalizePath(cand);
+        }
+    }
+#endif
+
+    // Fallback: relative to current working directory
     return "./std";
 }
 
