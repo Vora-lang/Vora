@@ -112,9 +112,8 @@ static std::string findStdDir() {
     const char* env = std::getenv("VORA_STD_PATH");
     if (env && env[0] != '\0') return env;
 
-    // Search relative to the executable by walking up parent directories.
-    // Handles dev builds (deep in build/<preset>/<Config>/) and
-    // installed layouts (bin/vora.exe with ../std/).
+    // Installed layout: bin/vora.exe is on PATH, std/ sits next to bin/.
+    // Resolve ../std from the exe directory.
 #ifdef _WIN32
     char exePath[MAX_PATH];
     DWORD len = GetModuleFileNameA(nullptr, exePath, MAX_PATH);
@@ -122,22 +121,11 @@ static std::string findStdDir() {
         std::string exeDir(exePath, len);
         auto slash = exeDir.find_last_of("\\/");
         if (slash != std::string::npos) {
-            exeDir = exeDir.substr(0, slash);
-            // Walk up from exe dir until we find a std/ sibling directory.
-            // Handles both deep dev builds (build/preset/Config/) and
-            // installed layouts (bin/ with ../std/).
-            std::string dir = exeDir;
-            while (!dir.empty()) {
-                std::string cand = dir + "/std";
-                if (std::filesystem::is_directory(cand)) return normalizePath(cand);
-                auto s = dir.find_last_of("\\/");
-                if (s == std::string::npos) break;
-                dir = dir.substr(0, s);
-            }
+            std::string cand = exeDir.substr(0, slash) + "/../std";
+            if (std::filesystem::is_directory(cand)) return normalizePath(cand);
         }
     }
 #else
-    // Linux/macOS: try relative to /proc/self/exe
     char exePath[4096];
     ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
     if (len > 0 && static_cast<size_t>(len) < sizeof(exePath)) {
@@ -145,15 +133,8 @@ static std::string findStdDir() {
         std::string exeDir(exePath);
         auto slash = exeDir.find_last_of('/');
         if (slash != std::string::npos) {
-            exeDir = exeDir.substr(0, slash);
-            std::string dir = exeDir;
-            while (!dir.empty()) {
-                std::string cand = dir + "/std";
-                if (std::filesystem::is_directory(cand)) return normalizePath(cand);
-                auto s = dir.find_last_of('/');
-                if (s == std::string::npos) break;
-                dir = dir.substr(0, s);
-            }
+            std::string cand = exeDir.substr(0, slash) + "/../std";
+            if (std::filesystem::is_directory(cand)) return normalizePath(cand);
         }
     }
 #endif

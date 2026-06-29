@@ -3469,33 +3469,26 @@ std::string VM::resolveModulePath(const std::string& rawPath) const {
         return "";
     }
 
-    // Step 4: Search stdDir first, then currentDir.
-    // For bare names like "math": try stdDir/math.va, then ./math.va
-    // For paths like "std/math": strip leading "std/" segment if it matches
-    //   the stdDir's leaf name (avoids doubling), try stdDir/math.va
-    {
-        // Try the path as-is under stdDir
-        result = normalizePath(stdDir + "/" + expanded);
-        result = withExt(result);
-        if (fileExists(result)) return result;
+    // Step 4: Stdlib module (no ./ or ../ prefix → stdDir lookup).
+    // "math"       → stdDir/math.va
+    // "std/math"   → strip leading "std/" to avoid doubling, → stdDir/math.va
+    // "mylib/foo"  → stdDir/mylib/foo.va
+    result = normalizePath(stdDir + "/" + expanded);
+    result = withExt(result);
+    if (fileExists(result)) return result;
 
-        // If expanded has a directory prefix that matches the last component
-        // of stdDir (e.g. "std/math" when stdDir is "./std"), strip it and
-        // try the basename under stdDir to avoid path doubling.
-        auto leafSlash = expanded.find('/');
-        if (leafSlash == std::string::npos) leafSlash = expanded.find('\\');
-        if (leafSlash != std::string::npos) {
-            std::string basename = expanded.substr(leafSlash + 1);
-            result = normalizePath(stdDir + "/" + basename);
+    // If path starts with a segment matching stdDir's leaf name, try
+    // stripping it (e.g. "std/math" + stdDir="./std" → stdDir/math.va).
+    auto slash = expanded.find_first_of("/\\");
+    if (slash != std::string::npos) {
+        auto stdLeaf = stdDir.find_last_of("/\\");
+        std::string leaf = (stdLeaf != std::string::npos) ? stdDir.substr(stdLeaf + 1) : stdDir;
+        if (expanded.compare(0, slash, leaf) == 0) {
+            result = normalizePath(stdDir + "/" + expanded.substr(slash + 1));
             result = withExt(result);
             if (fileExists(result)) return result;
         }
     }
-
-    // Try relative to current module directory
-    result = normalizePath(currentModuleDir + "/" + expanded);
-    result = withExt(result);
-    if (fileExists(result)) return result;
 
     return "";
 }
