@@ -145,6 +145,7 @@ echo "==== Vora Build System ===="
 echo "  OS          : ${OS}"
 echo "  Architecture: ${ARCH}"
 echo "  Configuration: ${CONFIG}"
+echo "  Jobs        : ${JOBS}"
 if [[ $PACKAGE -eq 1 ]]; then
     echo "  Package     : yes"
 fi

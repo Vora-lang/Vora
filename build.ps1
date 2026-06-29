@@ -82,6 +82,7 @@ Write-Host ""
 Write-Host "==== Vora Build System ====" -ForegroundColor Cyan
 Write-Host "  Architecture : $Architecture"         -ForegroundColor Gray
 Write-Host "  Configuration: $Config"               -ForegroundColor Gray
+Write-Host "  Jobs         : $Jobs"                  -ForegroundColor Gray
 if ($Clean) {
     Write-Host "  Clean build  : yes"               -ForegroundColor Gray
 }
