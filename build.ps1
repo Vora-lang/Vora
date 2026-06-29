@@ -1,8 +1,3 @@
-[Console]::InputEncoding = [System.Text.Encoding]::UTF8
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
-chcp 65001 > $null
-
 param(
     [Parameter(HelpMessage="Target architecture")]
     [ValidateSet("x64", "x86", "arm64")]
@@ -19,8 +14,13 @@ param(
     [switch]$Clean
 )
 
-
-
+# UTF-8 encoding setup (must come after param() for cross-platform pwsh compat)
+[Console]::InputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+if (Get-Command chcp -ErrorAction SilentlyContinue) {
+    chcp 65001 > $null
+}
 
 $ErrorActionPreference = "Stop"
 
