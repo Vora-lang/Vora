@@ -166,7 +166,7 @@ LSP_REPO="$(dirname "$0")/../Vora-LSP"
 if [[ $PACKAGE -eq 1 && "$CONFIG" == "release" ]]; then
     echo "[4/6] Building vora-lsp + vora-dap from Vora-LSP..."
     if [[ -f "$LSP_REPO/CMakeLists.txt" ]]; then
-        (cd "$LSP_REPO" && rm -f build/CMakeCache.txt && cmake -B build -DVORA_BUILD="$BUILD_DIR" > /dev/null 2>&1 && cmake --build build --config Release --target vora-lsp vora-dap) && {
+        (cd "$LSP_REPO" && rm -f build/CMakeCache.txt && cmake -B build -DVORA_BUILD="$(cd "$(dirname "$0")" && pwd)/$BUILD_DIR" > /dev/null 2>&1 && cmake --build build --config Release --target vora-lsp vora-dap) && {
             mkdir -p "$BUILD_DIR/Release"
             cp -f "$LSP_REPO/build/Release/vora-lsp" "$BUILD_DIR/Release/" 2>/dev/null || true
             cp -f "$LSP_REPO/build/Release/vora-dap" "$BUILD_DIR/Release/" 2>/dev/null || true

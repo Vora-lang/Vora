@@ -122,7 +122,7 @@ if ($Package -and $Config -eq "Release") {
             if (Test-Path "$lspRepo\build\CMakeCache.txt") {
                 Remove-Item "$lspRepo\build\CMakeCache.txt" -Force
             }
-            cmake -B build -DVORA_BUILD="$buildDir" 2>&1 | Out-Null
+            cmake -B build -DVORA_BUILD="$PSScriptRoot\$buildDir" 2>&1 | Out-Null
             cmake --build build --config Release --target vora-lsp vora-dap
             if ($LASTEXITCODE -eq 0) {
                 $releaseDir = "$buildDir\Release"
