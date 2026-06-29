@@ -118,7 +118,7 @@ if ($Package -and $Config -eq "Release") {
     if (Test-Path "$lspRepo\CMakeLists.txt") {
         Push-Location $lspRepo
         try {
-            cmake -B build 2>&1 | Out-Null
+            cmake -B build -DVORA_BUILD="$buildDir" 2>&1 | Out-Null
             cmake --build build --config Release --target vora-lsp vora-dap
             if ($LASTEXITCODE -eq 0) {
                 $releaseDir = "$buildDir\Release"
