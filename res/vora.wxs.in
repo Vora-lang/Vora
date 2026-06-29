@@ -55,6 +55,9 @@
             <Component Id="LspExe" Guid="E5A1B723-C906-4D93-AF0E-37F6A2B85A72">
               <File Id="VoraLspExe" Source="@CMAKE_BINARY_DIR@/Release/vora-lsp.exe" KeyPath="yes" />
             </Component>
+            <Component Id="DapExe" Guid="F6B2C834-D017-5A04-BF2F-48E7B3C94D83">
+              <File Id="VoraDapExe" Source="@CMAKE_BINARY_DIR@/Release/vora-dap.exe" KeyPath="yes" />
+            </Component>
             <Component Id="Launcher" Guid="D4E8A916-F705-4B83-AE1D-29C6C4B83D70">
               <File Id="VoraCmd" Source="@CMAKE_SOURCE_DIR@/res/vora.cmd" KeyPath="yes" />
             </Component>
@@ -121,6 +124,7 @@
       <!-- bin -->
       <ComponentRef Id="MainExe" />
       <ComponentRef Id="LspExe" />
+      <ComponentRef Id="DapExe" />
       <ComponentRef Id="Launcher" />
       <ComponentRef Id="PathEnv" />
       <!-- lib -->
