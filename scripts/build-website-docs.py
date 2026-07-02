@@ -415,6 +415,7 @@ def build_page(content_html: str) -> str:
         <a href="index.html">文档</a>
         <a href="language.html" class="active">语言参考</a>
         <a href="user-guide.html">语言差异</a>
+        <a href="../api/index.html">API 参考</a>
     </div>
 </nav>
 
@@ -499,6 +500,7 @@ def build_user_guide_page(content_html: str) -> str:
         <a href="index.html">文档</a>
         <a href="language.html">语言参考</a>
         <a href="user-guide.html" class="active">语言差异</a>
+        <a href="../api/index.html">API 参考</a>
     </div>
 </nav>
 

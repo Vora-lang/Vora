@@ -1,19 +1,17 @@
-// src/vora.h — 统一嵌入头文件
-// ============================================================================
-// Vora 语言的单头文件 C++ 嵌入 API。
-//
-// 在你的项目中只需要:
-//
-//   #include "vora.h"
-//
-// 然后链接 vora_lib.lib (或 libvora_lib.a)。
-//
-// 提供的 API:
-//   - 编译管线:  Lexer → Parser → Compiler → Chunk
-//   - 运行时:    VM, defineNative(), registerBuiltins()
-//   - 数据类型:  Value, GcString, Array, Dict, GcHeap
-//   - 错误处理:  ErrorReporter, StderrErrorReporter, RuntimeError
-// ============================================================================
+/// @file vora.h
+/// @brief Vora 语言的单头文件 C++ 嵌入 API。
+///
+/// 在你的项目中只需要:
+///
+///   #include "vora.h"
+///
+/// 然后链接 vora_lib.lib (或 libvora_lib.a)。
+///
+/// 提供的 API:
+///   - 编译管线:  Lexer → Parser → Compiler → Chunk
+///   - 运行时:    VM, defineNative(), registerBuiltins()
+///   - 数据类型:  Value, GcString, Array, Dict, GcHeap
+///   - 错误处理:  ErrorReporter, StderrErrorReporter, RuntimeError
 
 #pragma once
 

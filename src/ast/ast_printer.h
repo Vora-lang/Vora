@@ -1,4 +1,19 @@
 #pragma once
+/**
+ * @file ast_printer.h
+ * @brief AST pretty-printer producing S-expression debug output.
+ *
+ * ASTPrinter implements all three visitor interfaces (ExprVisitor<std::string>,
+ * StmtVisitor<std::string>, ProgramVisitor<std::string>) to produce a
+ * human-readable S-expression representation of the entire AST. This is used
+ * primarily for debugging and testing — the output is NOT a source-code
+ * formatter (use SourceFormatter for that).
+ *
+ * Example output for `1 + 2 * 3`:
+ *   (binary + (literal 1) (binary * (literal 2) (literal 3)))
+ *
+ * @see SourceFormatter (src/formatter/) for source-level formatting.
+ */
 
 #include <string>
 #include <vector>
@@ -11,18 +26,59 @@
 
 namespace vora {
 
+/**
+ * @brief Pretty-prints AST nodes as Lisp-style S-expressions.
+ *
+ * Implements ExprVisitor, StmtVisitor, and ProgramVisitor with return type
+ * `std::string`. Each visit* method recursively prints its children and wraps
+ * the result in a parenthesized form with the node type as the first element.
+ *
+ * Thread-safety: Each ASTPrinter instance is NOT thread-safe (depth_ is
+ * mutated during printing). Create a separate instance per thread or per
+ * print job.
+ */
 class ASTPrinter : public ExprVisitor<std::string>,
                    public StmtVisitor<std::string>,
                    public ProgramVisitor<std::string> {
 public:
+    /**
+     * @brief Print an expression node to an S-expression string.
+     * @param expr Pointer to the expression (must not be null).
+     * @return The S-expression string representation.
+     */
     std::string print(const Expr* expr);
+
+    /**
+     * @brief Print a statement node to an S-expression string.
+     * @param stmt Pointer to the statement (must not be null).
+     * @return The S-expression string representation.
+     */
     std::string print(const Stmt* stmt);
+
+    /**
+     * @brief Print an entire program (top-level statement list) to an S-expression string.
+     * @param program Pointer to the Program node (must not be null).
+     * @return The S-expression string representation.
+     */
     std::string print(const Program* program);
 
 private:
+    /** @brief Maximum recursion depth to prevent stack overflow on malformed ASTs. */
     static constexpr int MAX_PRINT_DEPTH = 10000;
+
+    /** @brief Current recursion depth; checked against MAX_PRINT_DEPTH at each level. */
     int depth_ = 0;
 
+    /**
+     * @brief Format a list of sub-expressions as a parenthesized S-expression.
+     *
+     * Produces `(name child1 child2 ...)`. Each child expression is printed
+     * via `child->accept(*this)`.
+     *
+     * @param name  The node type label (e.g. "binary", "+", "call").
+     * @param exprs Vector of child expressions to print (nullptrs produce "<error>").
+     * @return The formatted S-expression string.
+     */
     std::string parenthesize(
         const std::string& name,
         const std::vector<const Expr*>& exprs
@@ -82,4 +138,4 @@ private:
     std::string visitProgram(const Program& program) override;
 };
 
-}
+} // namespace vora
