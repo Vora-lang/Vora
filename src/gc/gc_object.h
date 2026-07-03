@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 // =========================================================================
@@ -15,9 +16,21 @@
 ///
 /// The GC uses the @ref gcNext pointer to thread all live GcObjects into a
 /// singly-linked allocation list, avoiding a separate external registry.
+///
+/// ## Generational GC (v0.28+)
+///
+/// Each object tracks its @ref age_ (number of minor GCs survived).  Young
+/// objects (age_ < PROMOTION_THRESHOLD) are collected by frequent minor GCs;
+/// old objects (age_ >= PROMOTION_THRESHOLD) are only collected by major GCs.
+/// The @ref remembered_ flag marks old objects that may reference young
+/// objects, so the remembered set can be scanned as roots during minor GC.
 /// =========================================================================
 
 namespace vora {
+
+/// @brief Number of minor GC cycles a young object must survive before
+///        promotion to the old generation.
+constexpr uint8_t PROMOTION_THRESHOLD = 3;
 
 // =========================================================================
 /// @class GcObject
@@ -29,6 +42,17 @@ namespace vora {
 ///                       full object graph.
 ///   - gcSize()        — return an approximate byte size (used for heap
 ///                       accounting and triggering the next GC cycle).
+///
+/// ## Generational fields
+///
+/// - @ref age_ tracks the number of minor GC cycles this object has survived.
+///   Young objects (age_ < PROMOTION_THRESHOLD) are collected by minor GCs.
+///   After each minor GC survival, age_ is incremented.  Objects that reach
+///   PROMOTION_THRESHOLD are promoted to the old generation and are only
+///   collected by major GCs.
+/// - @ref remembered_ is set by the write barrier when an OLD object gains
+///   a reference to a YOUNG object.  During minor GC, the remembered set
+///   (old objects with remembered_=true) is scanned as additional roots.
 /// =========================================================================
 
 class GcObject {
@@ -79,6 +103,35 @@ public:
     /// @param m  New mark state (`true` = reachable, `false` = unreachable).
     // =========================================================================
     void setMarked(bool m) { marked_ = m; }
+
+    // ── Generational GC fields ───────────────────────────────────────────
+
+    /// @brief Number of minor GC cycles this object has survived.
+    ///        0 = young (eden), >= PROMOTION_THRESHOLD = old (tenured).
+    uint8_t age_ = 0;
+
+    /// @brief True if this object is in the remembered set (old→young ref).
+    bool remembered_ = false;
+
+    /// @brief Return the age counter (minor GCs survived).
+    uint8_t age() const { return age_; }
+
+    /// @brief Set the age counter.
+    void setAge(uint8_t a) { age_ = a; }
+
+    /// @brief Increment age; if threshold reached, object is now old.
+    void promote() { if (age_ < PROMOTION_THRESHOLD) age_++; }
+
+    /// @brief True if this object has been promoted to the old generation.
+    bool isOld() const { return age_ >= PROMOTION_THRESHOLD; }
+
+    /// @brief True if this object is in the remembered set.
+    bool isRemembered() const { return remembered_; }
+
+    /// @brief Set or clear the remembered-set flag.
+    void setRemembered(bool r) { remembered_ = r; }
+
+    // ── Allocation list ──────────────────────────────────────────────────
 
     /// @brief Next pointer for the GC's intrusive singly-linked allocation list.
     ///

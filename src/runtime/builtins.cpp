@@ -590,6 +590,7 @@ GcPtr<NativeFunction> getArrayMethod(
         return GcHeap::instance().alloc<NativeFunction>("add", 1,
             [arr](const std::vector<Value>& args) -> Value {
                 arr->elements.push_back(args[0]);
+                writeBarrier(arr.get(), args[0]);
                 return nullptr;
             });
     }
@@ -611,6 +612,7 @@ GcPtr<NativeFunction> getArrayMethod(
                 size_t pos = static_cast<size_t>(idx);
                 if (pos >= arr->elements.size()) {
                     arr->elements.push_back(args[1]);
+                    writeBarrier(arr.get(), args[1]);
                 } else {
                     arr->elements.insert(arr->elements.begin() + pos, args[1]);
                 }
@@ -721,6 +723,7 @@ GcPtr<NativeFunction> getSetMethod(
         return GcHeap::instance().alloc<NativeFunction>("add", 1,
             [set](const std::vector<Value>& args) -> Value {
                 set->elements.insert(args[0]);
+                writeBarrier(set.get(), args[0]);
                 return nullptr;
             });
     }
@@ -770,6 +773,8 @@ GcPtr<NativeFunction> getMapMethod(
         return GcHeap::instance().alloc<NativeFunction>("set", 2,
             [map](const std::vector<Value>& args) -> Value {
                 map->pairs[args[0]] = args[1];
+                writeBarrier(map.get(), args[0]);  // track key
+                writeBarrier(map.get(), args[1]);  // track value
                 return nullptr;
             });
     }

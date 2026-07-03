@@ -1242,10 +1242,13 @@ void VM::collectGarbage() {
         pushGcRefs(uv->get(), roots);
     }
 
-    // 4. Call frames — the executing functions and their defer stacks
+    // 4. Call frames — the executing functions, defer stacks, and generators
     for (auto& frame : frames) {
         if (frame.function) {
             roots.push_back(frame.function.get());
+        }
+        if (frame.generator) {
+            roots.push_back(frame.generator.get());
         }
         for (auto& v : frame.deferStack) {
             pushGcRefs(v, roots);
@@ -1260,7 +1263,17 @@ void VM::collectGarbage() {
         roots.push_back(currentGenerator.get());
     }
 
-    GcHeap::instance().collect(roots);
+    // 6. Module cache — module Dict objects must survive
+    for (auto& [path, modValue] : moduleCache) {
+        pushGcRefs(modValue, roots);
+    }
+
+    // 7. Native error value — may hold a GcString set by native functions
+    if (nativeError) {
+        pushGcRefs(nativeErrorValue, roots);
+    }
+
+    GcHeap::instance().collectIfNeeded(roots);
 }
 
 // =========================================================================
@@ -2874,14 +2887,18 @@ InterpretResult VM::run() {
                 // Dict: string-keyed assignment (handled first since keys are non-numeric)
                 if (target.isDict()) {
                     std::string key = valueToString(indexVal);
-                    target.asDict()->pairs[key] = value;
+                    auto dict = target.asDict();
+                    dict->pairs[key] = value;
+                    writeBarrier(dict.get(), value);  // generational GC
                     push(value);
                     break;
                 }
 
                 // Map: arbitrary-key assignment
                 if (target.isMap()) {
-                    target.asMap()->pairs[indexVal] = value;
+                    auto map = target.asMap();
+                    map->pairs[indexVal] = value;
+                    writeBarrier(map.get(), value);  // generational GC
                     push(value);
                     break;
                 }
@@ -2898,12 +2915,12 @@ InterpretResult VM::run() {
                 size_t index = static_cast<size_t>(rawIndex);
 
                 if (target.isArray()) {
-                    auto& elements =
-                        target.asArray()->elements;
-                    if (index >= elements.size()) {
+                    auto arr = target.asArray();
+                    if (index >= arr->elements.size()) {
                         RUNTIME_ERROR_OR_THROW("Index out of bounds");
                     }
-                    elements[index] = value;
+                    arr->elements[index] = value;
+                    writeBarrier(arr.get(), value);  // generational GC
                     push(value);
                 } else if (target.isGcString()) {
                     RUNTIME_ERROR_OR_THROW("Cannot assign to string index (strings are immutable)");
@@ -3238,6 +3255,7 @@ InterpretResult VM::run() {
                 if (obj.isObjectInstance()) {
                     auto instance = obj.asObjectInstance();
                     instance->properties[propName] = value;
+                    writeBarrier(instance.get(), value);  // generational GC
                     push(value);
                 } else {
                     RUNTIME_ERROR_OR_THROW("Can only set properties on objects");

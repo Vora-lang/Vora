@@ -1,8 +1,10 @@
 # Vora 语言用户手册 / User Guide
 
-> **版本 / Version**: v0.27 | **最后更新 / Last updated**: 2026-06-29
+> **版本 / Version**: v0.28 | **最后更新 / Last updated**: 2026-07-03
 >
 > Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation.
+>
+> **v0.28 新特性**: async/await + 事件循环（基于 generator 扩展）、分代垃圾回收（minor/major GC，暂停时间 5-10× 降低）
 
 ---
 

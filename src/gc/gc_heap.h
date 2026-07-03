@@ -11,65 +11,81 @@
 
 // =========================================================================
 /// @file gc_heap.h
-/// @brief Singleton mark-sweep garbage collector for the Vora runtime.
+/// @brief Singleton generational mark-sweep garbage collector for Vora.
 ///
 /// GcHeap is the single allocation and collection entry point for every
 /// garbage-collected heap object.  It maintains an intrusive singly-linked
-/// list of all live GcObject instances, triggers GC cycles when allocation
-/// pressure exceeds a configurable byte threshold, and implements a classic
-/// mark-and-sweep algorithm:
+/// list of all live GcObject instances and implements a **generational**
+/// mark-sweep algorithm:
 ///
-///   1. <b>Mark</b>  — Trace the root set transitively via GcObject::trace(),
-///                     using an explicit worklist (not recursion) to avoid
-///                     stack overflow on deep object graphs.
-///   2. <b>Sweep</b> — Walk the allocation list; unmarked objects are
-///                     deleted and removed from the list, marked objects
-///                     have their mark bit cleared for the next cycle.
+///   1. <b>Minor GC</b> (`collectMinor()`) — Frequent, fast.  Only scans
+///      young objects (age_ < PROMOTION_THRESHOLD) and the remembered set
+///      (old objects that may reference young objects).  Surviving young
+///      objects are promoted (age_ incremented); after PROMOTION_THRESHOLD
+///      survivals they become old.
+///   2. <b>Major GC</b> (`collectMajor()`) — Infrequent, full-heap.  Scans
+///      all objects regardless of age.  All survivors are marked old.
 ///
-/// The GC is single-threaded by design (the VM runs on one thread).  If
-/// multi-threading is added in the future, this singleton will need
-/// synchronization (mutex around allocations and GC cycles) or a per-thread
-/// heap model.
+/// A **write barrier** (`writeBarrier()`) tracks when an old object gains a
+/// reference to a young object, recording the old object in a remembered set
+/// that serves as additional roots during minor GC.
+///
+/// The GC is single-threaded by design (the VM runs on one thread).
 ///
 /// @see GcObject, GcPtr
 // =========================================================================
 
 namespace vora {
 
+class Value;  // forward declaration
+
+// =========================================================================
+/// @brief Extract a raw GcObject* from a NaN-boxed Value if it holds a heap
+///        reference.  Returns nullptr for non-heap Values (int, bool, null, etc.).
+///
+/// Used by the write barrier to determine whether a stored Value references
+/// a young heap object.
+///
+/// @param v The Value to inspect.
+/// @return Raw GcObject* if the Value holds a heap reference, else nullptr.
+// =========================================================================
+GcObject* extractGcObject(const Value& v);
+
+// =========================================================================
+/// @brief Write barrier: records old→young references in the remembered set.
+///
+/// Called whenever a heap object's field is assigned a Value that references
+/// another heap object.  If @p src is an old object and @p dst is a young
+/// object, @p src is added to the remembered set so minor GC can scan it.
+///
+/// @param src The object whose field is being written (may be nullptr).
+/// @param dst The Value being stored into the field.
+// =========================================================================
+void writeBarrier(GcObject* src, const Value& dst);
+
 // =========================================================================
 /// @class GcHeap
-/// @brief Singleton mark-sweep garbage collector.
+/// @brief Singleton generational garbage collector.
 ///
 /// Every heap allocation goes through GcHeap::allocate() (or the convenience
 /// wrapper GcHeap::alloc()).  Allocated objects are threaded onto an
-/// internal singly-linked list.  When the total allocated byte count exceeds
-/// GcHeap::nextGCThreshold_, a GC cycle is marked as pending and will run on
-/// the next call to collectIfNeeded() or collect().
+/// internal singly-linked list.
 ///
-/// <b>NaN-boxing invariant:</b> The VM uses NaN-boxing to represent Value
-/// as a 64-bit word.  Pointers must fit within a 46-bit payload (bits 0–45)
-/// so they do not collide with the IEEE 754 NaN tag in bits 47–63.  The
-/// allocate() method asserts this constraint on every allocation.
+/// <b>NaN-boxing invariant:</b> Pointers must fit within the 46-bit payload.
 ///
-/// <b>Usage:</b>
-/// @code
-///   auto* raw = GcHeap::instance().allocate<MyType>(args...);
-///   auto ptr  = GcHeap::instance().alloc<MyType>(args...);   // returns GcPtr<MyType>
-///   GcHeap::instance().collectIfNeeded(roots);
-/// @endcode
+/// <b>Generational design:</b>
+///   - Young objects start at age_=0, collected by minor GCs
+///   - Minor GC scans only young objects + remembered set → fast
+///   - Objects surviving PROMOTION_THRESHOLD (3) minor GCs become old
+///   - Major GC scans the entire heap (infrequent)
+///   - Write barrier tracks old→young cross-generational references
 ///
 /// @note This class is a Meyers singleton — copy and move are deleted.
-/// =========================================================================
+// =========================================================================
 
 class GcHeap {
 public:
     /// @brief Return the global singleton GcHeap instance (Meyers singleton).
-    ///
-    /// The instance is created on first call and destroyed at program exit
-    /// (static storage duration).  Thread-safe in C++11 and later due to
-    /// guaranteed static-local initialization.
-    ///
-    /// @return Reference to the single GcHeap instance.
     static GcHeap& instance() {
         static GcHeap heap;
         return heap;
@@ -78,197 +94,149 @@ public:
     // =========================================================================
     /// @brief Allocate a GC-managed object of type T on the heap.
     ///
-    /// Constructs the object with the forwarded arguments, inserts it at the
-    /// head of the internal allocation list, and updates the byte counter.
-    /// If the total allocated bytes reach or exceed nextGCThreshold_, the
-    /// pending GC flag is set so that the next call to collectIfNeeded()
-    /// triggers a collection cycle.
-    ///
-    /// <b>NaN-boxing invariant:</b> The returned pointer must fit within a
-    /// 46-bit payload (bits 0–45).  This is true for all current 64-bit
-    /// platforms: x86-64 uses 47-bit virtual addresses, ARM64 uses 48-bit.
-    /// If this assert ever fires, the pointer must be boxed through a
-    /// separate indirection table.
+    /// Constructs the object with forwarded arguments, inserts it at the head
+    /// of the internal allocation list, and updates byte counters.  Triggers
+    /// pending minor/major GC flags when thresholds are exceeded.
     ///
     /// @tparam T    The GcObject subclass to allocate.
     /// @tparam Args Constructor argument types (deduced).
     /// @param args  Arguments forwarded to T's constructor.
-    /// @return      Raw pointer to the newly allocated T.  Callers should
-    ///              typically wrap this in a GcPtr<T> or use alloc<T>().
-    ///
-    /// @see alloc(), GcPtr
+    /// @return      Raw pointer to the newly allocated T.
     // =========================================================================
     template <typename T, typename... Args>
     T* allocate(Args&&... args) {
         T* obj = new T(std::forward<Args>(args)...);
-        // NaN-boxing safety: pointer must fit in 46-bit payload (64 TB addressable).
-        // This is true for all current 64-bit platforms (x86-64: 47-bit user space,
-        // ARM64: 48-bit). If it ever fires, we need to box the pointer on heap.
+        // NaN-boxing safety: pointer must fit in 46-bit payload.
         assert((reinterpret_cast<uint64_t>(static_cast<void*>(obj)) & ~UINT64_C(0x3FFFFFFFFFFF)) == 0
                && "GcObject allocated above 46-bit addressable range — NaN-boxing invariant broken");
         obj->gcNext = head_;
         head_ = obj;
         objectCount_++;
         allocatedBytes_ += obj->gcSize();
+        youngBytesSinceLastMinorGC_ += obj->gcSize();
+
+        if (youngBytesSinceLastMinorGC_ >= minorGCThreshold_) {
+            pendingMinorGC_ = true;
+        }
         if (allocatedBytes_ >= nextGCThreshold_) {
-            pendingGC_ = true;
+            pendingMajorGC_ = true;
         }
         return obj;
     }
 
     /// @brief Allocate a GC-managed object and wrap it in a GcPtr<T>.
-    ///
-    /// Convenience wrapper around allocate<T>() that returns a GcPtr<T>
-    /// instead of a raw pointer.
-    ///
-    /// @tparam T    The GcObject subclass to allocate.
-    /// @tparam Args Constructor argument types (deduced).
-    /// @param args  Arguments forwarded to T's constructor.
-    /// @return      GcPtr<T> owning a reference to the new object.
-    // =========================================================================
     template <typename T, typename... Args>
     GcPtr<T> alloc(Args&&... args) {
         return GcPtr<T>(allocate<T>(std::forward<Args>(args)...));
     }
 
-    // =========================================================================
-    /// @brief Run a full mark-sweep garbage collection cycle.
-    ///
-    /// <b>Algorithm:</b>
-    ///   1. <b>Mark phase</b> — Iterate over every GcObject* in the @p roots
-    ///      vector and call GcHeap::mark() on each, which transitively traces
-    ///      the reachable object graph via GcObject::trace().  Tracing uses a
-    ///      worklist (not recursion) so deep object graphs do not overflow
-    ///      the C++ call stack.
-    ///   2. <b>Sweep phase</b> — Walk the intrusive allocation list.  Objects
-    ///      that were NOT marked during the mark phase are deleted and
-    ///      removed from the list.  Objects that WERE marked have their mark
-    ///      bit cleared for the next cycle.
-    ///
-    /// After collection, the pending GC flag is cleared and the GC threshold
-    /// is adjusted heuristically to avoid thrashing.
-    ///
-    /// @param roots Vector of root pointers — every object reachable from
-    ///              these roots will survive the collection.  The VM supplies
-    ///              its value stack, global table, call frames, and any
-    ///              temporary registers as roots.
-    ///
-    /// @see mark(), sweep(), GcObject::trace()
-    // =========================================================================
-    void collect(const std::vector<GcObject*>& roots);
+    // ── Collection API ───────────────────────────────────────────────────
+
+    /// @brief Run a minor GC: young generation only.
+    /// Scans roots + remembered set, marks transitively through young
+    /// objects, promotes survivors, and sweeps unmarked young objects.
+    /// Old objects are untouched.
+    void collectMinor(const std::vector<GcObject*>& roots);
+
+    /// @brief Run a major GC: full heap (all generations).
+    /// Scans the full root set, marks the entire object graph, sweeps all
+    /// unmarked objects, and resets the remembered set.
+    void collectMajor(const std::vector<GcObject*>& roots);
+
+    /// @brief Run a full mark-sweep cycle (backward-compatible alias).
+    /// Equivalent to collectMajor().
+    void collect(const std::vector<GcObject*>& roots) { collectMajor(roots); }
 
     /// @brief Check whether a GC cycle is pending.
-    /// @return true if allocated bytes have exceeded the threshold and a
-    ///         collection has not yet run.
-    bool needsGC() const { return pendingGC_; }
+    bool needsGC() const { return pendingMinorGC_ || pendingMajorGC_; }
 
-    // =========================================================================
-    /// @brief Run a GC cycle only if one is pending (convenience shortcut).
-    ///
-    /// Equivalent to:
-    /// @code
-    ///   if (needsGC()) collect(roots);
-    /// @endcode
-    ///
-    /// @param roots The current root set (see collect()).
-    // =========================================================================
+    /// @brief Run the appropriate GC cycle(s) if pending.
+    /// Runs minor GC first (if pending), then major GC (if still needed).
     void collectIfNeeded(const std::vector<GcObject*>& roots) {
-        if (pendingGC_) collect(roots);
+        if (pendingMinorGC_) collectMinor(roots);
+        if (pendingMajorGC_) collectMajor(roots);
     }
+
+    // ── Remembered set ───────────────────────────────────────────────────
+
+    /// @brief Add an old object to the remembered set (called by write barrier).
+    void addToRememberedSet(GcObject* obj) {
+        if (!obj->isRemembered()) {
+            obj->setRemembered(true);
+            rememberedSet_.push_back(obj);
+        }
+    }
+
+    /// @brief Clear the remembered set (called after major GC).
+    void clearRememberedSet() {
+        for (auto* obj : rememberedSet_) {
+            obj->setRemembered(false);
+        }
+        rememberedSet_.clear();
+    }
+
+    // ── Statistics ───────────────────────────────────────────────────────
 
     /// @brief Return the number of live GC-managed objects.
     size_t objectCount() const { return objectCount_; }
-
-    /// @brief Return the total allocated bytes (sum of all GcObject::gcSize() calls).
+    /// @brief Return the total allocated bytes.
     size_t allocatedBytes() const { return allocatedBytes_; }
-
-    /// @brief Return the current GC threshold in bytes.
-    ///
-    /// When allocatedBytes_ reaches this value, a GC cycle is triggered.
-    /// The threshold is adjusted after each collection based on the live
-    /// set size to balance memory usage against collection frequency.
+    /// @brief Return the current major GC threshold in bytes.
     size_t gcThreshold() const { return nextGCThreshold_; }
+    /// @brief Return the minor GC threshold.
+    size_t minorGCThreshold() const { return minorGCThreshold_; }
+    /// @brief Number of minor GCs run.
+    size_t minorGCCount() const { return minorGCCount_; }
+    /// @brief Number of major GCs run.
+    size_t majorGCCount() const { return majorGCCount_; }
+    /// @brief Total objects promoted to old generation.
+    size_t promotedCount() const { return promotedCount_; }
 
     /// @brief Reset the heap: delete all tracked objects and clear counters.
-    ///
-    /// Walks the allocation list from head_ to tail, deleting every object.
-    /// After this call the heap is empty (zero objects, zero bytes, no
-    /// pending GC).  Used during VM shutdown or test teardown.
     void reset();
 
-    /// @brief Return the head of the internal allocation list.
-    /// @note Intended for debugging and testing; callers should not mutate
-    ///       the list directly.
+    /// @brief Return the head of the internal allocation list (debug).
     GcObject* head() const { return head_; }
 
 private:
-    /// @brief Private constructor — use GcHeap::instance() to obtain the singleton.
     GcHeap() = default;
-
-    /// @brief Destructor calls reset() to clean up all tracked objects.
     ~GcHeap() { reset(); }
-
-    /// @brief Deleted copy constructor — singleton, not copyable.
     GcHeap(const GcHeap&) = delete;
-
-    /// @brief Deleted copy-assignment — singleton, not assignable.
     GcHeap& operator=(const GcHeap&) = delete;
 
-    /** @brief Head of the intrusive singly-linked allocation list.
-     *
-     *  Every GcObject allocated via allocate() is prepended to this list
-     *  through its GcObject::gcNext pointer.  The sweep phase walks this
-     *  list to identify and delete unreachable objects. */
+    /// @brief Mark a single object and transitively trace its children.
+    /// During minor GC, skips old objects (they're already known-live).
+    void mark(GcObject* obj, std::vector<GcObject*>& worklist, bool isMinor);
+
+    /// @brief Sweep phase for minor GC: only delete unmarked young objects.
+    void sweepMinor();
+
+    /// @brief Sweep phase for major GC: delete all unmarked objects.
+    void sweepMajor();
+
+    // ── Allocation list ──────────────────────────────────────────────────
+
     GcObject* head_ = nullptr;
-
-    /** @brief Number of live objects currently tracked by the heap. */
     size_t objectCount_ = 0;
-
-    /** @brief Sum of GcObject::gcSize() for all live objects (bytes). */
     size_t allocatedBytes_ = 0;
 
-    /** @brief Allocation threshold that triggers the next GC cycle (bytes).
-     *
-     *  Default: 4 MiB.  When allocatedBytes_ >= nextGCThreshold_, the
-     *  pendingGC_ flag is set.  The threshold is dynamically adjusted after
-     *  each collection: if the live set after GC is still large, the
-     *  threshold is raised to avoid frequent collections (thrashing). */
-    size_t nextGCThreshold_ = 4 * 1024 * 1024;
+    // ── GC thresholds ────────────────────────────────────────────────────
 
-    /** @brief Flag indicating a GC cycle should run at the next safe point. */
-    bool pendingGC_ = false;
+    size_t nextGCThreshold_ = 4 * 1024 * 1024;       // major GC: 4 MiB
+    size_t minorGCThreshold_ = 512 * 1024;            // minor GC: 512 KiB
+    size_t youngBytesSinceLastMinorGC_ = 0;
+    bool pendingMinorGC_ = false;
+    bool pendingMajorGC_ = false;
 
-    // =========================================================================
-    /// @brief Mark a single object and transitively trace every object
-    ///        reachable from it.
-    ///
-    /// Uses an explicit worklist (the @p worklist vector parameter,
-    /// passed by reference and used as a LIFO stack) to avoid recursion.
-    /// For each newly marked object, GcObject::trace() is called to push
-    /// its immediate children onto the worklist, and the loop continues
-    /// until the worklist is exhausted.
-    ///
-    /// @param obj      Starting object to mark (must be non-null and unmarked).
-    /// @param worklist Shared LIFO worklist for the entire mark phase.
-    ///                 Objects are pushed here by GcObject::trace() and
-    ///                 popped by the mark loop in collect().
-    ///
-    /// @see GcObject::trace(), collect()
-    // =========================================================================
-    void mark(GcObject* obj, std::vector<GcObject*>& worklist);
+    // ── Remembered set ───────────────────────────────────────────────────
 
-    // =========================================================================
-    /// @brief Sweep phase: delete every unmarked object from the allocation list.
-    ///
-    /// Walks the intrusive list from head_ to tail.  For each object:
-    ///   - If NOT marked: the object is unreachable.  It is unlinked from
-    ///     the list, deleted, and the object/byte counters are decremented.
-    ///   - If marked: the object survived.  Its mark bit is cleared so it
-    ///     is ready for the next GC cycle, and it stays in the list.
-    ///
-    /// @see collect()
-    // =========================================================================
-    void sweep();
+    std::vector<GcObject*> rememberedSet_;
+
+    // ── Statistics ───────────────────────────────────────────────────────
+
+    size_t minorGCCount_ = 0;
+    size_t majorGCCount_ = 0;
+    size_t promotedCount_ = 0;
 };
 
 } // namespace vora
