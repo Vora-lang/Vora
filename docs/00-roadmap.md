@@ -101,7 +101,7 @@ OOP 完善
 工具链
 ├── ✅ 调试器 DAP                 ← v0.27, vora-dap.exe + VM debug hooks (Vora-LSP repo)
 ├── 包管理器 vpm               ← install/publish/search
-└── 文档生成器                  ← 源码注释 → API 文档
+└── ✅ 文档生成器                  ← 源码注释 → API 文档
 
 异步
 └── ✅ async/await + 事件循环      ← 基于 generator 扩展 (v0.28)
@@ -127,7 +127,7 @@ OOP 完善
 
 长期研究
 ├── JIT 编译（Tiered：解释器 → 基线 → 优化）
-└── WebAssembly 后端（.va → .wasm）
+└── ✅ WebAssembly 后端（c++ → .wasm）
 ```
 
 ---
