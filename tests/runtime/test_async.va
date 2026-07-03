@@ -1,0 +1,65 @@
+// tests/runtime/test_async.va — Async/await unit tests
+
+let T = func(cond, msg) {
+    if (!cond) {
+        print("FAIL: " + msg)
+        assert(false, msg)
+    }
+}
+
+// Test 1: async function returns a Task
+async func simple() {
+    return 42
+}
+let t1 = simple()
+T(type(t1) == "task", "async func returns task")
+T(run(t1) == 42, "run returns result")
+
+// Test 2: await plain value
+async func awaitPlain() {
+    return await 100
+}
+T(run(awaitPlain()) == 100, "await plain value")
+
+// Test 3: await async function call
+async func add(a, b) {
+    return a + b
+}
+async func testNested() {
+    return await add(3, 4)
+}
+T(run(testNested()) == 7, "nested await")
+
+// Test 4: multiple awaits in sequence
+async func multi() {
+    let a = await 1
+    let b = await 2
+    let c = await 3
+    return a + b + c
+}
+T(run(multi()) == 6, "multiple awaits")
+
+// Test 5: await non-task value (string)
+async func stringAwait() {
+    return await "hello"
+}
+T(run(stringAwait()) == "hello", "await string")
+
+// Test 6: async with no return (implicit null)
+async func noReturn() {
+    let x = 1
+}
+T(run(noReturn()) == null, "async no return yields null")
+
+// Test 7: Task state after run
+async func stateTest() {
+    return 99
+}
+let t7 = stateTest()
+T(type(t7) == "task", "pre-run: type is task")
+let r7 = run(t7)
+T(r7 == 99, "run returns value")
+// Task is now fulfilled — run again should return same result
+T(run(t7) == 99, "run on fulfilled task")
+
+print("All async tests passed!")

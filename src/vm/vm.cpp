@@ -935,14 +935,58 @@ InterpretResult VM::callVoraFunction(const GcPtr<VoraFunction>& func,
         return InterpretResult::RUNTIME_ERROR;
     }
 
-    // Generator function: don't execute body, create Generator and return it
-    if (proto->isGenerator) {
+    // Generator function: create Generator lazily, don't execute body
+    if (proto->isGenerator && !proto->isAsync) {
         auto gen = GcHeap::instance().alloc<Generator>();
         gen->function = func;
         gen->args = args;
         gen->done = false;
         gen->firstResume = true;
         push(gen);
+        return InterpretResult::OK;
+    }
+
+    // Async function: create Generator+Task, then execute body eagerly
+    if (proto->isAsync) {
+        auto gen = GcHeap::instance().alloc<Generator>();
+        gen->function = func;
+        gen->args = args;
+        gen->done = false;
+        gen->firstResume = false;  // not first resume — we're executing now
+        auto task = GcHeap::instance().alloc<Task>();
+        task->generator = gen;
+        task->state = Task::Pending;
+        gen->task = task;
+
+        // Save caller context for OP_RETURN to restore
+        gen->callerIp = ip;
+        gen->callerChunk = currentChunk;
+        gen->callerFrameBase = frameBaseIndex;
+        gen->callerFramesSize = frames.size();
+
+        // Push Task on stack as the function's return value
+        push(task);
+
+        // Eagerly execute the body: push frame and start
+        frames.push_back({ip, frameBaseIndex, currentChunk, func, gen});
+        currentChunk = &proto->chunk;
+        ip = currentChunk->code.data();
+        frameBaseIndex = stackTopIndex;
+
+        // Push arguments as locals
+        for (size_t i = 0; i < static_cast<size_t>(func->arity()); i++) {
+            if (i < args.size()) push(args[i]);
+            else push(nullptr);
+        }
+        if (func->hasRest()) {
+            auto restArray = GcHeap::instance().alloc<Array>();
+            for (size_t i = func->arity(); i < args.size(); i++) {
+                restArray->elements.push_back(args[i]);
+            }
+            push(Value(GcPtr<Array>(restArray)));
+        }
+
+        currentGenerator = gen;
         return InterpretResult::OK;
     }
 
@@ -2244,15 +2288,112 @@ InterpretResult VM::run() {
                 currentGenerator = nullptr;
                 break;
             }
+            case OpCode::OP_AWAIT: {
+                // Await expression: suspend until the awaited Task resolves.
+                // The awaited value is on top of stack.
+                Value awaited = pop();
+
+                // If not a Task, wrap as an immediately fulfilled Task
+                if (!awaited.isTask()) {
+                    // Non-Task values resolve immediately: push and continue
+                    push(awaited);
+                    break;
+                }
+
+                auto awaitedTask = awaited.asTask();
+
+                // If already fulfilled, push result and continue
+                if (awaitedTask->state == Task::Fulfilled) {
+                    push(awaitedTask->result);
+                    break;
+                }
+
+                // If rejected, throw the error
+                if (awaitedTask->state == Task::Rejected) {
+                    if (!runtimeErrorOrThrow("Unhandled async rejection")) {
+                        return InterpretResult::RUNTIME_ERROR;
+                    }
+                    goto dispatch;
+                }
+
+                // Task is pending: save state and return to event loop
+                if (!currentGenerator) {
+                    RUNTIME_ERROR_OR_THROW("'await' used outside of async function");
+                    break;
+                }
+
+                // Register as awaiter so we get resumed when the task completes
+                if (currentGenerator->task) {
+                    awaitedTask->awaiters.push_back(currentGenerator->task);
+                }
+
+                // Skip dead OP_POP/OP_POPN (same as OP_YIELD)
+                if (*ip == static_cast<uint8_t>(OpCode::OP_POP)) {
+                    ip++;
+                } else if (*ip == static_cast<uint8_t>(OpCode::OP_POPN)) {
+                    ip += 2;
+                }
+
+                // Save current IP and state (same as OP_YIELD)
+                currentGenerator->savedIpOffset =
+                    static_cast<size_t>(ip - currentChunk->code.data());
+                currentGenerator->savedFrameBase = frameBaseIndex;
+
+                currentGenerator->savedStack.clear();
+                for (size_t i = frameBaseIndex; i < stackTopIndex; i++) {
+                    currentGenerator->savedStack.push_back(stack[i]);
+                }
+
+                stackTopIndex = frameBaseIndex;
+
+                // Close open upvalues for this frame
+                for (auto it = openUpvalues.begin(); it != openUpvalues.end(); ) {
+                    if (it->first >= frameBaseIndex &&
+                        it->first < frameBaseIndex + MAX_LOCALS_PER_FRAME) {
+                        it->second->close();
+                        it = openUpvalues.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+
+                // Register current task as an awaiter on the awaited task
+                if (currentGenerator->task) {
+                    awaitedTask->awaiters.push_back(currentGenerator->task);
+                }
+
+                // Pop the generator's call frame
+                frames.pop_back();
+
+                // Restore caller's execution context
+                ip = currentGenerator->callerIp;
+                frameBaseIndex = currentGenerator->callerFrameBase;
+                currentChunk = currentGenerator->callerChunk;
+
+                while (frames.size() > currentGenerator->callerFramesSize) {
+                    frames.pop_back();
+                }
+
+                while (!catchHandlers.empty() &&
+                       catchHandlers.back().frameCount > frames.size()) {
+                    catchHandlers.pop_back();
+                }
+
+                // Push null as placeholder — event loop will resume when task completes
+                push(nullptr);
+
+                currentGenerator = nullptr;
+                break;
+            }
             case OpCode::OP_RETURN: {
                 // Return from current function or top-level
                 if (frames.empty()) {
                     return InterpretResult::OK;
                 }
 
-                // Generator return: signal StopIteration
+                // Generator return
                 if (currentGenerator) {
-                    Value returnValue = pop();  // Discard — generator return value unused
+                    Value returnValue = pop();
 
                     stackTopIndex = frameBaseIndex;
 
@@ -2265,6 +2406,33 @@ InterpretResult VM::run() {
                     }
 
                     currentGenerator->done = true;
+
+                    // Check if async before clearing currentGenerator
+                    bool isAsyncGen = currentGenerator->task != nullptr;
+
+                    // Async generator: fulfill the Task instead of throwing StopIteration
+                    if (isAsyncGen) {
+                        auto task = currentGenerator->task;
+                        task->result = returnValue;
+                        task->state = Task::Fulfilled;
+
+                        // Resume awaiters: set the first awaiter as pendingResume
+                        if (!task->awaiters.empty()) {
+                            auto awaiterTask = task->awaiters[0];
+                            auto awaiterGen = awaiterTask->generator;
+                            // Save current context into awaiter's generator (as the "caller")
+                            awaiterGen->callerIp = currentGenerator->callerIp;
+                            awaiterGen->callerChunk = currentGenerator->callerChunk;
+                            awaiterGen->callerFrameBase = currentGenerator->callerFrameBase;
+                            awaiterGen->callerFramesSize = currentGenerator->callerFramesSize;
+                            // Set up pendingResume for the awaiter
+                            const FunctionPrototype* awaiterProto = awaiterGen->function->getPrototype();
+                            pendingIp = awaiterProto->chunk.code.data() + awaiterGen->savedIpOffset;
+                            pendingChunk = &awaiterProto->chunk;
+                            pendingGenerator = awaiterGen;
+                            pendingResume = true;
+                        }
+                    }
 
                     // Pop generator frame, restore caller
                     CallFrame genFrame = frames.back();
@@ -2282,15 +2450,23 @@ InterpretResult VM::run() {
                         catchHandlers.pop_back();
                     }
 
-                    currentGenerator = nullptr;
+                    // Restore currentGenerator from parent frame (if any)
+                    currentGenerator = frames.empty() ? nullptr : frames.back().generator;
 
-                    // Throw StopIteration (catchable by try/catch)
-                    if (throwException(
-                            GcHeap::instance().alloc<GcString>("StopIteration"))) {
-                        goto dispatch;
+                    if (isAsyncGen) {
+                        // Async task completes normally.
+                        // The Task is already on the caller's stack (pushed by callVoraFunction).
+                        // Don't push returnValue — it's stored in task->result for await to read.
+                    } else {
+                        // Regular generator: throw StopIteration (catchable by try/catch)
+                        if (throwException(
+                                GcHeap::instance().alloc<GcString>("StopIteration"))) {
+                            goto dispatch;
+                        }
+                        runtimeError("Uncaught StopIteration");
+                        return InterpretResult::RUNTIME_ERROR;
                     }
-                    runtimeError("Uncaught StopIteration");
-                    return InterpretResult::RUNTIME_ERROR;
+                    break;
                 }
 
                 // Get return value (top of stack)

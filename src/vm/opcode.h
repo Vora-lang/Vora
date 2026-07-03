@@ -325,6 +325,13 @@ enum class OpCode : uint8_t {
     /// generator resumes at the instruction following this opcode.
     OP_YIELD,
 
+    /// @brief Await a Task inside an async function.
+    /// @details Pops the awaited value from the stack. If it's a resolved
+    /// Task, pushes its result and continues. If pending, saves the current
+    /// async function's state (like OP_YIELD) and returns to the event loop.
+    /// When the awaited Task completes, the event loop resumes execution.
+    OP_AWAIT,
+
     // ─────────────────────────────────────────────────────────────────────
     // Upvalues (closure captured variables)
     // ─────────────────────────────────────────────────────────────────────

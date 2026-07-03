@@ -70,6 +70,8 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::AS: return "AS";
         case TokenType::FROM: return "FROM";
         case TokenType::YIELD: return "YIELD";
+        case TokenType::ASYNC: return "ASYNC";
+        case TokenType::AWAIT: return "AWAIT";
         case TokenType::MATCH: return "MATCH";
         case TokenType::DEFER: return "DEFER";
         case TokenType::DO: return "DO";

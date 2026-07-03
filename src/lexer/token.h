@@ -116,6 +116,8 @@ namespace vora {
         AS,       ///< 'as'      Import alias, type cast
         FROM,     ///< 'from'    Import source specifier
         YIELD,    ///< 'yield'   Generator yield
+        ASYNC,    ///< 'async'   Async function declaration
+        AWAIT,    ///< 'await'   Await expression
         MATCH,    ///< 'match'   Pattern matching
         DEFER,    ///< 'defer'   Deferred execution
         DO,       ///< 'do'      Do-while loop (or expression block)

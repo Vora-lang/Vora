@@ -770,10 +770,12 @@ public:
     /// @param body    The function body block (shared ownership for closure capture).
     FuncExpr(
         std::vector<ParamDecl> params,
-        std::shared_ptr<BlockStmt> body
+        std::shared_ptr<BlockStmt> body,
+        bool isAsync = false
     )
         : params(std::move(params)),
-          body(std::move(body)) {
+          body(std::move(body)),
+          isAsync(isAsync) {
     }
 
     Value       accept(ExprVisitor<Value>& visitor)       const override;
@@ -784,6 +786,8 @@ public:
     std::vector<ParamDecl> params;       ///< The parameter declarations.
 
     std::shared_ptr<BlockStmt> body;     ///< The function body block.
+
+    bool isAsync = false;                ///< True if declared with 'async' keyword.
 };
 
 /**
@@ -810,6 +814,33 @@ public:
     std::unique_ptr<Expr> value;  ///< nullptr = yield with no value (yields null).
 
     Token keyword;                 ///< The 'yield' token for diagnostics.
+};
+
+/**
+ * @brief Await expression `await <expr>` inside an async function.
+ *
+ * Suspends the current async function until the awaited Task resolves.
+ * When the awaited task completes, execution resumes with the task's result
+ * value on the stack. A bare value (non-Task) is wrapped as an immediately
+ * resolved task.
+ */
+// await <expr>  — async suspension expression
+class AwaitExpr : public Expr {
+public:
+    /// @brief Construct an AwaitExpr.
+    /// @param value    The expression to await (evaluates to a Task or plain value).
+    /// @param keyword  The 'await' token for source position.
+    AwaitExpr(std::unique_ptr<Expr> value, Token keyword)
+        : value(std::move(value)), keyword(std::move(keyword)) {}
+
+    Value       accept(ExprVisitor<Value>& visitor)       const override;
+    void        accept(ExprVisitor<void>& visitor)         const override;
+    std::string accept(ExprVisitor<std::string>& visitor) const override;
+    std::unique_ptr<Expr> clone() const override;
+
+    std::unique_ptr<Expr> value;  ///< The awaited expression.
+
+    Token keyword;                 ///< The 'await' token for diagnostics.
 };
 
 /**

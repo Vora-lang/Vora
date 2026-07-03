@@ -1026,6 +1026,8 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     Compiler fnCompiler(errorReporter_);
     fnCompiler.enclosing = this;
     fnCompiler.chunk.source = chunk.source;  // propagate source for error display
+    fnCompiler.isAsync = stmt.isAsync;
+    if (stmt.isAsync) fnCompiler.isGenerator = true;  // async funcs are always generators
 
     // Function body starts a new scope with parameters as locals
     fnCompiler.beginScope();
@@ -1096,6 +1098,7 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     proto.upvalues = std::move(fnCompiler.upvalues);
     proto.chunk = std::move(fnCompiler.chunk);
     proto.isGenerator = fnCompiler.isGenerator;
+    proto.isAsync = fnCompiler.isAsync;
     for (const auto& param : stmt.params) {
         if (param.isRest) break;
         proto.paramNames.push_back(param.name);

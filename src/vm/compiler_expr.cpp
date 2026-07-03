@@ -1340,6 +1340,41 @@ void Compiler::visitYieldExpr(const YieldExpr& expr) {
     emitByte(static_cast<uint8_t>(OpCode::OP_YIELD));
 }
 
+void Compiler::visitAwaitExpr(const AwaitExpr& expr) {
+    currentLine = expr.keyword.line;
+    currentColumn = expr.keyword.column;
+
+    // Await is only valid inside async functions
+    if (!isAsync) {
+        errorAt(expr.keyword.line, expr.keyword.column, 5,
+                "'await' can only be used inside an async function");
+        // Still compile the value expression to avoid cascading errors
+        if (expr.value) expr.value->accept(*this);
+        return;
+    }
+
+    // Same restriction as yield: no await inside try blocks (Phase 1 limitation)
+    if (tryNesting > 0) {
+        errorAt(expr.keyword.line, expr.keyword.column, 5,
+                "'await' cannot be used inside a try block");
+        if (expr.value) expr.value->accept(*this);
+        return;
+    }
+
+    // Mark this function as both async and a generator
+    isAsync = true;
+    isGenerator = true;
+
+    // Compile the awaited value expression
+    if (expr.value) {
+        expr.value->accept(*this);
+    } else {
+        emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+    }
+
+    emitByte(static_cast<uint8_t>(OpCode::OP_AWAIT));
+}
+
 void Compiler::visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) {
     // Bare destructuring assignment: [a, b] = arr  or  {x, y} = obj
     // Compile RHS, then unpack pattern assigning to existing variables.
@@ -1361,6 +1396,8 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
     Compiler fnCompiler(errorReporter_);
     fnCompiler.enclosing = this;
     fnCompiler.chunk.source = chunk.source;
+    fnCompiler.isAsync = expr.isAsync;
+    if (expr.isAsync) fnCompiler.isGenerator = true;  // async funcs are always generators
 
     fnCompiler.beginScope();
 
@@ -1420,6 +1457,7 @@ void Compiler::visitFuncExpr(const FuncExpr& expr) {
     proto.upvalues = std::move(fnCompiler.upvalues);
     proto.chunk = std::move(fnCompiler.chunk);
     proto.isGenerator = fnCompiler.isGenerator;
+    proto.isAsync = fnCompiler.isAsync;
     for (const auto& param : expr.params) {
         if (param.isRest) break;
         proto.paramNames.push_back(param.name);

@@ -167,6 +167,8 @@ bool ValueEqual::operator()(const Value& a, const Value& b) const {
         return a.asIterator() == b.asIterator();
     case ValueTag::Generator:
         return a.asGenerator() == b.asGenerator();
+    case ValueTag::Task:
+        return a.asTask() == b.asTask();
     }
 
     return false;
@@ -244,8 +246,17 @@ void Iterator::trace(std::vector<GcObject*>& wl) {
 
 void Generator::trace(std::vector<GcObject*>& wl) {
     if (function) wl.push_back(function.get());
+    if (task) wl.push_back(task.get());
     for (auto& v : args) pushGcRefs(v, wl);
     for (auto& v : savedStack) pushGcRefs(v, wl);
+}
+
+void Task::trace(std::vector<GcObject*>& wl) {
+    if (generator) wl.push_back(generator.get());
+    pushGcRefs(result, wl);
+    for (auto& awaiter : awaiters) {
+        if (awaiter) wl.push_back(awaiter.get());
+    }
 }
 
 // =========================================================================
@@ -355,6 +366,15 @@ static void appendValue(std::string& out, const Value& value, int depth) {
         out += "<generator ";
         auto gen = value.asGenerator();
         out += (gen->function ? gen->function->name() : "?");
+        out += '>';
+        break;
+    }
+    case ValueTag::Task: {
+        out += "<task ";
+        auto t = value.asTask();
+        out += (t->generator && t->generator->function ? t->generator->function->name() : "?");
+        if (t->state == Task::Fulfilled) out += " fulfilled";
+        else if (t->state == Task::Rejected) out += " rejected";
         out += '>';
         break;
     }

@@ -99,7 +99,8 @@ enum class ValueTag : uint8_t {
     Generator        = 11,
     Set              = 12,
     Map              = 13,
-    // 14-15 reserved
+    Task             = 14,
+    // 15 reserved
 };
 
 /// @brief Flat dispatch tag for switch-based type branching, replacing std::visit.
@@ -124,7 +125,8 @@ enum class DispatchTag : uint8_t {
     Generator        = 11,
     Set              = 12,
     Map              = 13,
-    Double           = 14,
+    Task             = 14,
+    Double           = 15,
 };
 
 /// @brief Range limits for inline 47-bit integers stored in the NaN payload.
@@ -182,6 +184,7 @@ public:
     /*implicit*/ Value(GcPtr<ClassDefinition> p)     : bits_(tagBits(ValueTag::ClassDefinition, ptrPayload(p.get()))) {}
     /*implicit*/ Value(GcPtr<struct Iterator> p)     : bits_(tagBits(ValueTag::Iterator, ptrPayload(p.get()))) {}
     /*implicit*/ Value(GcPtr<struct Generator> p)    : bits_(tagBits(ValueTag::Generator, ptrPayload(p.get()))) {}
+    /*implicit*/ Value(GcPtr<struct Task> p)         : bits_(tagBits(ValueTag::Task, ptrPayload(p.get()))) {}
     /*implicit*/ Value(GcPtr<struct Set> p)          : bits_(tagBits(ValueTag::Set, ptrPayload(p.get()))) {}
     /*implicit*/ Value(GcPtr<struct Map> p)          : bits_(tagBits(ValueTag::Map, ptrPayload(p.get()))) {}
     /// @}
@@ -245,6 +248,8 @@ public:
     bool isIterator()          const { return !isDouble() && tag() == ValueTag::Iterator; }
     /// @brief True when the Value is a Generator reference (tag 11).
     bool isGenerator()         const { return !isDouble() && tag() == ValueTag::Generator; }
+    /// @brief True when the Value is a Task reference (tag 14).
+    bool isTask()              const { return !isDouble() && tag() == ValueTag::Task; }
     /// @brief True when the Value is a Set reference (tag 12).
     bool isSet()               const { return !isDouble() && tag() == ValueTag::Set; }
     /// @brief True when the Value is a Map reference (tag 13).
@@ -252,15 +257,15 @@ public:
     /// @brief True for any numeric type (Int or Double).
     bool isNumeric()           const { return isInt() || isDouble(); }
 
-    /// @brief True for any GcObject-backed type (tags 3–13).
+    /// @brief True for any GcObject-backed type (tags 3–14).
     ///
     /// Used by the GC to identify Values that carry a valid heap pointer
     /// in their payload.
-    // True for any GcObject-backed type (tags 3–13)
+    // True for any GcObject-backed type (tags 3–14)
     bool isObject() const {
         if (isDouble()) return false;
         auto t = tag();
-        return t >= ValueTag::GcString && t <= ValueTag::Map;
+        return t >= ValueTag::GcString && t <= ValueTag::Task;
     }
 
     // --- Value extractors ---
@@ -294,6 +299,7 @@ public:
     GcPtr<ClassDefinition>   asClassDefinition()   const { return GcPtr<ClassDefinition>(reinterpret_cast<ClassDefinition*>(bits_ & PAYLOAD_MASK)); }
     GcPtr<Iterator>          asIterator()          const { return GcPtr<Iterator>(reinterpret_cast<Iterator*>(bits_ & PAYLOAD_MASK)); }
     GcPtr<Generator>         asGenerator()         const { return GcPtr<Generator>(reinterpret_cast<Generator*>(bits_ & PAYLOAD_MASK)); }
+    GcPtr<Task>              asTask()              const { return GcPtr<Task>(reinterpret_cast<Task*>(bits_ & PAYLOAD_MASK)); }
     GcPtr<Set>               asSet()               const { return GcPtr<Set>(reinterpret_cast<Set*>(bits_ & PAYLOAD_MASK)); }
     GcPtr<Map>               asMap()               const { return GcPtr<Map>(reinterpret_cast<Map*>(bits_ & PAYLOAD_MASK)); }
     /// @}
@@ -506,6 +512,9 @@ struct Generator : GcObject {
     /// @brief True before the first next() call; used to evaluate args on first resume.
     bool firstResume = true;       // true before first next() call
 
+    /// @brief Owning Task if this generator is part of an async function (null otherwise).
+    GcPtr<struct Task> task;       // back-pointer for async task resolution
+
     /// @brief Arguments captured at generator creation time (gen_func(a, b, c)).
     // Args captured when gen_func(a, b, c) was called
     std::vector<Value> args;
@@ -537,6 +546,38 @@ struct Generator : GcObject {
     /// @brief Conservative size estimate for GC heuristics.
     /// @return sizeof(Generator) + saved stack + args vector capacities.
     size_t gcSize() const override { return sizeof(Generator) + savedStack.capacity() * sizeof(Value) + args.capacity() * sizeof(Value); }
+};
+
+/// @brief An async Task — a generator-driven coroutine with a future result.
+///
+/// Created when an async function is called. Wraps the underlying generator
+/// and tracks the task's state (pending, fulfilled, rejected). Tasks that
+/// are being awaited register themselves as awaiters; when this task completes,
+/// all awaiters are re-enqueued into the event loop.
+// Task — wraps a Generator for async/await, tracks result and waiting tasks.
+struct Task : GcObject {
+    /// @brief Task lifecycle states.
+    enum State : uint8_t { Pending, Fulfilled, Rejected };
+
+    /// @brief The underlying generator that drives this task.
+    GcPtr<Generator> generator;
+
+    /// @brief Resolved result value (valid when state != Pending).
+    Value result = nullptr;
+
+    /// @brief Current task state.
+    State state = Pending;
+
+    /// @brief Tasks that are awaiting this task's completion.
+    std::vector<GcPtr<Task>> awaiters;
+
+    /// @brief Trace GC roots reachable from this task.
+    /// @param wl Work list to append referenced GcObjects to.
+    void trace(std::vector<GcObject*>& wl) override;
+
+    /// @brief Conservative size estimate for GC heuristics.
+    /// @return sizeof(Task) + awaiters vector capacity.
+    size_t gcSize() const override { return sizeof(Task) + awaiters.capacity() * sizeof(GcPtr<Task>); }
 };
 
 // =========================================================================

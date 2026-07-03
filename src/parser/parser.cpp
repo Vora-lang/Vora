@@ -176,17 +176,24 @@ std::unique_ptr<Stmt> Parser::statement() {
         return forStatement();
     }
 
-    if (match(TokenType::FUNC)) {
-        // Anonymous function expression: func(x) { ... }
+    bool isAsync = match(TokenType::ASYNC);
+    if (isAsync) {
+        // Must be followed by 'func'
+        if (!match(TokenType::FUNC)) {
+            return errorStmt("Expected 'func' after 'async'");
+        }
+    }
+    if (isAsync || match(TokenType::FUNC)) {
+        // Anonymous function expression: func(x) { ... } or async func(x) { ... }
         if (check(TokenType::LEFT_PAREN)) {
-            auto expr = funcExpression();
+            auto expr = funcExpression(isAsync);
             if (!expr) {
                 return errorStmt("Failed to parse anonymous function expression");
             }
             match(TokenType::SEMICOLON);
             return std::make_unique<ExprStmt>(std::move(expr));
         }
-        return funcStatement();
+        return funcStatement(isAsync);
     }
 
     if (match(TokenType::OBJ)) {
@@ -749,7 +756,7 @@ std::unique_ptr<Stmt> Parser::cForStatement(Token forToken) {
     );
 }
 
-std::unique_ptr<Stmt> Parser::funcStatement() {
+std::unique_ptr<Stmt> Parser::funcStatement(bool isAsync) {
 
     std::string name;
     Token nameToken;  // saved for LSP position info
@@ -860,7 +867,9 @@ std::unique_ptr<Stmt> Parser::funcStatement() {
         name,
         nameToken,
         std::move(params),
-        std::move(body)
+        std::move(body),
+        false,
+        isAsync
     );
 }
 
@@ -874,6 +883,19 @@ std::unique_ptr<Expr> Parser::yieldExpression() {
     }
     auto value = expression();
     return std::make_unique<YieldExpr>(std::move(value), std::move(keyword));
+}
+
+std::unique_ptr<Expr> Parser::awaitExpression() {
+    Token keyword = previous();
+    // await <expr>
+    if (check(TokenType::SEMICOLON) || check(TokenType::RIGHT_BRACE) ||
+        check(TokenType::RIGHT_PAREN) || check(TokenType::COMMA) ||
+        check(TokenType::RIGHT_BRACKET) || isAtEnd()) {
+        error("Expected expression after 'await'");
+        return std::make_unique<AwaitExpr>(nullptr, std::move(keyword));
+    }
+    auto value = expression();
+    return std::make_unique<AwaitExpr>(std::move(value), std::move(keyword));
 }
 
 MatchPattern Parser::parseMatchPattern() {
@@ -1033,7 +1055,7 @@ std::unique_ptr<Expr> Parser::matchExpression() {
     );
 }
 
-std::unique_ptr<Expr> Parser::funcExpression() {
+std::unique_ptr<Expr> Parser::funcExpression(bool isAsync) {
     // Parse anonymous function: func(params) { body }
     // 'func' keyword already consumed by caller.
 
@@ -1116,7 +1138,8 @@ std::unique_ptr<Expr> Parser::funcExpression() {
 
     return std::make_unique<FuncExpr>(
         std::move(params),
-        std::shared_ptr<BlockStmt>(std::move(body))
+        std::shared_ptr<BlockStmt>(std::move(body)),
+        isAsync
     );
 }
 
@@ -1515,12 +1538,22 @@ std::unique_ptr<Expr> Parser::primary() {
         return yieldExpression();
     }
 
+    if (match(TokenType::AWAIT)) {
+        return awaitExpression();
+    }
+
     if (match(TokenType::MATCH)) {
         return matchExpression();
     }
 
-    if (match(TokenType::FUNC)) {
-        return funcExpression();
+    bool isAsyncExpr = match(TokenType::ASYNC);
+    if (isAsyncExpr) {
+        if (!match(TokenType::FUNC)) {
+            return errorExpr("Expected 'func' after 'async'");
+        }
+    }
+    if (isAsyncExpr || match(TokenType::FUNC)) {
+        return funcExpression(isAsyncExpr);
     }
 
     if (match(TokenType::THIS)) {

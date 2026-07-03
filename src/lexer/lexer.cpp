@@ -28,6 +28,8 @@ namespace vora {
         {"as", TokenType::AS},
         {"from", TokenType::FROM},
         {"yield", TokenType::YIELD},
+        {"async", TokenType::ASYNC},
+        {"await", TokenType::AWAIT},
         {"match", TokenType::MATCH},
         {"defer", TokenType::DEFER},
         {"do", TokenType::DO},

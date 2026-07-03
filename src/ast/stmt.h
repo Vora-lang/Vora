@@ -355,13 +355,15 @@ public:
         Token nameToken,
         std::vector<ParamDecl> params,
         std::shared_ptr<BlockStmt> body,
-        bool isStatic = false
+        bool isStatic = false,
+        bool isAsync = false
     )
         : name(std::move(name)),
           nameToken(std::move(nameToken)),
           params(std::move(params)),
           body(std::move(body)),
-          isStatic(isStatic) {
+          isStatic(isStatic),
+          isAsync(isAsync) {
     }
 
     void        accept(StmtVisitor<void>& visitor)        const override;
@@ -376,6 +378,7 @@ public:
     std::shared_ptr<BlockStmt> body;     ///< The function body block.
 
     bool isStatic = false;               ///< true if declared with 'this.func' inside Obj
+    bool isAsync = false;                ///< true if declared with 'async' keyword
 };
 
 /**

@@ -268,6 +268,13 @@ std::string ASTPrinter::visitYieldExpr(const YieldExpr& expr) {
     return "(yield)";
 }
 
+std::string ASTPrinter::visitAwaitExpr(const AwaitExpr& expr) {
+    if (expr.value) {
+        return "(await " + print(expr.value.get()) + ")";
+    }
+    return "(await)";
+}
+
 std::string ASTPrinter::visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) {
     return "(destructure-assign " + expr.value->accept(*this) + ")";
 }

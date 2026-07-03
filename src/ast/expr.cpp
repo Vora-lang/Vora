@@ -455,7 +455,7 @@ std::unique_ptr<Expr> FuncExpr::clone() const {
         clonedParams.emplace_back(p.name, p.defaultValue ? p.defaultValue->clone() : nullptr);
     }
     // BlockStmt has no clone; body is shared (shallow copy via shared_ptr)
-    return std::make_unique<FuncExpr>(std::move(clonedParams), body);
+    return std::make_unique<FuncExpr>(std::move(clonedParams), body, isAsync);
 }
 
 // =========================================================================
@@ -476,6 +476,29 @@ std::string YieldExpr::accept(ExprVisitor<std::string>& visitor) const {
 
 std::unique_ptr<Expr> YieldExpr::clone() const {
     return std::make_unique<YieldExpr>(
+        value ? value->clone() : nullptr,
+        keyword
+    );
+}
+
+// =========================================================================
+// AwaitExpr
+// =========================================================================
+
+Value AwaitExpr::accept(ExprVisitor<Value>& visitor) const {
+    return visitor.visitAwaitExpr(*this);
+}
+
+void AwaitExpr::accept(ExprVisitor<void>& visitor) const {
+    visitor.visitAwaitExpr(*this);
+}
+
+std::string AwaitExpr::accept(ExprVisitor<std::string>& visitor) const {
+    return visitor.visitAwaitExpr(*this);
+}
+
+std::unique_ptr<Expr> AwaitExpr::clone() const {
+    return std::make_unique<AwaitExpr>(
         value ? value->clone() : nullptr,
         keyword
     );

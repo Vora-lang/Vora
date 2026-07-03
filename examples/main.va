@@ -804,11 +804,11 @@ T(math.sqrt(25) == 5.0)
 T(math.min([5,3,9]) == 3)
 T(math.max([5,3,9]) == 9)
 
-// import "json"
-// T(json.parse("42") == 42)
-// let parsedArr = json.parse("[1,2]")
-// T(eqArr(parsedArr, [1,2]))
-// T(json.stringify({a:1}) == '{"a":1}')
+import "json"
+T(json.parse("42") == 42)
+let parsedArr = json.parse("[1,2]")
+T(eqArr(parsedArr, [1,2]))
+T(json.stringify({a:1}) == '{"a":1}')
 
 // [WISH] 标准库完善
 // 期望: std/fs, std/os, std/datetime, std/array, std/string, std/regex

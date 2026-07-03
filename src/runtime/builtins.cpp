@@ -64,6 +64,8 @@ void registerBuiltins(VM& vm) {
                 case DispatchTag::ObjectInstance: return GcHeap::instance().alloc<GcString>("object");
                 case DispatchTag::FunctionPrototype: return GcHeap::instance().alloc<GcString>("function");
                 case DispatchTag::ClassDefinition: return GcHeap::instance().alloc<GcString>("class");
+                case DispatchTag::Generator: return GcHeap::instance().alloc<GcString>("generator");
+                case DispatchTag::Task: return GcHeap::instance().alloc<GcString>("task");
                 default: return GcHeap::instance().alloc<GcString>("unknown");
             }
         });
@@ -506,6 +508,55 @@ void registerBuiltins(VM& vm) {
     vm.defineNative("Map", 0,
         [](const std::vector<Value>&) -> Value {
             return GcHeap::instance().alloc<Map>();
+        });
+
+    // --- run(task) — drive an async Task one step ---
+    // For simple async functions where all awaits resolve immediately,
+    // one call to run() completes the task. For pending awaits, call
+    // run() again after the awaited task completes.
+    vm.defineNative("run", 1,
+        [&vm](const std::vector<Value>& arguments) -> Value {
+            const Value& arg = arguments[0];
+            if (!arg.isTask()) {
+                vm.nativeError = true;
+                vm.nativeErrorValue = GcHeap::instance().alloc<GcString>(
+                    "TypeError: run() requires a Task");
+                return nullptr;
+            }
+
+            auto task = arg.asTask();
+            if (task->state == Task::Fulfilled) {
+                return task->result;
+            }
+            if (task->state == Task::Rejected) {
+                vm.nativeError = true;
+                vm.nativeErrorValue = task->result;
+                return nullptr;
+            }
+
+            auto gen = task->generator;
+            if (gen->done) {
+                task->state = Task::Fulfilled;
+                return task->result;
+            }
+
+            // Resume the generator one step (same logic as next() builtin)
+            gen->callerIp = vm.ip;
+            gen->callerChunk = vm.currentChunk;
+            gen->callerFrameBase = vm.frameBaseIndex;
+            gen->callerFramesSize = vm.frames.size();
+
+            const FunctionPrototype* proto = gen->function->getPrototype();
+            if (gen->firstResume) {
+                vm.pendingIp = proto->chunk.code.data();
+            } else {
+                vm.pendingIp = proto->chunk.code.data() + gen->savedIpOffset;
+            }
+            vm.pendingChunk = &proto->chunk;
+            vm.pendingGenerator = gen;
+            vm.pendingResume = true;
+
+            return nullptr;  // Popped by pendingResume handler
         });
 
     // Register math builtins

@@ -796,6 +796,48 @@ for x in countTo(5) {
 }
 ```
 
+### Async/Await **v0.28+**
+
+async/await 构建在生成器之上，为异步编程提供语法糖。`async func` 返回一个 `Task`，`await` 暂停执行直到 Task 完成。
+
+```va
+// 基本 async 函数
+async func greet(name) {
+    return "Hello, " + name + "!"
+}
+
+let task = greet("World")   // → Task (不是字符串)
+let result = run(task)      // → "Hello, World!"
+print(result)
+
+// await 立即值（非 Task）
+async func compute() {
+    let x = await 42        // 立即解析
+    return x * 2
+}
+print(run(compute()))       // → 84
+
+// await 另一个 async 函数
+async func fetchData() {
+    return 100
+}
+
+async func process() {
+    let data = await fetchData()  // 等待 Task 完成
+    return data + 1
+}
+print(run(process()))       // → 101
+```
+
+| 特性 | 说明 |
+|------|------|
+| `async func` | 返回 `Task`（生成器包装），函数体立即执行 |
+| `await expr` | 暂停直到 `expr` 解析。非 Task 值立即解析 |
+| `run(task)` | 驱动 Task 到完成，返回结果 |
+| `type(task)` | 返回 `"task"` |
+
+> **限制 (v0.28):** `await` 不能在 `try` 块内使用。事件循环目前为单步驱动（`run()` 一次完成同步链）。异步任务链通过 `Task` 的回调列表自动解析。
+
 ---
 
 ## 8. 对象与继承 / Objects & Inheritance

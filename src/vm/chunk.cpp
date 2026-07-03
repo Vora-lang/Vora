@@ -62,6 +62,7 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_CLOSURE:        return "OP_CLOSURE";
         case OpCode::OP_RETURN:         return "OP_RETURN";
         case OpCode::OP_YIELD:          return "OP_YIELD";
+        case OpCode::OP_AWAIT:          return "OP_AWAIT";
         case OpCode::OP_PUSH_SPREAD:   return "OP_PUSH_SPREAD";
         case OpCode::OP_SPREAD:        return "OP_SPREAD";
         case OpCode::OP_CALL_N:        return "OP_CALL_N";

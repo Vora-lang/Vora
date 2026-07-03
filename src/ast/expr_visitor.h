@@ -120,6 +120,8 @@ public:
     virtual R visitFuncExpr(const FuncExpr& expr) = 0;
     /** @brief Visit a yield expression inside a generator. */
     virtual R visitYieldExpr(const YieldExpr& expr) = 0;
+    /** @brief Visit an await expression inside an async function. */
+    virtual R visitAwaitExpr(const AwaitExpr& expr) = 0;
     ///@}
 
     /** @name Spread */

@@ -88,6 +88,7 @@ struct CallFrame {
     size_t frameBase;                    ///< Base index of this frame's locals on the VM stack.
     const Chunk* callerChunk;            ///< Chunk to restore on return.
     GcPtr<VoraFunction> function;        ///< Executing function (for upvalue access).
+    GcPtr<Generator> generator;           ///< Generator if this frame is an async function (null otherwise).
     uint64_t paramProvidedMask = 0;      ///< Bit i=1 if param slot i was provided by the caller.
     std::vector<Value> deferStack;       ///< Defer closures (LIFO: back = most recently deferred).
 };

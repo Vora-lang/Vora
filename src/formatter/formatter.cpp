@@ -558,6 +558,13 @@ std::string SourceFormatter::visitYieldExpr(const YieldExpr& expr) {
     return "yield";
 }
 
+std::string SourceFormatter::visitAwaitExpr(const AwaitExpr& expr) {
+    if (expr.value) {
+        return "await " + formatExpr(*expr.value, 0);
+    }
+    return "await";
+}
+
 std::string SourceFormatter::visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) {
     std::string result = formatBindingPattern(*expr.binding);
     result += " = ";

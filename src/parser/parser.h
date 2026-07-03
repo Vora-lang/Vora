@@ -301,9 +301,10 @@ private:
      * next token is '(' (distinguishing func expressions from func
      * statements).
      *
+     * @param isAsync True if the function was prefixed with the 'async' keyword.
      * @return A FuncExpr AST node, or ErrorExpr on parse failure.
      */
-    std::unique_ptr<Expr> funcExpression();
+    std::unique_ptr<Expr> funcExpression(bool isAsync = false);
 
     /**
      * @brief Parse a yield expression.
@@ -314,6 +315,7 @@ private:
      * @return A YieldExpr AST node.
      */
     std::unique_ptr<Expr> yieldExpression();
+    std::unique_ptr<Expr> awaitExpression();
 
     /**
      * @brief Parse a match expression.
@@ -536,9 +538,10 @@ private:
      * Parses: func name(params) { body }.
      * Also handles destructured parameters in the parameter list.
      *
+     * @param isAsync True if the function was prefixed with the 'async' keyword.
      * @return A FuncStmt AST node, or ErrorStmt on parse failure.
      */
-    std::unique_ptr<Stmt> funcStatement();
+    std::unique_ptr<Stmt> funcStatement(bool isAsync = false);
 
     /**
      * @brief Parse an object/class declaration statement.

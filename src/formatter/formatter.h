@@ -520,6 +520,16 @@ private:
     std::string visitYieldExpr(const YieldExpr& expr) override;
 
     /**
+     * @brief Format an await expression.
+     *
+     * Formats `await <expr>`. If no value is present, formats `await`.
+     *
+     * @param expr The AwaitExpr to format.
+     * @return The formatted await expression string.
+     */
+    std::string visitAwaitExpr(const AwaitExpr& expr) override;
+
+    /**
      * @brief Format a destructuring assignment.
      *
      * Produces a pattern binding on the left-hand side followed by `=`

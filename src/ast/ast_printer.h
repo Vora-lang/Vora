@@ -106,6 +106,7 @@ private:
     std::string visitMatchExpr(const MatchExpr& expr) override;
     std::string visitFuncExpr(const FuncExpr& expr) override;
     std::string visitYieldExpr(const YieldExpr& expr) override;
+    std::string visitAwaitExpr(const AwaitExpr& expr) override;
     std::string visitDestructureAssignmentExpr(const DestructureAssignmentExpr& expr) override;
     std::string visitSpreadExpr(const SpreadExpr& expr) override;
     std::string visitListCompExpr(const ListCompExpr& expr) override;

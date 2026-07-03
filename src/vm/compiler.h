@@ -58,6 +58,7 @@ struct FunctionPrototype : GcObject {
     Chunk chunk;                               ///< Compiled bytecode for the function body.
     std::vector<UpvalueDescriptor> upvalues;   ///< Variables captured from enclosing scopes.
     bool isGenerator = false;                  ///< True if the function body contains a yield expression.
+    bool isAsync = false;                      ///< True if the function was declared with 'async' keyword.
     bool hasRest = false;                      ///< True if the function declares a ...rest parameter.
     std::vector<std::string> paramNames;       ///< Fixed parameter names in definition order (excludes rest).
     std::vector<std::string> localNames;       ///< All local variable names in declaration order (for debugger).
@@ -245,6 +246,10 @@ public:
     /// @brief Compile a yield expression (generator suspension point).
     /// @param expr The yield expression node.
     void visitYieldExpr(const YieldExpr& expr) override;
+
+    /// @brief Compile an await expression (async suspension point).
+    /// @param expr The await expression node.
+    void visitAwaitExpr(const AwaitExpr& expr) override;
 
     /// @brief Compile a destructuring assignment expression ([a, b] = expr).
     /// @param expr The destructure assignment expression node.
@@ -534,6 +539,7 @@ private:
 
     int tryNesting = 0;    ///< Depth of active try blocks (for emitting OP_POP_CATCH cleanup on non-local exit).
     bool isGenerator = false;  ///< True when a yield expression is encountered in the function body.
+    bool isAsync = false;      ///< True when the function was declared with 'async' keyword.
 
     // =========================================================================
     // Finally context (for routing break/continue/return through finally)

@@ -1,0 +1,4 @@
+// std/async.va — Async/await event loop module
+// Provides the run() function for driving async Tasks to completion.
+
+export let run = run

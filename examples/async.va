@@ -1,0 +1,62 @@
+// examples/async.va — Async/await demo
+// Shows async functions, await expressions, and run().
+
+let T = func(cond, msg) {
+    if (!cond) {
+        print("FAIL: " + msg)
+        assert(false, msg)
+    }
+}
+
+// Basic async function returning a value
+async func greet(name) {
+    return "Hello, " + name + "!"
+}
+
+let t1 = greet("World")
+T(type(t1) == "task", "async function returns Task")
+
+let r1 = run(t1)
+T(r1 == "Hello, World!", "run(task) returns result: " + r1)
+
+// Await a plain value (resolves immediately)
+async func awaitPlain() {
+    let x = await 42
+    return x * 2
+}
+
+let t2 = awaitPlain()
+let r2 = run(t2)
+T(r2 == 84, "await plain value: " + toString(r2))
+
+// Await another async function
+async func double(n) {
+    return n * 2
+}
+
+async func compute() {
+    let a = await double(10)
+    let b = await double(a)
+    return b
+}
+
+let t3 = compute()
+let r3 = run(t3)
+T(r3 == 40, "nested await: " + toString(r3))
+
+// Multiple awaits
+async func sum3(a, b, c) {
+    return a + b + c
+}
+
+async func getValues() {
+    let x = await sum3(1, 2, 3)
+    let y = await 10
+    return x + y
+}
+
+let t4 = getValues()
+let r4 = run(t4)
+T(r4 == 16, "multiple awaits: " + toString(r4))
+
+print("All async tests passed!")
