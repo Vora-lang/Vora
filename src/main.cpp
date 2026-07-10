@@ -329,7 +329,10 @@ static void runREPL() {
             // Seed the compiler with the VM's current global table so that
             // slot assignments match. Without this, a `let x = 5` line and
             // a later `print(x)` line would disagree on slot numbers.
-            compiler.seedGlobals(vm.getGlobalNames());
+            // Pass the actual defined-flags from the VM so that names only
+            // reserved by a failed resolveGlobal() (e.g. bare `x = 1` without
+            // `let`) are not treated as already-defined.
+            compiler.seedGlobals(vm.getGlobalNames(), vm.getGlobalDefined());
 
             Chunk chunk = compiler.compile(program.get());
 

@@ -259,6 +259,10 @@ public:
     /// @return A const reference to the vector of global variable names.
     const std::vector<std::string>& getGlobalNames() const { return globalNames; }
 
+    /// @brief Read the defined-flag table (parallel to getGlobalNames()).
+    /// @return A const reference to the vector of defined flags.
+    const std::vector<bool>& getGlobalDefined() const { return globalDefined; }
+
     /// @brief Copy global state into this VM.
     /// @details Used to give a temporary VM (e.g. constructor execution)
     /// access to the same globals as the parent VM. This is a wholesale

@@ -412,6 +412,19 @@ public:
         }
     }
 
+    /// @brief Pre-populate with per-name defined flags (REPL mode).
+    /// @param names   Global variable names from the VM.
+    /// @param defined Parallel vector: true if the name was fully defined
+    ///                (via let/const), false if only reserved (forward ref).
+    void seedGlobals(const std::vector<std::string>& names,
+                     const std::vector<bool>& defined) {
+        for (size_t i = 0; i < names.size(); i++) {
+            globalNames.push_back(names[i]);
+            globalDefined.push_back(defined[i]);
+            globalIsConst.push_back(false);
+        }
+    }
+
 private:
     Chunk chunk;
     int currentLine = 1;
