@@ -1,5 +1,6 @@
 #include "gc_heap.h"
 
+#include <algorithm>
 #include "../runtime/value.h"
 
 #ifdef VORA_GC_TRACE
