@@ -195,6 +195,21 @@ class VM {
     int stepOverDepth_ = 0;                      ///< Frame depth to match for StepOver to complete.
     bool debugPaused_ = false;                   ///< True when execution is paused by debugger.
 
+    // --- Inline caches (simple, conservative) ---
+    // A small direct-mapped cache for property lookups keyed by (chunk, bytecode offset, nameIndex).
+    // We only cache class method/static-method resolution (bound methods or static functions)
+    // which are stable as long as the ClassDefinition pointer remains the same.
+    struct PropertyCacheEntry {
+        const Chunk* chunk = nullptr;
+        size_t offset = 0;
+        const ClassDefinition* classDef = nullptr;
+        uint32_t nameIndex = 0;
+        Value cachedValue;    // cached bound method or static method value
+        bool valid = false;
+    };
+    static constexpr size_t PROPERTY_CACHE_BITS = 8;
+    static constexpr size_t PROPERTY_CACHE_SIZE = (1ULL << PROPERTY_CACHE_BITS);
+    PropertyCacheEntry propertyCache_[PROPERTY_CACHE_SIZE];
 public:
     VM();
     ~VM() = default;

@@ -105,10 +105,11 @@ public:
     // =========================================================================
     template <typename T, typename... Args>
     T* allocate(Args&&... args) {
-        T* obj = new T(std::forward<Args>(args)...);
-        // NaN-boxing safety: pointer must fit in 46-bit payload.
-        assert((reinterpret_cast<uint64_t>(static_cast<void*>(obj)) & ~UINT64_C(0x3FFFFFFFFFFF)) == 0
-               && "GcObject allocated above 46-bit addressable range — NaN-boxing invariant broken");
+         T* obj = new T(std::forward<Args>(args)...);
+         // NaN-boxing safety: pointer must fit in 46-bit shifted payload.
+         // Heap pointers are stored as (ptr >> 2) in the tagged payload.
+         assert(((reinterpret_cast<uint64_t>(static_cast<void*>(obj)) >> 2) & ~UINT64_C(0x3FFFFFFFFFFF)) == 0
+             && "GcObject allocated above 46-bit shifted payload range — NaN-boxing invariant broken");
         obj->gcNext = head_;
         head_ = obj;
         objectCount_++;

@@ -1294,6 +1294,9 @@ InterpretResult VM::run() {
         return InterpretResult::RUNTIME_ERROR; \
     } while (false)
 
+    // Cache debug env flags before entering hot dispatch loop.
+    bool debugBytecode = std::getenv("VORA_DEBUG_BYTECODE") != nullptr;
+
     // Main bytecode dispatch loop.
     // Uses `goto dispatch` (computed-goto style) instead of `continue` to
     // jump back to the top of the switch. This is a deliberate performance
@@ -1396,6 +1399,19 @@ InterpretResult VM::run() {
             }
         }
 
+        // Optional diagnostic: when VORA_DEBUG_BYTECODE is set, print the
+        // current bytecode offset and the next few raw bytes to help trace
+        // ip misalignment issues.
+        if (debugBytecode) {
+            size_t off = static_cast<size_t>(ip - currentChunk->code.data());
+            uint8_t b0 = 0, b1 = 0, b2 = 0;
+            if (off < currentChunk->code.size()) b0 = currentChunk->code[off];
+            if (off + 1 < currentChunk->code.size()) b1 = currentChunk->code[off + 1];
+            if (off + 2 < currentChunk->code.size()) b2 = currentChunk->code[off + 2];
+            std::cerr << "BCOFF=" << off << " bytes=" << static_cast<int>(b0) << ","
+                      << static_cast<int>(b1) << "," << static_cast<int>(b2) << "\n";
+        }
+
         OpCode instruction = static_cast<OpCode>(READ_BYTE());
 
         // Shared variables for property-access opcodes (used by both fused
@@ -1410,7 +1426,19 @@ InterpretResult VM::run() {
                 break;
             }
             case OpCode::OP_CONSTANT_LONG: {
-                push(READ_LONG_CONSTANT());
+                uint8_t _lo = READ_BYTE();
+                uint8_t _hi = READ_BYTE();
+                uint16_t _constIdx = static_cast<uint16_t>(_lo) | (static_cast<uint16_t>(_hi) << 8);
+                if (static_cast<size_t>(_constIdx) >= currentChunk->constants.size()) {
+                    size_t curOff = static_cast<size_t>(ip - currentChunk->code.data()) - 3; // opcode + 2 bytes
+                    std::cerr << "OP_CONSTANT_LONG: read bytes lo=" << static_cast<int>(_lo)
+                              << " hi=" << static_cast<int>(_hi)
+                              << " -> idx=" << _constIdx
+                              << " which is >= constants.size()=" << currentChunk->constants.size()
+                              << " at bytecode offset " << curOff << std::endl;
+                    RUNTIME_ERROR_OR_THROW("Invalid constant index in OP_CONSTANT_LONG");
+                }
+                push(currentChunk->constants[_constIdx]);
                 break;
             }
             case OpCode::OP_NULL:  push(nullptr); break;
@@ -2973,6 +3001,27 @@ InterpretResult VM::run() {
                 }
                 std::string propName = currentChunk->constants[nameIndex].asGcString()->value;
 
+                // Attempt inline cache for class method/static method lookups.
+                if (currentChunk) {
+                    size_t instrOffset = static_cast<size_t>(ip - currentChunk->code.data());
+                    // compute small direct-mapped index
+                    size_t cacheIdx = ( (reinterpret_cast<uintptr_t>(currentChunk) >> 4) ^ instrOffset ^ nameIndex ) & (VM::PROPERTY_CACHE_SIZE - 1);
+                    auto &entry = propertyCache_[cacheIdx];
+                    if (entry.valid && entry.chunk == currentChunk && entry.offset == instrOffset && entry.nameIndex == nameIndex) {
+                        if (obj.isObjectInstance()) {
+                            auto instance = obj.asObjectInstance();
+                            if (instance->classDefinition.get() == entry.classDef) {
+                                push(entry.cachedValue);
+                                break;
+                            }
+                        } else if (obj.isCallable()) {
+                            // static method cache hit for class constructor
+                            push(entry.cachedValue);
+                            break;
+                        }
+                    }
+                }
+
                 // Array built-in methods & properties
                 if (obj.isArray()) {
                     auto arr = obj.asArray();
@@ -3065,10 +3114,23 @@ InterpretResult VM::run() {
                                     instance, mp, methodFn);
                                 push(bound);
                                 methodFound = true;
+                                // populate inline cache for this property access
+                                if (currentChunk) {
+                                    size_t instrOffset = static_cast<size_t>(ip - currentChunk->code.data());
+                                    size_t cacheIdx = ( (reinterpret_cast<uintptr_t>(currentChunk) >> 4) ^ instrOffset ^ nameIndex ) & (VM::PROPERTY_CACHE_SIZE - 1);
+                                    auto &entry = propertyCache_[cacheIdx];
+                                    entry.chunk = currentChunk;
+                                    entry.offset = instrOffset;
+                                    entry.classDef = instance->classDefinition.get();
+                                    entry.nameIndex = nameIndex;
+                                    entry.cachedValue = bound;
+                                    entry.valid = true;
+                                }
                                 break;
                             }
                         }
                     }
+                    // if methodFound already handled cache fill above
                     if (methodFound) break;
                     // Fall back to static methods on the class
                     if (instance->classDefinition) {
@@ -3613,6 +3675,8 @@ std::string VM::resolveModulePath(const std::string& rawPath) const {
     // resolved path, which is critical for module cache and circular import
     // detection (A → B → A with different path strings would loop forever).
     auto normalizePath = [](std::string p) -> std::string {
+        // Preserve leading slash for absolute paths
+        bool wasAbs = !p.empty() && p[0] == '/';
         // Replace backslashes with forward slashes
         for (auto& c : p) { if (c == '\\') c = '/'; }
         // Collapse double slashes and "/./" patterns
@@ -3635,10 +3699,15 @@ std::string VM::resolveModulePath(const std::string& rawPath) const {
             if (i > 0) result += '/';
             result += parts[i];
         }
-        return result.empty() ? "." : result;
+        if (result.empty()) {
+            if (wasAbs) return "/";
+            return ".";
+        }
+        return wasAbs ? ("/" + result) : result;
     };
 
     std::string result;
+    
 
     // Step 2: Absolute path
     if (isAbsolute(expanded)) {
@@ -3669,6 +3738,7 @@ std::string VM::resolveModulePath(const std::string& rawPath) const {
     // "mylib/foo"  → stdDir/mylib/foo.va
     result = normalizePath(stdDir + "/" + expanded);
     result = withExt(result);
+    
     if (fileExists(result)) return result;
 
     // If path starts with a segment matching stdDir's leaf name, try

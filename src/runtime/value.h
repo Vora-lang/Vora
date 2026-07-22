@@ -284,24 +284,24 @@ public:
     /// @brief Extract payload as a raw GcObject pointer for GC scanning.
     /// @return Pointer to the GcObject header (nullptr for Null or immediate types).
     // Generic GcObject* extraction (for GC scanning)
-    GcObject* asObject() const { return reinterpret_cast<GcObject*>(bits_ & PAYLOAD_MASK); }
+    GcObject* asObject() const { return reinterpret_cast<GcObject*>(ptrFromPayload(bits_ & PAYLOAD_MASK)); }
 
     /// @name Typed GcPtr extractors
     /// Each returns a GcPtr wrapping the heap pointer stored in the payload.
     /// @{
     // Typed GcPtr extractors
-    GcPtr<GcString>          asGcString()          const { return GcPtr<GcString>(reinterpret_cast<GcString*>(bits_ & PAYLOAD_MASK)); }
-    GcPtr<Array>             asArray()             const { return GcPtr<Array>(reinterpret_cast<Array*>(bits_ & PAYLOAD_MASK)); }
-    GcPtr<Dict>              asDict()              const { return GcPtr<Dict>(reinterpret_cast<Dict*>(bits_ & PAYLOAD_MASK)); }
-    GcPtr<Callable>          asCallable()          const { return GcPtr<Callable>(reinterpret_cast<Callable*>(bits_ & PAYLOAD_MASK)); }
-    GcPtr<ObjectInstance>    asObjectInstance()    const { return GcPtr<ObjectInstance>(reinterpret_cast<ObjectInstance*>(bits_ & PAYLOAD_MASK)); }
-    GcPtr<FunctionPrototype> asFunctionPrototype() const { return GcPtr<FunctionPrototype>(reinterpret_cast<FunctionPrototype*>(bits_ & PAYLOAD_MASK)); }
-    GcPtr<ClassDefinition>   asClassDefinition()   const { return GcPtr<ClassDefinition>(reinterpret_cast<ClassDefinition*>(bits_ & PAYLOAD_MASK)); }
-    GcPtr<Iterator>          asIterator()          const { return GcPtr<Iterator>(reinterpret_cast<Iterator*>(bits_ & PAYLOAD_MASK)); }
-    GcPtr<Generator>         asGenerator()         const { return GcPtr<Generator>(reinterpret_cast<Generator*>(bits_ & PAYLOAD_MASK)); }
-    GcPtr<Task>              asTask()              const { return GcPtr<Task>(reinterpret_cast<Task*>(bits_ & PAYLOAD_MASK)); }
-    GcPtr<Set>               asSet()               const { return GcPtr<Set>(reinterpret_cast<Set*>(bits_ & PAYLOAD_MASK)); }
-    GcPtr<Map>               asMap()               const { return GcPtr<Map>(reinterpret_cast<Map*>(bits_ & PAYLOAD_MASK)); }
+    GcPtr<GcString>          asGcString()          const { return GcPtr<GcString>(reinterpret_cast<GcString*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<Array>             asArray()             const { return GcPtr<Array>(reinterpret_cast<Array*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<Dict>              asDict()              const { return GcPtr<Dict>(reinterpret_cast<Dict*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<Callable>          asCallable()          const { return GcPtr<Callable>(reinterpret_cast<Callable*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<ObjectInstance>    asObjectInstance()    const { return GcPtr<ObjectInstance>(reinterpret_cast<ObjectInstance*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<FunctionPrototype> asFunctionPrototype() const { return GcPtr<FunctionPrototype>(reinterpret_cast<FunctionPrototype*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<ClassDefinition>   asClassDefinition()   const { return GcPtr<ClassDefinition>(reinterpret_cast<ClassDefinition*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<Iterator>          asIterator()          const { return GcPtr<Iterator>(reinterpret_cast<Iterator*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<Generator>         asGenerator()         const { return GcPtr<Generator>(reinterpret_cast<Generator*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<Task>              asTask()              const { return GcPtr<Task>(reinterpret_cast<Task*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<Set>               asSet()               const { return GcPtr<Set>(reinterpret_cast<Set*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<Map>               asMap()               const { return GcPtr<Map>(reinterpret_cast<Map*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
     /// @}
 
     // --- Comparison (bitwise identity) ---
@@ -331,7 +331,10 @@ private:
     /// @param p Heap object pointer.
     /// @return The pointer value masked to 46 bits (PAYLOAD_MASK).
     static uint64_t ptrPayload(void* p) {
-        return reinterpret_cast<uint64_t>(p) & PAYLOAD_MASK;
+        return (reinterpret_cast<uint64_t>(p) >> 2) & PAYLOAD_MASK;
+    }
+    static void* ptrFromPayload(uint64_t payload) {
+        return reinterpret_cast<void*>(payload << 2);
     }
 };
 

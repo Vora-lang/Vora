@@ -167,27 +167,10 @@ if(DEFINED _python_exe)
     )
 endif()
 
-# 公开头文件 — 保留 src/ 内的目录结构，使 `#include "vora.h"`
-# 及所有内部 `#include "vm/vm.h"` 等路径都能正确解析。
-install(FILES src/vora.h
-    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/vora"
-)
-
-# src/ 下所有嵌入需要的头文件（排除 LSP / JSON-RPC 内部实现）
-install(DIRECTORY src/
-    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/vora"
-    FILES_MATCHING
-    PATTERN "*.h"
-    PATTERN "lsp"        EXCLUDE
-    PATTERN "json_rpc"   EXCLUDE
-)
-
-# 第三方依赖（nlohmann/json.hpp）
-install(DIRECTORY include/
-    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/vora"
-    FILES_MATCHING
-    PATTERN "*.hpp"
-)
+# Only install the generated single-header API for embedding.
+# Internal header files are bundled into vora.hpp and do not need
+# to be installed separately into the system include tree.
+# (If Python is unavailable, vora.hpp generation/install is skipped.)
 
 # 标准库模块（.va 文件）
 install(DIRECTORY std/
@@ -421,6 +404,10 @@ else()
         DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/512x512/apps
         RENAME vora.png
     )
+
+    # Lowercase symlink for Linux installation: /usr/bin/vora -> /usr/bin/Vora
+    install(CODE "execute_process(COMMAND \"${CMAKE_COMMAND}\" -E remove \"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/vora\")")
+    install(CODE "execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink \"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/Vora\" \"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/vora\")")
 endif()
 
 # ═══════════════════════════════════════════════════════════════════════════

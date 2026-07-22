@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <unordered_map>
+#include <string_view>
 #include <vector>
 
 #include "../runtime/value.h"
@@ -213,6 +214,12 @@ private:
      * @param column 1-indexed source column.
      */
     void writeLineColumn(int line, int column);
+    /**
+     * @brief Write the same (line,column) position `count` times into the RLE
+     * tables. Optimizes emitting multi-byte operands that share the same
+     * source position (avoids per-byte overhead).
+     */
+    void writeLineColumnRepeat(int line, int column, int count);
 
     /**
      * @brief Hash index for O(1) string constant deduplication.
@@ -220,7 +227,7 @@ private:
      * Maps string value to its index in `constants`. Without this, each
      * addConstant() call for a string would require an O(n) linear scan.
      */
-    std::unordered_map<std::string, size_t> stringConstantIndices_;
+    std::unordered_map<std::string_view, size_t> stringConstantIndices_;
 
     /**
      * @brief Hash index for O(1) int64_t constant deduplication.

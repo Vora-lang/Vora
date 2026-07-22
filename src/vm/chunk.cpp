@@ -169,9 +169,8 @@ void Chunk::write(uint8_t byte, int line, int column) {
 
 void Chunk::write(uint8_t a, uint8_t b, int line, int column) {
     code.push_back(a);
-    writeLineColumn(line, column);
     code.push_back(b);
-    writeLineColumn(line, column);
+    writeLineColumnRepeat(line, column, 2);
 }
 
 void Chunk::writeAt(size_t offset, uint8_t byte) {
@@ -180,10 +179,41 @@ void Chunk::writeAt(size_t offset, uint8_t byte) {
     }
 }
 
+void Chunk::writeLineColumnRepeat(int line, int column, int count) {
+    if (lines.empty()) {
+        // Initialize with a run for `count` bytes
+        lines.push_back(count);
+        lines.push_back(line);
+        columns.push_back(count);
+        columns.push_back(column);
+        lastLine = line;
+        lastColumn = column;
+        lineRunStart = 0;
+        return;
+    }
+
+    // If the current run has the same line/column, extend it by `count`.
+    if (line == lastLine && column == lastColumn) {
+        lines[lineRunStart] += count;
+        columns[lineRunStart] += count;
+        return;
+    }
+
+    // Otherwise start a new run for `count` bytes.
+    lines.push_back(count);
+    lines.push_back(line);
+    columns.push_back(count);
+    columns.push_back(column);
+    lineRunStart = lines.size() - 2;
+    lastLine = line;
+    lastColumn = column;
+}
+
 size_t Chunk::addConstant(Value value) {
     // O(1) hash lookup for string constants.
     if (value.isGcString()) {
-        auto it = stringConstantIndices_.find(value.asGcString()->value);
+        std::string_view sv(value.asGcString()->value);
+        auto it = stringConstantIndices_.find(sv);
         if (it != stringConstantIndices_.end()) return it->second;
     }
 
@@ -224,9 +254,20 @@ size_t Chunk::addConstant(Value value) {
     // Insert and update hash indices.
     size_t idx = constants.size();
     constants.push_back(value);
+    // Diagnostic: log large integer constant insertions to help debug
+    if (value.isInt()) {
+        int64_t vi = value.asInt();
+        if (vi >= 250) {
+            std::cerr << "Chunk::addConstant: added int " << vi << " at idx " << idx << "\n";
+        }
+    }
 
     if (value.isGcString()) {
-        stringConstantIndices_[value.asGcString()->value] = idx;
+        // Store a string_view pointing into the GcString storage to avoid
+        // allocating/copying a std::string key. GcString lifetime matches
+        // the constant pool so this view remains valid.
+        std::string_view sv(value.asGcString()->value);
+        stringConstantIndices_[sv] = idx;
     } else if (value.isInt()) {
         intConstantIndices_[value.asInt()] = idx;
     } else if (value.isDouble()) {
@@ -246,8 +287,12 @@ void Chunk::writeConstant(Value value, int line, int column) {
         write(static_cast<uint8_t>(index), line, column);
     } else {
         write(static_cast<uint8_t>(OpCode::OP_CONSTANT_LONG), line, column);
-        write(static_cast<uint8_t>(index & 0xFF), line, column);        // lo byte
-        write(static_cast<uint8_t>((index >> 8) & 0xFF), line, column); // hi byte
+        uint8_t lo = static_cast<uint8_t>(index & 0xFF);
+        uint8_t hi = static_cast<uint8_t>((index >> 8) & 0xFF);
+        write(lo, line, column);        // lo byte
+        write(hi, line, column); // hi byte
+        std::cerr << "Chunk::writeConstant: OP_CONSTANT_LONG bytes emitted lo=" << static_cast<int>(lo)
+                  << ", hi=" << static_cast<int>(hi) << " for index=" << index << "\n";
     }
 }
 
