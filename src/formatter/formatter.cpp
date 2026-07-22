@@ -780,7 +780,13 @@ std::string SourceFormatter::visitDoWhileStmt(const DoWhileStmt& stmt) {
 std::string SourceFormatter::visitForStmt(const ForStmt& stmt) {
     // Vora syntax: for var in expr { ... }  (no parentheses)
     std::stringstream ss;
-    ss << "for " << stmt.variable << " in ";
+    ss << "for ";
+    if (stmt.variablePattern) {
+        ss << formatBindingPattern(*stmt.variablePattern);
+    } else {
+        ss << "?";
+    }
+    ss << " in ";
     ss << formatExpr(*stmt.iterable, 0);
     ss << formatBlockBody(*stmt.body);
     return ss.str();

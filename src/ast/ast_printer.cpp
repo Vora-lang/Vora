@@ -458,11 +458,54 @@ std::string ASTPrinter::visitDoWhileStmt(const DoWhileStmt& stmt) {
     return ss.str();
 }
 
+std::string ASTPrinter::printBindingPattern(const BindingPattern* pattern) {
+    if (!pattern) return "<null-pattern>";
+
+    switch (pattern->kind()) {
+        case BindingKind::Identifier: {
+            const auto& id = static_cast<const IdentifierBinding&>(*pattern);
+            if (id.defaultValue) {
+                return "(identifier " + id.name + " = " + print(id.defaultValue.get()) + ")";
+            }
+            return "(identifier " + id.name + ")";
+        }
+        case BindingKind::Array: {
+            const auto& arr = static_cast<const ArrayBinding&>(*pattern);
+            std::string result = "(array";
+            for (const auto& elem : arr.elements) {
+                result += " " + printBindingPattern(elem.get());
+            }
+            if (arr.rest) {
+                result += " (rest " + printBindingPattern(arr.rest.get()) + ")";
+            }
+            result += ")";
+            return result;
+        }
+        case BindingKind::Object: {
+            const auto& obj = static_cast<const ObjectBinding&>(*pattern);
+            std::string result = "(object";
+            for (const auto& prop : obj.properties) {
+                result += " (prop " + prop.key + " " + printBindingPattern(prop.pattern.get()) + ")";
+            }
+            if (obj.rest) {
+                result += " (rest " + printBindingPattern(obj.rest.get()) + ")";
+            }
+            result += ")";
+            return result;
+        }
+    }
+    return "<unknown-pattern>";
+}
+
 std::string ASTPrinter::visitForStmt(const ForStmt& stmt) {
     std::stringstream ss;
 
     ss << "(for ";
-    ss << stmt.variable;
+    if (stmt.variablePattern) {
+        ss << printBindingPattern(stmt.variablePattern.get());
+    } else {
+        ss << "?";
+    }
     ss << " in ";
     ss << print(stmt.iterable.get());
     ss << " ";

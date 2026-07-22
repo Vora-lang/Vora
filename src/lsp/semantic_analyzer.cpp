@@ -421,12 +421,15 @@ void SemanticAnalyzer::visitForStmt(const ForStmt& stmt) {
     if (stmt.body) {
         bool prev = pushScope();
 
-        // Add the loop variable to the for-body scope.
-        SymbolInfo forVar;
-        forVar.name = stmt.variable;
-        forVar.kind = SymbolKind::ForVar;
-        forVar.declToken = stmt.forToken;  // approximate position
-        addDecl(forVar);
+        if (stmt.variablePattern) {
+            for (auto& name : stmt.variablePattern->getBoundNames()) {
+                SymbolInfo forVar;
+                forVar.name = std::move(name);
+                forVar.kind = SymbolKind::ForVar;
+                forVar.declToken = stmt.forToken;
+                addDecl(forVar);
+            }
+        }
 
         reachable_ = true;
         stmt.body->accept(*this);

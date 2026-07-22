@@ -636,6 +636,45 @@ std::unique_ptr<Stmt> Parser::ifStatement() {
     );
 }
 
+std::unique_ptr<BindingPattern> Parser::parseForBindingPattern() {
+    if (check(TokenType::LEFT_BRACKET) || check(TokenType::LEFT_BRACE)) {
+        return parseBindingPattern();
+    }
+
+    if (!match(TokenType::IDENTIFIER)) {
+        error("Expected loop variable name after 'for'");
+        return std::make_unique<IdentifierBinding>("?error?", peek());
+    }
+
+    Token firstName = previous();
+    std::vector<std::unique_ptr<BindingPattern>> elements;
+    elements.push_back(std::make_unique<IdentifierBinding>(
+        previous().lexeme,
+        previous()
+    ));
+
+    while (match(TokenType::COMMA)) {
+        if (!match(TokenType::IDENTIFIER)) {
+            error("Expected identifier after ',' in for-in loop variable list");
+            break;
+        }
+        elements.push_back(std::make_unique<IdentifierBinding>(
+            previous().lexeme,
+            previous()
+        ));
+    }
+
+    if (elements.size() == 1) {
+        return std::move(elements[0]);
+    }
+
+    return std::make_unique<ArrayBinding>(
+        std::move(elements),
+        nullptr,
+        firstName
+    );
+}
+
 std::unique_ptr<Stmt> Parser::forStatement() {
 
     Token forToken = previous();
@@ -645,14 +684,8 @@ std::unique_ptr<Stmt> Parser::forStatement() {
         return cForStatement(forToken);
     }
 
-    // For-in: for variable in iterable { body }
-    std::string variable;
-    if (!match(TokenType::IDENTIFIER)) {
-        error("Expected loop variable name after 'for'");
-        variable = "?error?";
-    } else {
-        variable = previous().lexeme;
-    }
+    // For-in: for <pattern> in iterable { body }
+    auto variablePattern = parseForBindingPattern();
 
     if (!match(TokenType::IN)) {
         error("Expected 'in' after loop variable");
@@ -678,7 +711,7 @@ std::unique_ptr<Stmt> Parser::forStatement() {
     }
 
     return std::make_unique<ForStmt>(
-        std::move(variable),
+        std::move(variablePattern),
         std::move(iterable),
         std::move(body),
         forToken

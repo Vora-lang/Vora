@@ -274,12 +274,12 @@ public:
 class ForStmt : public Stmt {
 public:
     ForStmt(
-        std::string variable,
+        std::unique_ptr<BindingPattern> variablePattern,
         std::unique_ptr<Expr> iterable,
         std::unique_ptr<Stmt> body,
         Token forToken
     )
-        : variable(std::move(variable)),
+        : variablePattern(std::move(variablePattern)),
           iterable(std::move(iterable)),
           body(std::move(body)),
           forToken(std::move(forToken)) {
@@ -288,7 +288,7 @@ public:
     void        accept(StmtVisitor<void>& visitor)        const override;
     std::string accept(StmtVisitor<std::string>& visitor) const override;
 
-    std::string variable;                ///< Loop variable name bound to each element.
+    std::unique_ptr<BindingPattern> variablePattern;  ///< Loop binding pattern for each element.
 
     std::unique_ptr<Expr> iterable;      ///< Expression producing the collection to iterate.
 

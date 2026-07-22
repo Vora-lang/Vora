@@ -1,0 +1,38 @@
+// tests/runtime/test_for_in_pattern_destructure.va
+// Run: vora tests/runtime/test_for_in_pattern_destructure.va
+
+print("=== Runtime: For-in Pattern Destructuring Tests ===")
+
+let arr = [[1, 2], [3, 4], [5, 6]]
+let sum = 0
+for [a, b] in arr {
+    sum = sum + a + b
+}
+assert(sum == 21, "for-in array destructuring sum")
+
+let dict = {x: 10, y: 20}
+let seen = []
+for k in dict {
+    seen.add(k)
+}
+assert(len(seen) == 2, "for-in dict key count")
+assert((seen[0] == "x" or seen[1] == "x") and (seen[0] == "y" or seen[1] == "y"), "for-in dict keys contain x and y")
+
+let map = Map()
+map.set("one", 1)
+map.set("two", 2)
+let mapKeys = []
+for k in map {
+    mapKeys.add(k)
+}
+assert(len(mapKeys) == 2, "for-in map key count")
+
+let pairs = []
+for [k, v] in [["x", 100], ["y", 200]] {
+    pairs.add([k, v])
+}
+assert(len(pairs) == 2, "for-in destructuring pair length")
+assert(pairs[0][0] == "x" and pairs[0][1] == 100, "for-in destructuring pair 0")
+assert(pairs[1][0] == "y" and pairs[1][1] == 200, "for-in destructuring pair 1")
+
+print("Runtime for-in pattern destructuring tests: PASS")

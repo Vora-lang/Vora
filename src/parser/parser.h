@@ -425,6 +425,15 @@ private:
     std::unique_ptr<BindingPattern> parseBindingPattern();
 
     /**
+     * @brief Parse a for-in loop binding pattern.
+     *
+     * Supports `for x in ...`, `for k, v in ...`, and `for [k, v] in ...`.
+     *
+     * @return The parsed binding pattern tree.
+     */
+    std::unique_ptr<BindingPattern> parseForBindingPattern();
+
+    /**
      * @brief Parse an array destructuring pattern: [a, b, ...rest].
      *
      * @return An array binding pattern node.

@@ -87,6 +87,15 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
 
     case BindingKind::Identifier: {
         const auto& id = static_cast<const IdentifierBinding&>(pattern);
+        if (id.defaultValue) {
+            emitByte(static_cast<uint8_t>(OpCode::OP_DUP));
+            size_t defaultJump = emitJump(OpCode::OP_JUMP_IF_NULL);
+            size_t skipJump = emitJump(OpCode::OP_JUMP);
+            patchJump(defaultJump);
+            emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+            id.defaultValue->accept(*this);
+            patchJump(skipJump);
+        }
         // Apply type annotation conversion before binding (let [a]:int = ["42"] → a==42)
         if (!typeAnnotation.empty()) {
             emitConvert(typeAnnotation);
@@ -136,7 +145,7 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
                           static_cast<uint8_t>(srcSlot));         // load array
             }
             emitConstant(static_cast<double>(i));             // push index
-            emitByte(static_cast<uint8_t>(OpCode::OP_INDEX)); // array[i]
+            emitByte(static_cast<uint8_t>(OpCode::OP_INDEX_SAFE)); // safe access
             compileBindPattern(*arr.elements[i], -1, isConst, typeAnnotation);
         }
 
@@ -248,7 +257,7 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
                           static_cast<uint8_t>(srcSlot));         // load object
             }
             size_t keyIndex = identifierConstant(prop.key);
-            emitGetProperty(keyIndex);
+            emitGetPropertySafe(keyIndex);
             compileBindPattern(*prop.pattern, -1, isConst, typeAnnotation);
         }
 
@@ -389,6 +398,15 @@ void Compiler::compileAssignPattern(const BindingPattern& pattern) {
 
     case BindingKind::Identifier: {
         const auto& id = static_cast<const IdentifierBinding&>(pattern);
+        if (id.defaultValue) {
+            emitByte(static_cast<uint8_t>(OpCode::OP_DUP));
+            size_t defaultJump = emitJump(OpCode::OP_JUMP_IF_NULL);
+            size_t skipJump = emitJump(OpCode::OP_JUMP);
+            patchJump(defaultJump);
+            emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+            id.defaultValue->accept(*this);
+            patchJump(skipJump);
+        }
         // Value is on top of stack. Assign to existing variable.
         int localSlot = resolveLocal(id.name);
         if (localSlot >= 0) {
@@ -853,7 +871,7 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
 
     tryNesting++;
 
-    // Compile next(_iter) and bind to loop variable
+    // Compile next(_iter) and bind to loop variable or pattern.
     int nextBuiltinSlot = resolveGlobal("next");
     emitGetGlobal(nextBuiltinSlot);
     emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
@@ -861,7 +879,11 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
     emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
 
     beginScope();
-    addLocal(stmt.variable);
+    if (stmt.variablePattern) {
+        compileBindPattern(*stmt.variablePattern, -1, false);
+    } else {
+        error("Internal compiler error: missing for-loop binding pattern");
+    }
     stmt.body->accept(*this);
     endScope();
 
