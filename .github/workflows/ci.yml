@@ -1,0 +1,270 @@
+name: CI
+
+on:
+  workflow_dispatch:
+
+jobs:
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # Linux — x64, x86, aarch64, armhf
+  # ═════════════════════════════════════════════════════════════════════════
+
+  build-linux:
+    name: "Linux ${{ matrix.arch }} (${{ matrix.config }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86, aarch64, armhf]
+        config: [Debug, Release]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Set lowercase config (presets use lowercase) ───────────────
+      - name: Set config name
+        run: echo "cfg=${{ matrix.config == 'Debug' && 'debug' || 'release' }}" >> $GITHUB_ENV
+
+      # ── Install Ninja ──────────────────────────────────────────────
+      - name: Install Ninja
+        run: sudo apt-get install -y ninja-build
+
+      # ── Install cross-compilation toolchains (non-x64) ─────────────
+      - name: Install x86 cross-compiler (multilib)
+        if: matrix.arch == 'x86'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib
+
+      - name: Install aarch64 cross-compiler
+        if: matrix.arch == 'aarch64'
+        run: sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Install armhf cross-compiler
+        if: matrix.arch == 'armhf'
+        run: sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+
+      # ── Configure ──────────────────────────────────────────────────
+      - name: Configure (CMake)
+        run: cmake --preset "linux-${{ matrix.arch }}-${{ env.cfg }}"
+
+      # ── Build ──────────────────────────────────────────────────────
+      - name: Build
+        run: cmake --build --preset "linux-${{ matrix.arch }}-${{ env.cfg }}"
+
+      # ── Test (native x64 only; cross-compiled binaries need QEMU) ─
+      - name: Test (VM mode)
+        if: matrix.arch == 'x64'
+        run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ env.cfg }}" -R "^vm-" --output-on-failure
+
+      - name: Test (C++ Unit)
+        if: matrix.arch == 'x64'
+        run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ env.cfg }}" -R "^unit-" --output-on-failure
+
+      # ── Package (Release only) ─────────────────────────────────────
+      - name: Package (.deb / .rpm / .pkg.tar.xz)
+        if: matrix.config == 'Release'
+        run: cmake --build "build/linux-${{ matrix.arch }}-${{ env.cfg }}" --target package
+
+      - name: Upload packages
+        if: matrix.config == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vora-linux-${{ matrix.arch }}
+          path: |
+            build/linux-${{ matrix.arch }}-${{ env.cfg }}/vora-*.deb
+            build/linux-${{ matrix.arch }}-${{ env.cfg }}/vora-*.rpm
+            build/linux-${{ matrix.arch }}-${{ env.cfg }}/vora-*.tar.xz
+            build/linux-${{ matrix.arch }}-${{ env.cfg }}/vora-*.tar.gz
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # Windows — x64, x86, arm64
+  # ═════════════════════════════════════════════════════════════════════════
+
+  build-windows:
+    name: "Windows ${{ matrix.arch }} (${{ matrix.config }})"
+    runs-on: windows-2022  # pin to 2022: windows-latest (2025) breaks VS 2022 detection
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86, arm64]
+        config: [Debug, Release]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Set lowercase config (presets use lowercase) ───────────────
+      - name: Set config name
+        run: echo "cfg=${{ matrix.config == 'Debug' && 'debug' || 'release' }}" >> $env:GITHUB_ENV
+
+      # ── WiX v3 (for custom MSI with WixUI + PATH) ──────────────────
+      - name: Install WiX v3
+        if: matrix.config == 'Release' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          curl -L -o /tmp/wix314.zip "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip"
+          mkdir -p C:/WiXv3
+          unzip -o /tmp/wix314.zip -d C:/WiXv3
+          echo "C:/WiXv3" >> $GITHUB_PATH
+
+      # ── Configure ──────────────────────────────────────────────────
+      - name: Configure (CMake)
+        run: cmake --preset "windows-${{ matrix.arch }}-${{ env.cfg }}"
+
+      # ── Build ──────────────────────────────────────────────────────
+      - name: Build
+        run: cmake --build --preset "windows-${{ matrix.arch }}-${{ env.cfg }}" --config ${{ matrix.config }}
+
+      # ── Test (native x64 only; ARM64 executables won't run on x64) ─
+      - name: Test (VM mode)
+        if: matrix.arch == 'x64'
+        run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ env.cfg }}" -C ${{ matrix.config }} -R "^vm-" --output-on-failure
+
+      - name: Test (C++ Unit)
+        if: matrix.arch == 'x64'
+        run: ctest --test-dir "build/windows-${{ matrix.arch }}-${{ env.cfg }}" -C ${{ matrix.config }} -R "^unit-" --output-on-failure
+
+      # ── Package (Release only) ─────────────────────────────────────
+      - name: Package — CPack (.zip + .msi)
+        if: matrix.config == 'Release'
+        run: cmake --build "build/windows-${{ matrix.arch }}-${{ env.cfg }}" --target package --config ${{ matrix.config }}
+
+      - name: Package — Custom MSI (WixUI + PATH + std)
+        if: matrix.config == 'Release' && matrix.arch != 'x86'
+        run: cmake --build "build/windows-${{ matrix.arch }}-${{ env.cfg }}" --target msi --config ${{ matrix.config }}
+
+      - name: Upload packages
+        if: matrix.config == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vora-windows-${{ matrix.arch }}
+          path: |
+            build/windows-${{ matrix.arch }}-${{ env.cfg }}/vora-*.zip
+            build/windows-${{ matrix.arch }}-${{ env.cfg }}/vora-*.msi
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # macOS — Universal binary (x86_64 + arm64)
+  # ═════════════════════════════════════════════════════════════════════════
+
+  build-macos:
+    name: "macOS Universal (${{ matrix.config }})"
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Debug, Release]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      # ── Set lowercase config (presets use lowercase) ───────────────
+      - name: Set config name
+        run: echo "cfg=${{ matrix.config == 'Debug' && 'debug' || 'release' }}" >> $GITHUB_ENV
+
+      # ── Configure ──────────────────────────────────────────────────
+      - name: Configure (CMake)
+        run: cmake --preset "macos-universal-${{ env.cfg }}"
+
+      # ── Build ──────────────────────────────────────────────────────
+      - name: Build
+        run: cmake --build --preset "macos-universal-${{ env.cfg }}"
+
+      # ── Verify universal binary ────────────────────────────────────
+      - name: Verify universal binary
+        run: |
+          echo "Binary architectures:"
+          lipo -info "build/macos-universal-${{ env.cfg }}/Vora" || file "build/macos-universal-${{ env.cfg }}/Vora"
+
+      # ── Test ───────────────────────────────────────────────────────
+      - name: Test (VM mode)
+        run: ctest --test-dir "build/macos-universal-${{ env.cfg }}" -R "^vm-" --output-on-failure
+
+      - name: Test (C++ Unit)
+        run: ctest --test-dir "build/macos-universal-${{ env.cfg }}" -R "^unit-" --output-on-failure
+
+      # ── Package (Release only) ─────────────────────────────────────
+      - name: Package (.tar.gz)
+        if: matrix.config == 'Release'
+        run: cmake --build "build/macos-universal-${{ env.cfg }}" --target package
+
+      - name: Upload packages
+        if: matrix.config == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vora-macos-universal
+          path: |
+            build/macos-universal-${{ env.cfg }}/vora-*.tar.gz
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # Sanitizer + Fuzzer (Linux, clang, ASan+UBSan)
+  # ═════════════════════════════════════════════════════════════════════════
+
+  sanitizer-fuzzer:
+    name: "Sanitizers (ASan+UBSan) + Fuzz"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get install -y ninja-build
+
+      - name: Install clang
+        run: |
+          sudo apt-get install -y clang
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "CXX=clang++" >> $GITHUB_ENV
+
+      # ── Sanitizer build + test ─────────────────────────────────────────
+      - name: Configure (ASan+UBSan)
+        run: cmake --preset linux-x64-sanitizers
+
+      - name: Build
+        run: cmake --build --preset linux-x64-sanitizers
+
+      - name: Test (VM mode)
+        run: ctest --test-dir build/linux-x64-sanitizers -R "^vm-" --output-on-failure
+
+      - name: Test (C++ Unit)
+        run: ctest --test-dir build/linux-x64-sanitizers -R "^unit-" --output-on-failure
+
+      # ── Fuzzer build + short run ────────────────────────────────────────
+      # libFuzzer flags are set in CMakeLists.txt (VORA_FUZZER=ON) —
+      # passing them via CMAKE_CXX_FLAGS would inject -fsanitize=fuzzer
+      # into CMake's compiler detection test program, causing a "multiple
+      # definition of main" linker error (libFuzzer ships its own main).
+      - name: Configure (libFuzzer)
+        run: |
+          cmake -S . -B build/fuzzer -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DVORA_FUZZER=ON \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER=clang
+
+      - name: Build fuzzer
+        run: cmake --build build/fuzzer --target Vora_fuzzer
+
+      - name: Run fuzzer (60s smoke test)
+        run: |
+          mkdir -p fuzz_results
+          ./build/fuzzer/Vora_fuzzer \
+            -max_len=4096 \
+            -max_total_time=60 \
+            -print_final_stats=1 \
+            tests/fuzz/corpus/ \
+            2>&1 | tee fuzz_results/fuzz.log || true
+
+      - name: Upload fuzz results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-results
+          path: fuzz_results/

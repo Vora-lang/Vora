@@ -1,0 +1,34 @@
+// Problem #19: Best Time to Buy and Sell Stock (Easy)
+// Max profit from one buy and one sell.
+// Track minimum price seen so far, compute max profit.
+
+func maxProfit(prices) {
+    if (prices.length <= 1) {
+        return 0;
+    }
+    let minPrice = prices[0];
+    let maxProf = 0;
+    for i in range(1, prices.length) {
+        if (prices[i] < minPrice) {
+            minPrice = prices[i];
+        } else {
+            let profit = prices[i] - minPrice;
+            if (profit > maxProf) {
+                maxProf = profit;
+            }
+        }
+    }
+    return maxProf;
+}
+
+// Test cases
+assert(maxProfit([7, 1, 5, 3, 6, 4]) == 5);
+assert(maxProfit([7, 6, 4, 3, 1]) == 0);
+assert(maxProfit([1]) == 0);
+assert(maxProfit([]) == 0);
+assert(maxProfit([1, 2]) == 1);
+assert(maxProfit([2, 4, 1]) == 2);
+assert(maxProfit([3, 3, 3, 3]) == 0);
+assert(maxProfit([1, 2, 3, 4, 5]) == 4);
+
+print("PASS: 19-best-time-buy-sell-stock");

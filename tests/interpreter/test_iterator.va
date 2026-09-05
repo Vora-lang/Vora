@@ -1,0 +1,61 @@
+// tests/interpreter/test_iterator.va — Test iter() and next() iterator protocol
+import "json"
+
+// --- Array iteration ---
+let arr = [10, 20, 30]
+let it = iter(arr)
+assert(next(it) == 10, "array next 1")
+assert(next(it) == 20, "array next 2")
+assert(next(it) == 30, "array next 3")
+
+// StopIteration after exhaustion
+let ok = false
+try {
+    next(it)
+} catch (e) {
+    assert(e == "StopIteration", "array StopIteration")
+    ok = true
+}
+assert(ok, "array catch StopIteration")
+
+// Empty array
+let empty = iter([])
+let caught = false
+try { next(empty) } catch (e) { caught = true }
+assert(caught, "empty array StopIteration")
+
+// --- String iteration ---
+let sit = iter("hi")
+assert(next(sit) == "h", "string next 1")
+assert(next(sit) == "i", "string next 2")
+let strOk = false
+try { next(sit) } catch (e) { strOk = true }
+assert(strOk, "string StopIteration")
+
+// --- Dict iteration ---
+let d = {a: 1, b: 2, c: 3}
+let dit = iter(d)
+// Collect all keys (order is snapshot order, may vary)
+let k0 = next(dit)
+let k1 = next(dit)
+let k2 = next(dit)
+// Verify all keys are present
+let checkKeys = [false, false, false]  // a, b, c
+let keys = [k0, k1, k2]
+for k in keys {
+    if (k == "a") { checkKeys[0] = true }
+    if (k == "b") { checkKeys[1] = true }
+    if (k == "c") { checkKeys[2] = true }
+}
+assert(checkKeys[0] and checkKeys[1] and checkKeys[2], "dict keys")
+
+let dictOk = false
+try { next(dit) } catch (e) { dictOk = true }
+assert(dictOk, "dict StopIteration")
+
+// --- iter(iterator) returns itself ---
+let it2 = iter([1, 2])
+let it3 = iter(it2)
+assert(it2 == it3, "iter(it) returns itself")
+
+print("test_iterator: PASS")

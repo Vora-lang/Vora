@@ -1,0 +1,94 @@
+// =========================================================================
+// test_compound_assign.va — Compound assignment runtime tests
+// Tests: +=, -=, *=, /=, %= on variables, properties, and indices
+// =========================================================================
+
+// --- Variable compound assignment ---
+let x = 10
+x += 5
+assert(x == 15, "x += 5 should be 15")
+
+x -= 3
+assert(x == 12, "x -= 3 should be 12")
+
+x *= 2
+assert(x == 24, "x *= 2 should be 24")
+
+x /= 4
+assert(x == 6, "x /= 4 should be 6")
+
+x %= 4
+assert(x == 2, "x %= 4 should be 2")
+
+// --- Global scope compound assignment ---
+let counter = 0
+counter += 1
+counter += 2
+assert(counter == 3, "counter += 1; counter += 2 should be 3")
+
+// --- String concatenation ---
+let s = "Hello"
+s += " "
+s += "World"
+assert(s == "Hello World", "s += should concatenate strings")
+
+// --- Array append ---
+let arr = [1, 2]
+arr += [3, 4]
+assert(arr[0] == 1, "arr[0] should be 1 after += [3, 4]")
+assert(arr[3] == 4, "arr[3] should be 4 after += [3, 4]")
+
+// --- Property compound assignment ---
+Obj Counter() {
+    this.value = 0
+    this.name = "c"
+}
+let c = Counter()
+c.value += 10
+assert(c.value == 10, "c.value += 10 should be 10")
+c.value -= 3
+assert(c.value == 7, "c.value -= 3 should be 7")
+c.value *= 2
+assert(c.value == 14, "c.value *= 2 should be 14")
+
+// --- Index compound assignment ---
+let nums = [10, 20, 30]
+nums[0] += 5
+assert(nums[0] == 15, "nums[0] += 5 should be 15")
+nums[1] -= 10
+assert(nums[1] == 10, "nums[1] -= 10 should be 10")
+nums[2] *= 2
+assert(nums[2] == 60, "nums[2] *= 2 should be 60")
+
+// --- Compound in while loop ---
+let i = 0
+let sum = 0
+while (i < 10) {
+    sum += i
+    i += 1
+}
+assert(sum == 45, "sum += i from 0 to 9 should be 45")
+assert(i == 10, "i should be 10 after loop")
+
+// --- Chained compound assignment (right-associative) ---
+let a = 0
+let b = 0
+a += b += 5
+assert(b == 5, "b += 5 should give b = 5")
+assert(a == 5, "a += (b += 5) should give a = 5")
+
+// --- Complex RHS ---
+let y = 1
+y += 2 * 3 + 4
+assert(y == 11, "y += 2 * 3 + 4 should be 1 + 6 + 4 = 11")
+
+// --- Division and modulo ---
+let d = 100
+d /= 3
+assert(d > 33.33 and d < 33.34, "100 /= 3 should be ~33.33...")
+
+let m = 100
+m %= 7
+assert(m == 2, "100 %= 7 should be 2")
+
+print("All compound assignment tests passed!")

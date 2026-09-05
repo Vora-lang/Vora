@@ -1,0 +1,66 @@
+// interpreter/test_const.va — Const variable tests
+// Run: vora tests/interpreter/test_const.va
+
+print("=== Interpreter: Const Variable Tests ===")
+
+// --- 1. Basic const declaration ---
+const PI = 3.14159
+assert(PI == 3.14159, "const pi")
+
+// --- 2. Const with expression initializer ---
+const SUM = 10 + 20 + 30
+assert(SUM == 60, "const sum expression")
+
+// --- 3. Const local variable ---
+{
+    const x = 42
+    assert(x == 42, "const local")
+}
+
+// --- 4. Const in function scope ---
+func getConst() {
+    const val = 99
+    return val
+}
+assert(getConst() == 99, "const in function")
+
+// --- 5. Multiple const declarations ---
+const A = 1
+const B = 2
+const C = A + B
+assert(C == 3, "multiple const")
+
+// --- 6. Const with type annotation ---
+const name = "Vora"
+assert(name.length == 4, "const string")
+
+// --- 7. Const array (binding is const, contents not frozen) ---
+const arr = [1, 2, 3]
+assert(arr[0] == 1, "const array read")
+arr[0] = 99
+assert(arr[0] == 99, "const array element mutation")  // elements can change
+
+// --- 8. Const in for-in (read-only) ---
+let sum8 = 0
+const items = [10, 20, 30]
+for i in range(3) {
+    sum8 = sum8 + items[i]
+}
+assert(sum8 == 60, "const in for-in")
+
+// --- 9. Const with function call initializer ---
+func makePair(a, b) { return [a, b] }
+const pair = makePair(5, 10)
+assert(pair[0] == 5, "const from func call")
+assert(pair[1] == 10, "const from func call 2")
+
+// --- 10. Read const many times ---
+const MAGIC = 12345
+let r10a = MAGIC
+let r10b = MAGIC
+let r10c = MAGIC
+assert(r10a == 12345, "read const a")
+assert(r10b == 12345, "read const b")
+assert(r10c == 12345, "read const c")
+
+print("Const variable tests: PASS")

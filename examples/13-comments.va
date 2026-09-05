@@ -1,0 +1,4 @@
+print("=== comments ===")
+print("after line comment")
+print("after block comment")
+print("after nested block comment")

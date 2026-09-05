@@ -1,0 +1,111 @@
+// Test: catch variable binding with function parameters.
+// Regression: OP_PUSH_CATCH used to push the exception value at
+// frameBaseIndex+0, overwriting local slot 0 (the first parameter).
+// Fixed by encoding currentLocalCount in OP_PUSH_CATCH.
+
+func test_catchInFunctionWithParam() {
+    func f(x) {
+        try { throw "ERR" } catch (e) {
+            assert(x == 42, "param should be preserved")
+            assert(e == "ERR", "catch var should be exception")
+        }
+    }
+    f(42)
+}
+
+func test_catchMultipleParams() {
+    func f(a, b, c) {
+        try { throw "boom" } catch (e) {
+            assert(a == 1, "param a")
+            assert(b == 2, "param b")
+            assert(c == 3, "param c")
+            assert(e == "boom", "catch var")
+        }
+    }
+    f(1, 2, 3)
+}
+
+func test_catchVarShadowsParam() {
+    func f(e) {
+        try { throw "shadow" } catch (e) {
+            assert(e == "shadow", "inner e")
+        }
+        assert(e == "outer", "outer e preserved")
+    }
+    f("outer")
+}
+
+func test_nestedCatchWithParam() {
+    func f(x) {
+        try {
+            try {
+                throw "inner"
+            } catch (e1) {
+                assert(x == 99, "inner param")
+                assert(e1 == "inner", "inner catch var")
+                throw "outer"
+            }
+        } catch (e2) {
+            assert(x == 99, "outer param")
+            assert(e2 == "outer", "outer catch var")
+        }
+    }
+    f(99)
+}
+
+func test_catchInMethod() {
+    Obj Foo(a, b) {
+        this.a = a
+        this.b = b
+        func test() {
+            try { throw "method-err" } catch (e) {
+                assert(this.a == 10, "this.a in catch")
+                assert(this.b == 20, "this.b in catch")
+                assert(e == "method-err", "catch var in method")
+            }
+        }
+    }
+    let foo = Foo(10, 20)
+    foo.test()
+}
+
+func test_rethrowPreservesParam() {
+    func f(val) {
+        try {
+            try {
+                throw "first"
+            } catch (e1) {
+                assert(val == "keep-me", "val in inner catch")
+                throw "second"
+            }
+        } catch (e2) {
+            assert(val == "keep-me", "val in outer catch")
+            assert(e2 == "second", "re-thrown value")
+        }
+    }
+    f("keep-me")
+}
+
+func test_throwFromNestedCall() {
+    func doThrow(msg) { throw msg }
+    func wrapper(arg) {
+        try {
+            doThrow("nested-error")
+        } catch (e) {
+            assert(arg == "preserved", "arg after nested throw")
+            assert(e == "nested-error", "catch var from nested throw")
+        }
+    }
+    wrapper("preserved")
+}
+
+// Run all tests
+test_catchInFunctionWithParam()
+test_catchMultipleParams()
+test_catchVarShadowsParam()
+test_nestedCatchWithParam()
+test_catchInMethod()
+test_rethrowPreservesParam()
+test_throwFromNestedCall()
+
+print("All catch scope tests passed")

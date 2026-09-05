@@ -1,0 +1,164 @@
+// runtime/test_match.va — Match expression tests
+// Run: vora tests/runtime/test_match.va
+
+print("=== Runtime: Match Expression Tests ===")
+
+// ── Basic literal match ──────────────────────────
+let r1 = match 1 { 1 => "one", 2 => "two", _ => "other" }
+assert(r1 == "one", "basic: match 1")
+
+let r2 = match 2 { 1 => "one", 2 => "two", _ => "other" }
+assert(r2 == "two", "basic: match 2")
+
+let r3 = match 99 { 1 => "one", 2 => "two", _ => "other" }
+assert(r3 == "other", "basic: wildcard fallback")
+
+// ── Wildcard only ────────────────────────────────
+let r4 = match 42 { _ => "default" }
+assert(r4 == "default", "wildcard only")
+
+// ── Boolean literals ─────────────────────────────
+let r5 = match true { true => "yes", false => "no" }
+assert(r5 == "yes", "bool: true")
+
+let r6 = match false { true => "yes", false => "no" }
+assert(r6 == "no", "bool: false")
+
+// ── Null literal ─────────────────────────────────
+let r7 = match null { null => "null", _ => "not null" }
+assert(r7 == "null", "null literal")
+
+// ── String literals ──────────────────────────────
+let r8 = match "hello" {
+    "hello" => "greeting",
+    "bye" => "farewell",
+    _ => "unknown"
+}
+assert(r8 == "greeting", "string: hello")
+
+let r9 = match "xyz" {
+    "hello" => "greeting",
+    "bye" => "farewell",
+    _ => "unknown"
+}
+assert(r9 == "unknown", "string: wildcard")
+
+// ── Multiple cases with same value ────────────────
+let r10 = match 5 {
+    1 => "one",
+    2 => "two",
+    3 => "three",
+    4 => "four",
+    5 => "five"
+}
+assert(r10 == "five", "multi-case: 5")
+
+// ── Match as expression in function ──────────────
+func describe(n) {
+    return match n {
+        0 => "zero",
+        1 => "one",
+        2 => "two",
+        _ => "many"
+    }
+}
+assert(describe(0) == "zero", "func: 0")
+assert(describe(1) == "one", "func: 1")
+assert(describe(5) == "many", "func: 5")
+
+// ── Match with arithmetic scrutinee ──────────────
+let r11 = match 2 + 3 {
+    5 => "five",
+    _ => "other"
+}
+assert(r11 == "five", "arithmetic scrutinee")
+
+// ── Nested match ─────────────────────────────────
+let r12 = match 1 {
+    1 => match 2 { 2 => "nested ok", _ => "no" },
+    _ => "outer no"
+}
+assert(r12 == "nested ok", "nested match")
+
+// ── Match returning numbers ──────────────────────
+let r13 = match 3 { 1 => 10, 2 => 20, 3 => 30, _ => 0 }
+assert(r13 == 30, "numeric result")
+
+// ── Match as standalone statement (value discarded) ─
+func testStandalone() {
+    let flag = 0
+    match 1 {
+        1 => { flag = 42 },
+        _ => { flag = 0 }
+    }
+    assert(flag == 42, "standalone match block body")
+}
+testStandalone()
+
+// ── Match with empty default ─────────────────────
+let r14 = match 99 { 1 => "one", _ => null }
+assert(r14 == null, "null default")
+
+// ── Match in if condition ────────────────────────
+let r15 = match 2 { 1 => "a", 2 => "b", _ => "c" }
+if (r15 == "b") {
+    assert(true, "match in if condition")
+} else {
+    assert(false, "match in if should be b")
+}
+
+// ── Match with block body (expression result) ────
+let r16 = match 10 {
+    10 => {
+        let x = 5;
+        let y = 3;
+        x + y;
+    },
+    _ => 0
+}
+assert(r16 == 8, "block body: 5+3")
+
+// ── Type of match result ─────────────────────────
+let r17 = match 1 { 1 => "str", _ => 42 }
+assert(type(r17) == "string", "type of match result")
+
+// ── Match with range pattern (..=) ───────────────
+func testRangeInclusive() {
+    let r = match 5 {
+        1..=3 => "low",
+        4..=6 => "mid",
+        _ => "high"
+    }
+    assert(r == "mid", "range inclusive: 5 in 4..=6")
+
+    let r2 = match 1 {
+        1..=3 => "low",
+        _ => "other"
+    }
+    assert(r2 == "low", "range inclusive: boundary 1")
+
+    let r3 = match 3 {
+        1..=3 => "low",
+        _ => "other"
+    }
+    assert(r3 == "low", "range inclusive: boundary 3")
+}
+testRangeInclusive()
+
+// ── Match with range pattern (.. exclusive) ──────
+func testRangeExclusive() {
+    let r = match 3 {
+        1..5 => "low",
+        _ => "high"
+    }
+    assert(r == "low", "range exclusive: 3 in 1..5")
+
+    let r2 = match 5 {
+        1..5 => "low",
+        _ => "high"
+    }
+    assert(r2 == "high", "range exclusive: 5 not in 1..5")
+}
+testRangeExclusive()
+
+print("Runtime Match tests: PASS")

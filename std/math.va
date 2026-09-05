@@ -1,0 +1,23 @@
+// std/math.va — Vora Standard Math Library
+//
+// Provides mathematical functions and constants.
+// Usage: import "math"
+//        math.sqrt(16)      // 4.0
+//        math.sin(math.PI)  // ~0.0
+//        math.random.int(1, 100)
+
+export let abs = abs
+export let min = min
+export let max = max
+export let sqrt = sqrt
+export let sin = sin
+export let cos = cos
+
+export let PI = 3.141592653589793
+export let E = 2.718281828459045
+export let TAU = 6.283185307179586
+
+export let random = {
+    int: random_int,
+    float: random_float
+}

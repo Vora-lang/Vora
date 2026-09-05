@@ -1,0 +1,27 @@
+// interpreter/test_unicode_id.va — Unicode identifier tests (TEST-001)
+// Run: vora tests/interpreter/test_unicode_id.va
+
+print("=== Unicode Identifiers ===")
+
+// Test that Unicode letters work in identifiers
+// Note: Vora supports Unicode identifiers per lexer rules.
+let 变量 = 42
+assert(变量 == 42, "Chinese variable name")
+
+let 名前 = "namae"
+assert(名前 == "namae", "Japanese variable name")
+
+// Underscore prefixes
+let _private = "secret"
+assert(_private == "secret", "underscore prefix")
+
+// Mixed ASCII + Unicode (if supported)
+let café = "coffee"
+assert(café == "coffee", "accented Latin")
+
+// Numbers in identifiers
+let x1 = 10
+let x2 = 20
+assert(x1 + x2 == 30, "numbers in identifiers")
+
+print("Unicode identifier tests: PASS")

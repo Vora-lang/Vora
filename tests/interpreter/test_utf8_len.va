@@ -1,0 +1,28 @@
+// interpreter/test_utf8_len.va — UTF-8 len() returns byte count (TEST-010)
+// Run: vora tests/interpreter/test_utf8_len.va
+
+print("=== UTF-8 len() Byte Count ===")
+
+// ASCII: 1 byte per char
+assert(len("") == 0, "len empty")
+assert(len("hello") == 5, "len ascii")
+assert(len("abc123") == 6, "len alphanumeric")
+
+// Multibyte UTF-8
+// 中文 = 3 bytes per char (UTF-8)
+let chinese = "你好"
+assert(len(chinese) == 6, "len chinese (3 bytes/char)")
+
+// Emoji = 4 bytes (UTF-8)
+let emoji = "🎉"
+assert(len(emoji) == 4, "len emoji (4 bytes)")
+
+// Mixed
+let mixed = "hi你好"
+assert(len(mixed) == 8, "len mixed (2 + 6)")
+
+// Japanese (also 3 bytes per char in UTF-8)
+let jp = "日本語"
+assert(len(jp) == 9, "len japanese (3 bytes/char)")
+
+print("UTF-8 len() tests: PASS")

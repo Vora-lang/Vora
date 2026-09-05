@@ -1,0 +1,28 @@
+# Normalize all text files to LF in the repository.
+# Working tree stays platform-native (CRLF on Windows, LF on macOS/Linux).
+* text=auto
+
+# Explicitly text (detect + normalize)
+*.va   text
+*.cpp  text
+*.h    text
+*.md   text
+*.txt  text
+*.ps1  text
+*.sh   text
+*.py   text
+*.yml  text
+*.cmake text
+CMakeLists.txt text
+LICENSE text
+
+# Binary
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.msi  binary
+*.zip  binary
+*.tar.gz binary
+*.gz  binary
+*.deb binary
+*.rpm binary

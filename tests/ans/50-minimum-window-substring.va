@@ -1,0 +1,94 @@
+// #76 Minimum Window Substring (Hard)
+// Smallest substring of s containing all chars of t. Sliding window with frequency arrays.
+
+func minWindow(s, t) {
+    if (s.length == 0 or t.length == 0 or s.length < t.length) {
+        return ""
+    }
+
+    // Build frequency map for t using parallel arrays
+    let tChars = []
+    let tCounts = []
+
+    let ti = 0
+    while (ti < t.length) {
+        let ch = t[ti]
+        let idx = tChars.indexOf(ch)
+        if (idx == -1) {
+            tChars.add(ch)
+            tCounts.add(1)
+        } else {
+            tCounts[idx] = tCounts[idx] + 1
+        }
+        ti = ti + 1
+    }
+
+    let required = tChars.length
+
+    // Build initial window counts
+    let winCounts = []
+    let ic = 0
+    while (ic < tChars.length) {
+        winCounts.add(0)
+        ic = ic + 1
+    }
+
+    let left = 0
+    let right = 0
+    let formed = 0
+    let minLen = s.length + 1
+    let minStart = 0
+
+    while (right < s.length) {
+        let ch = s[right]
+        let ci = tChars.indexOf(ch)
+        if (ci != -1) {
+            winCounts[ci] = winCounts[ci] + 1
+            if (winCounts[ci] == tCounts[ci]) {
+                formed = formed + 1
+            }
+        }
+
+        while (formed == required and left <= right) {
+            let curLen = right - left + 1
+            if (curLen < minLen) {
+                minLen = curLen
+                minStart = left
+            }
+
+            let leftCh = s[left]
+            let lci = tChars.indexOf(leftCh)
+            if (lci != -1) {
+                if (winCounts[lci] == tCounts[lci]) {
+                    formed = formed - 1
+                }
+                winCounts[lci] = winCounts[lci] - 1
+            }
+            left = left + 1
+        }
+        right = right + 1
+    }
+
+    if (minLen > s.length) {
+        return ""
+    }
+    return s.substring(minStart, minStart + minLen)
+}
+
+// Tests
+let r1 = minWindow("ADOBECODEBANC", "ABC");
+assert(r1 == "BANC", "Test 1 failed: " + r1);
+
+let r2 = minWindow("a", "a");
+assert(r2 == "a", "Test 2 failed: " + r2);
+
+let r3 = minWindow("a", "aa");
+assert(r3 == "", "Test 3 failed: " + r3);
+
+let r4 = minWindow("abc", "ac");
+assert(r4 == "abc", "Test 4 failed: " + r4);
+
+let r5 = minWindow("ab", "b");
+assert(r5 == "b", "Test 5 failed: " + r5);
+
+print("50-minimum-window-substring: PASS");

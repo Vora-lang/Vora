@@ -1,0 +1,24 @@
+// tests/runtime/test_destructure_defaults.va
+// Run: vora tests/runtime/test_destructure_defaults.va
+
+print("=== Runtime: Destructuring Default Value Tests ===")
+
+let arr = [1]
+let [a, b = 0] = arr
+assert(a == 1, "array destructure default a")
+assert(b == 0, "array destructure default b")
+
+let obj = {x: 2}
+let {x, y = 1} = obj
+assert(x == 2, "object destructure default x")
+assert(y == 1, "object destructure default y")
+
+let nested = [{x: 10}, {x: 20}]
+let sum = 0
+for item in nested {
+    let {x, y = 5} = item
+    sum = sum + x + y
+}
+assert(sum == 40, "nested destructure default within loop")
+
+print("Runtime destructuring default tests: PASS")

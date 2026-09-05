@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260">
+  <g fill="none" stroke="#111" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <!-- abstract V -->
+    <path d="M 35 25 L 130 225 L 225 25"/>
+    <!-- orbital ring -->
+    <ellipse cx="130" cy="125" rx="100" ry="40" transform="rotate(-18 130 125)"/>
+    <!-- planet dot -->
+    <circle cx="225" cy="97" r="9" fill="#111" stroke="none"/>
+  </g>
+</svg>

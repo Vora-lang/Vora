@@ -1,0 +1,62 @@
+print("=== 1. Dict literals ===")
+let empty = {}
+print("empty dict:", empty)
+let d = {name: "Vora", version: 1, released: true}
+print("dict:", d)
+
+print("\n=== 2. Subscript read ===")
+print("name:", d["name"])
+print("version:", d["version"])
+
+print("\n=== 3. Subscript write ===")
+d["year"] = 2026
+print("year:", d["year"])
+d["version"] = 2
+print("updated version:", d["version"])
+
+print("\n=== 4. Nested dicts ===")
+let nested = {outer: {inner: 42}}
+print("nested:", nested)
+print("outer:", nested["outer"])
+print("inner value:", nested["outer"]["inner"])
+
+print("\n=== 5. Dict methods ===")
+let fruit = {apple: 3, banana: 5, cherry: 8}
+print("keys:", fruit.keys())
+print("values:", fruit.values())
+print("has 'banana':", fruit.has("banana"))
+print("has 'grape':", fruit.has("grape"))
+let removed = fruit.remove("cherry")
+print("removed 'cherry':", removed)
+print("after remove:", fruit)
+
+print("\n=== 6. Dict + Dict merge ===")
+let a = {x: 1, y: 2}
+let b = {y: 99, z: 3}
+let c = a + b
+print("a:", a)
+print("b:", b)
+print("a + b:", c)
+
+print("\n=== 7. For-in over dict keys ===")
+let menu = {coffee: 3, tea: 2, cake: 5}
+let items = ""
+for k in menu {
+    items = items + k + "=" + menu[k] + " "
+}
+print("menu items:", items)
+
+print("\n=== 8. Mixed value types ===")
+let mixed = {
+    name: "test",
+    count: 100,
+    flag: true,
+    nothing: null,
+    list: [1, 2, 3]
+}
+print("mixed string:", mixed["name"])
+print("mixed number:", mixed["count"])
+print("mixed bool:", mixed["flag"])
+print("mixed null:", mixed["nothing"])
+print("mixed array:", mixed["list"])
+print("array element:", mixed["list"][1])

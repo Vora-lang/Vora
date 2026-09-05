@@ -1,0 +1,39 @@
+// runtime/test_deep_recursion.va — Verify dynamic stack expansion beyond 1024
+// Run: vora tests/runtime/test_deep_recursion.va
+
+print("=== Deep Recursion Test ===")
+
+// Sum 1..n via recursion (each call uses 1 stack slot for return + 1 for param)
+// n=2000 should easily exceed old 1024 limit
+func sumRec(n) {
+    if (n <= 0) return 0
+    return n + sumRec(n - 1)
+}
+
+let r = sumRec(2000)
+// 2000*2001/2 = 2001000
+assert(r == 2001000, "sumRec(2000)")
+
+// Factorial recursion (more stack usage per call)
+func factRec(n) {
+    if (n <= 1) return 1
+    return n * factRec(n - 1)
+}
+
+let f = factRec(12)
+// 12! = 479001600 (fits precisely in double)
+print("12! = " + f)
+assert(f > 479001600 - 1 and f < 479001600 + 1, "factRec(12)")
+
+// Deep mutual recursion
+func isEven(n) {
+    if (n == 0) return true
+    return isOdd(n - 1)
+}
+func isOdd(n) {
+    if (n == 0) return false
+    return isEven(n - 1)
+}
+assert(isEven(2000), "mutual recursion depth 2000")
+
+print("Deep recursion test: PASS — dynamic stack expansion works")

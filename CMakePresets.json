@@ -1,0 +1,268 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 16,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "description": "Shared settings for all platforms",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "17",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF"
+      }
+    },
+    {
+      "name": "windows-base",
+      "description": "Windows - Visual Studio 2022 (MSVC)",
+      "hidden": true,
+      "inherits": "base",
+      "generator": "Visual Studio 17 2022",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-x64",
+      "description": "Windows x64 (64-bit)",
+      "inherits": "windows-base",
+      "architecture": "x64"
+    },
+    {
+      "name": "windows-x64-debug",
+      "description": "Windows x64 Debug (.exe)",
+      "inherits": "windows-x64"
+    },
+    {
+      "name": "windows-x64-release",
+      "description": "Windows x64 Release (.msi)",
+      "inherits": "windows-x64"
+    },
+    {
+      "name": "windows-x86",
+      "description": "Windows x86 32-bit (Win32)",
+      "inherits": "windows-base",
+      "architecture": "Win32"
+    },
+    {
+      "name": "windows-x86-debug",
+      "description": "Windows x86 Debug (.exe)",
+      "inherits": "windows-x86"
+    },
+    {
+      "name": "windows-x86-release",
+      "description": "Windows x86 Release (.msi)",
+      "inherits": "windows-x86"
+    },
+    {
+      "name": "windows-arm64",
+      "description": "Windows ARM64",
+      "inherits": "windows-base",
+      "architecture": "ARM64"
+    },
+    {
+      "name": "windows-arm64-debug",
+      "description": "Windows ARM64 Debug (.exe)",
+      "inherits": "windows-arm64"
+    },
+    {
+      "name": "windows-arm64-release",
+      "description": "Windows ARM64 Release (.msi)",
+      "inherits": "windows-arm64"
+    },
+    {
+      "name": "linux-base",
+      "description": "Linux - Ninja generator",
+      "hidden": true,
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "not",
+        "condition": {
+          "type": "equals",
+          "lhs": "${hostSystemName}",
+          "rhs": "Windows"
+        }
+      }
+    },
+    {
+      "name": "linux-x64",
+      "description": "Linux x64 native build",
+      "inherits": "linux-base"
+    },
+    {
+      "name": "linux-x64-debug",
+      "description": "Linux x64 Debug (binary)",
+      "inherits": "linux-x64",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "linux-x64-release",
+      "description": "Linux x64 Release (.deb/.rpm/.pkg.tar.xz)",
+      "inherits": "linux-x64",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "linux-x64-sanitizers",
+      "description": "Linux x64 with ASan+UBSan (clang)",
+      "inherits": ["linux-x64", "sanitizer-base"],
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "linux-x86",
+      "description": "Linux x86 32-bit cross-compile",
+      "inherits": "linux-base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/linux-i386.cmake"
+    },
+    {
+      "name": "linux-x86-debug",
+      "description": "Linux x86 Debug (binary)",
+      "inherits": "linux-x86",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "linux-x86-release",
+      "description": "Linux x86 Release (.deb/.rpm/.pkg.tar.xz)",
+      "inherits": "linux-x86",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "linux-aarch64",
+      "description": "Linux ARM64 cross-compile (aarch64-linux-gnu)",
+      "inherits": "linux-base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/linux-aarch64.cmake"
+    },
+    {
+      "name": "linux-aarch64-debug",
+      "description": "Linux aarch64 Debug (binary)",
+      "inherits": "linux-aarch64",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "linux-aarch64-release",
+      "description": "Linux aarch64 Release (.deb/.rpm/.pkg.tar.xz)",
+      "inherits": "linux-aarch64",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "linux-armhf",
+      "description": "Linux ARM32 hard-float cross-compile (arm-linux-gnueabihf)",
+      "inherits": "linux-base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/linux-armhf.cmake"
+    },
+    {
+      "name": "linux-armhf-debug",
+      "description": "Linux armhf Debug (binary)",
+      "inherits": "linux-armhf",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "linux-armhf-release",
+      "description": "Linux armhf Release (.deb/.rpm/.pkg.tar.xz)",
+      "inherits": "linux-armhf",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "sanitizer-base",
+      "description": "Sanitizer flags (ASan + UBSan) — Linux/clang only",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -g",
+        "CMAKE_C_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined",
+        "CMAKE_SHARED_LINKER_FLAGS": "-fsanitize=address,undefined",
+        "ASAN_OPTIONS": "detect_leaks=1:check_initialization_order=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "macos-base",
+      "description": "macOS - Ninja generator",
+      "hidden": true,
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "macos-universal",
+      "description": "macOS Universal fat binary (x86_64 + arm64)",
+      "inherits": "macos-base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/macos-universal.cmake"
+    },
+    {
+      "name": "macos-universal-debug",
+      "description": "macOS Universal Debug",
+      "inherits": "macos-universal",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "macos-universal-release",
+      "description": "macOS Universal Release (.tar.gz)",
+      "inherits": "macos-universal",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-x64-debug",       "configurePreset": "windows-x64-debug",       "configuration": "Debug"   },
+    { "name": "windows-x64-release",     "configurePreset": "windows-x64-release",     "configuration": "Release" },
+    { "name": "windows-x86-debug",       "configurePreset": "windows-x86-debug",       "configuration": "Debug"   },
+    { "name": "windows-x86-release",     "configurePreset": "windows-x86-release",     "configuration": "Release" },
+    { "name": "windows-arm64-debug",     "configurePreset": "windows-arm64-debug",     "configuration": "Debug"   },
+    { "name": "windows-arm64-release",   "configurePreset": "windows-arm64-release",   "configuration": "Release" },
+    { "name": "linux-x64-debug",         "configurePreset": "linux-x64-debug",         "configuration": "Debug"   },
+    { "name": "linux-x64-release",       "configurePreset": "linux-x64-release",       "configuration": "Release" },
+    { "name": "linux-x64-sanitizers",   "configurePreset": "linux-x64-sanitizers",   "configuration": "Debug"   },
+    { "name": "linux-x86-debug",         "configurePreset": "linux-x86-debug",         "configuration": "Debug"   },
+    { "name": "linux-x86-release",       "configurePreset": "linux-x86-release",       "configuration": "Release" },
+    { "name": "linux-aarch64-debug",     "configurePreset": "linux-aarch64-debug",     "configuration": "Debug"   },
+    { "name": "linux-aarch64-release",   "configurePreset": "linux-aarch64-release",   "configuration": "Release" },
+    { "name": "linux-armhf-debug",       "configurePreset": "linux-armhf-debug",       "configuration": "Debug"   },
+    { "name": "linux-armhf-release",     "configurePreset": "linux-armhf-release",     "configuration": "Release" },
+    { "name": "macos-universal-debug",   "configurePreset": "macos-universal-debug",   "configuration": "Debug"   },
+    { "name": "macos-universal-release", "configurePreset": "macos-universal-release", "configuration": "Release" }
+  ],
+  "packagePresets": [
+    { "name": "windows-x64-release",     "configurePreset": "windows-x64-release"     },
+    { "name": "windows-x86-release",     "configurePreset": "windows-x86-release"     },
+    { "name": "windows-arm64-release",   "configurePreset": "windows-arm64-release"   },
+    { "name": "linux-x64-release",       "configurePreset": "linux-x64-release"       },
+    { "name": "linux-x86-release",       "configurePreset": "linux-x86-release"       },
+    { "name": "linux-aarch64-release",   "configurePreset": "linux-aarch64-release"   },
+    { "name": "linux-armhf-release",     "configurePreset": "linux-armhf-release"     },
+    { "name": "macos-universal-release", "configurePreset": "macos-universal-release" }
+  ],
+  "testPresets": [
+    {
+      "name": "default",
+      "configurePreset": "linux-x64-debug",
+      "description": "Run tests (Debug)"
+    },
+    {
+      "name": "windows-x64-debug",
+      "configurePreset": "windows-x64-debug",
+      "description": "Run tests on Windows x64 Debug"
+    },
+    {
+      "name": "linux-x64-sanitizers",
+      "configurePreset": "linux-x64-sanitizers",
+      "description": "Run tests with ASan+UBSan instrumentation"
+    }
+  ]
+}

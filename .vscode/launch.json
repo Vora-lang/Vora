@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run .va file (F5)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/windows-x64-debug/Debug/Vora.exe",
+            "args": ["${file}"],
+            "cwd": "${fileDirname}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Run .va file + Build first",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/windows-x64-debug/Debug/Vora.exe",
+            "args": ["${file}"],
+            "cwd": "${fileDirname}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "build"
+        }
+    ]
+}

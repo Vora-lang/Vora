@@ -1,0 +1,92 @@
+// test_spread.va — Call-site spread ...expr tests
+// Run: vora tests/interpreter/test_spread.va
+
+print("=== Interpreter: Call-Site Spread Tests ===")
+
+// --- Helper functions ---
+func sum3(a, b, c) {
+    return a + b + c
+}
+
+func sum4(a, b, c, d) {
+    return a + b + c + d
+}
+
+func identity(x) {
+    return x
+}
+
+func asArray(x) {
+    return [x]
+}
+
+// --- Basic spread: f(...[1, 2, 3]) ---
+assert(sum3(...[1, 2, 3]) == 6, "basic spread")
+
+// --- Spread with empty array ---
+assert(identity(1, ...[]) == 1, "spread empty array")
+
+// --- Mixed fixed + spread ---
+assert(sum4(1, ...[2, 3], 4) == 10, "mixed fixed and spread")
+
+// --- Multiple spreads ---
+assert(sum3(...[1], ...[2, 3]) == 6, "multiple spreads")
+
+// --- Single element spread ---
+assert(identity(...[42]) == 42, "single element spread")
+
+// --- Spread from variable ---
+let args = [10, 20, 30]
+assert(sum3(...args) == 60, "spread from variable")
+
+// --- Builtin with spread ---
+// range() returns an array — spreading it into print
+// (just verify it doesn't crash)
+let captured = ""
+// We can't easily capture print output, so just verify the call works
+let r = sum3(...range(1, 4))  // range(1,4) = [1,2,3]
+assert(r == 6, "spread range result")
+
+// --- Spread of computed expression ---
+assert(sum3(...[1+1, 2*2, 3+0]) == 9, "spread computed array")
+
+// --- Nested function call produces array for spread ---
+func makeArgs() {
+    return [5, 10, 15]
+}
+assert(sum3(...makeArgs()) == 30, "spread from function return")
+
+// --- Spread with rest parameter symmetry ---
+func restTest(a, ...rest) {
+    return sum3(...rest) + a
+}
+assert(restTest(1, 2, 3, 4) == 10, "rest/spread symmetry")
+
+// --- Spread with method calls ---
+let obj = {
+    add: func(a, b) { return a + b }
+}
+assert(obj.add(...[10, 20]) == 30, "method call with spread")
+
+// --- Large spread ---
+func sum10(a,b,c,d,e,f,g,h,i,j) {
+    return a+b+c+d+e+f+g+h+i+j
+}
+assert(sum10(...[1,2,3,4,5,6,7,8,9,10]) == 55, "large spread (10 elements)")
+
+// --- Spread with other expressions ---
+let x = 100
+assert(sum3(x, ...[200], 300) == 600, "spread with variable expressions")
+
+// --- Nested spread calls ---
+func double(x) { return x * 2 }
+func mapDouble(arr) {
+    let result = []
+    for item in arr {
+        result = result + [item * 2]
+    }
+    return result
+}
+assert(sum3(...mapDouble([1, 2, 3])) == 12, "nested spread from mapped array")
+
+print("All spread tests passed!")

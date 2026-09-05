@@ -1,0 +1,139 @@
+// Problem #47: Find All Anagrams (Medium)
+// Find all start indices of p's anagrams in s.
+// Sliding window with frequency comparison.
+// Vora does not support arr[idx] = val, so we use remove+insert for updates.
+
+// Map character 'a'..'z' to index 0..25
+func charIndex(ch) {
+    if (ch == "a") { return 0; }
+    if (ch == "b") { return 1; }
+    if (ch == "c") { return 2; }
+    if (ch == "d") { return 3; }
+    if (ch == "e") { return 4; }
+    if (ch == "f") { return 5; }
+    if (ch == "g") { return 6; }
+    if (ch == "h") { return 7; }
+    if (ch == "i") { return 8; }
+    if (ch == "j") { return 9; }
+    if (ch == "k") { return 10; }
+    if (ch == "l") { return 11; }
+    if (ch == "m") { return 12; }
+    if (ch == "n") { return 13; }
+    if (ch == "o") { return 14; }
+    if (ch == "p") { return 15; }
+    if (ch == "q") { return 16; }
+    if (ch == "r") { return 17; }
+    if (ch == "s") { return 18; }
+    if (ch == "t") { return 19; }
+    if (ch == "u") { return 20; }
+    if (ch == "v") { return 21; }
+    if (ch == "w") { return 22; }
+    if (ch == "x") { return 23; }
+    if (ch == "y") { return 24; }
+    if (ch == "z") { return 25; }
+    return -1;
+}
+
+// Build frequency array using charIndex and while loops (compatible with interpreter)
+func buildFreq(str, start, end) {
+    let freq = [];
+    let ki = 0;
+    while (ki < 26) {
+        freq.add(0);
+        ki = ki + 1;
+    }
+    let pi = start;
+    while (pi < end) {
+        let cidx = charIndex(str[pi]);
+        if (cidx != -1) {
+            let newVal = freq[cidx] + 1;
+            freq.remove(cidx);
+            freq.insert(cidx, newVal);
+        }
+        pi = pi + 1;
+    }
+    return freq;
+}
+
+// Compare two frequency arrays
+func freqEqual(a, b) {
+    let qi = 0;
+    while (qi < 26) {
+        if (a[qi] != b[qi]) {
+            return false;
+        }
+        qi = qi + 1;
+    }
+    return true;
+}
+
+func findAnagrams(s, p) {
+    let result = [];
+    let sLen = s.length;
+    let pLen = p.length;
+
+    if (pLen > sLen) {
+        return result;
+    }
+
+    let pFreq = buildFreq(p, 0, pLen);
+    let windowFreq = buildFreq(s, 0, pLen);
+
+    if (freqEqual(windowFreq, pFreq)) {
+        result.add(0);
+    }
+
+    let wi = pLen;
+    while (wi < sLen) {
+        // Remove leftmost character of previous window
+        let leftIdx = charIndex(s[wi - pLen]);
+        if (leftIdx != -1) {
+            let newVal = windowFreq[leftIdx] - 1;
+            windowFreq.remove(leftIdx);
+            windowFreq.insert(leftIdx, newVal);
+        }
+
+        // Add new rightmost character
+        let rightIdx = charIndex(s[wi]);
+        if (rightIdx != -1) {
+            let newVal = windowFreq[rightIdx] + 1;
+            windowFreq.remove(rightIdx);
+            windowFreq.insert(rightIdx, newVal);
+        }
+
+        if (freqEqual(windowFreq, pFreq)) {
+            result.add(wi - pLen + 1);
+        }
+
+        wi = wi + 1;
+    }
+
+    return result;
+}
+
+// Test helper
+func arrayEqual(a, b) {
+    if (a.length != b.length) {
+        return false;
+    }
+    let ai = 0;
+    while (ai < a.length) {
+        if (a[ai] != b[ai]) {
+            return false;
+        }
+        ai = ai + 1;
+    }
+    return true;
+}
+
+// Test cases
+assert(arrayEqual(findAnagrams("cbaebabacd", "abc"), [0, 6]));
+assert(arrayEqual(findAnagrams("abab", "ab"), [0, 1, 2]));
+assert(arrayEqual(findAnagrams("baa", "aa"), [1]));
+assert(arrayEqual(findAnagrams("", "a"), []));
+assert(arrayEqual(findAnagrams("a", "ab"), []));
+assert(arrayEqual(findAnagrams("aaaaaaaaaa", "aaaa"), [0, 1, 2, 3, 4, 5, 6]));
+assert(arrayEqual(findAnagrams("abc", "cba"), [0]));
+assert(arrayEqual(findAnagrams("abacbabc", "abc"), [1, 2, 3, 5]));
+
+print("PASS: 47-find-all-anagrams");

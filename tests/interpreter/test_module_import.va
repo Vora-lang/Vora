@@ -1,0 +1,16 @@
+// tests/interpreter/test_module_import.va — Test importing the math module
+import "math"
+
+assert(math.PI > 3.14 && math.PI < 3.15, "math.PI")
+assert(math.sqrt(25) == 5.0, "math.sqrt(25)")
+assert(math.sin(0) == 0.0, "math.sin(0)")
+assert(math.cos(0) == 1.0, "math.cos(0)")
+assert(math.min([3, 1, 2]) == 1, "math.min")
+assert(math.max([3, 1, 2]) == 3, "math.max")
+
+// Test `import ... as` alias
+import "math" as MATH
+assert(MATH.PI > 3.14 && MATH.PI < 3.15, "aliased MATH.PI")
+assert(MATH.sqrt(25) == 5.0, "aliased sqrt")
+
+print("test_module_import: PASS")

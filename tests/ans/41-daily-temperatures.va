@@ -1,0 +1,54 @@
+// Problem #41: Daily Temperatures (Medium)
+// Days until a warmer temperature. Monotonic decreasing stack of indices.
+// Vora does not support arr[idx] = val, so we use remove+insert to update.
+
+func dailyTemperatures(temperatures) {
+    let n = temperatures.length;
+    let answer = [];
+
+    // Initialize answer with zeros
+    for i in range(n) {
+        answer.add(0);
+    }
+
+    // Monotonic decreasing stack of indices
+    let stack = [];
+
+    for i in range(n) {
+        // While current temperature is warmer than the temperature at stack top
+        while (stack.length > 0 and temperatures[i] > temperatures[stack[stack.length - 1]]) {
+            let prevIdx = stack.pop();
+            // Simulate answer[prevIdx] = i - prevIdx
+            answer.remove(prevIdx);
+            answer.insert(prevIdx, i - prevIdx);
+        }
+        stack.add(i);
+    }
+
+    return answer;
+}
+
+// Test helper: compare arrays
+func arrayEqual(a, b) {
+    if (a.length != b.length) {
+        return false;
+    }
+    for i in range(a.length) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Test cases
+assert(arrayEqual(dailyTemperatures([73, 74, 75, 71, 69, 72, 76, 73]), [1, 1, 4, 2, 1, 1, 0, 0]));
+assert(arrayEqual(dailyTemperatures([30, 40, 50, 60]), [1, 1, 1, 0]));
+assert(arrayEqual(dailyTemperatures([30, 60, 90]), [1, 1, 0]));
+assert(arrayEqual(dailyTemperatures([90, 60, 30]), [0, 0, 0]));
+assert(arrayEqual(dailyTemperatures([50, 50, 50]), [0, 0, 0]));
+assert(arrayEqual(dailyTemperatures([20, 30]), [1, 0]));
+assert(arrayEqual(dailyTemperatures([30, 20, 10, 5, 25]), [0, 3, 2, 1, 0]));
+assert(arrayEqual(dailyTemperatures([89, 62, 70, 58, 47, 47, 46, 76, 100, 70]), [8, 1, 5, 4, 3, 2, 1, 1, 0, 0]));
+
+print("PASS: 41-daily-temperatures");

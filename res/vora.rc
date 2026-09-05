@@ -1,0 +1,36 @@
+// Windows resource file for Vora executable icon
+// Reference: https://docs.microsoft.com/en-us/windows/win32/menurc/resource-file-formats
+
+// Application icon — ID 1 is the default application icon
+// Contains: 16x16, 32x32, 48x48, 256x256 PNG-encoded icons
+IDI_ICON1               ICON    "vora.ico"
+
+// Version info
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     0,9,0,0
+PRODUCTVERSION  0,9,0,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName",      "Vora-lang"
+            VALUE "FileDescription",  "Vora is a dynamically typed scripting language. It features JavaScript-like syntax, Lua-level simplicity, and Wren-style object orientation."
+            VALUE "FileVersion",      "0.9.0"
+            VALUE "InternalName",     "Vora"
+            VALUE "LegalCopyright",   "MIT License"
+            VALUE "OriginalFilename", "Vora.exe"
+            VALUE "ProductName",      "Vora"
+            VALUE "ProductVersion",   "0.9.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END

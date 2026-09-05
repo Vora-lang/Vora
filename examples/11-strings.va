@@ -1,0 +1,18 @@
+let hello = "Hello"
+let world = "World"
+print(hello + " " + world)
+let s = "Vora"
+print(s[0])
+print(s[3])
+print("---")
+for ch in s {
+    print(ch)
+}
+let name = "Alice"
+let age = 25
+print("Name: ${name}, Age: ${age}")
+print("line1\nline2")
+print("tab\there")
+print("quote: \"hello\"")
+print("single: 'world'")
+print("backslash: \\")

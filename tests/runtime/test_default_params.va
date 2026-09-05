@@ -1,0 +1,55 @@
+// runtime/test_default_params.va — Default parameter tests
+// Run: vora tests/runtime/test_default_params.va
+
+print("=== Runtime: Default Parameter Tests ===")
+
+// Basic default parameter
+func greet(name, greeting = "Hello") {
+    return greeting + ", " + name
+}
+assert(greet("World") == "Hello, World", "basic default param")
+assert(greet("Vora", "Hi") == "Hi, Vora", "override default")
+
+// Multiple defaults
+func sum(a, b = 2, c = 3) {
+    return a + b + c
+}
+assert(sum(1) == 6, "two defaults missing")
+assert(sum(1, 10) == 14, "override first default")
+assert(sum(1, 10, 100) == 111, "override all defaults")
+
+// Default in closure context — upvalue
+func makeGreeter(defGreeting = "Hi") {
+    func greet(name) {
+        return defGreeting + ", " + name
+    }
+    return greet
+}
+let g = makeGreeter()
+assert(g("Bob") == "Hi, Bob", "default in closure")
+
+let g2 = makeGreeter("Hey")
+assert(g2("Alice") == "Hey, Alice", "override default in closure")
+
+// Default referencing other param
+func addOne(a, b = a + 1) {
+    return b
+}
+assert(addOne(5) == 6, "default referencing prior param")
+assert(addOne(5, 10) == 10, "override default referencing param")
+
+// No defaults — still works
+func noDefault(a, b) {
+    return a + b
+}
+assert(noDefault(3, 4) == 7, "no defaults still works")
+
+// All defaults
+func allDefaults(a = 1, b = 2, c = 3) {
+    return a + b + c
+}
+assert(allDefaults() == 6, "all defaults")
+assert(allDefaults(10) == 15, "one arg with all defaults")
+assert(allDefaults(10, 20) == 33, "two args with all defaults")
+
+print("Runtime default parameter tests: PASS")

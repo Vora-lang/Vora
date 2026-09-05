@@ -1,0 +1,30 @@
+func add(a, b) {
+    return a + b
+}
+print(add(3, 4))
+func greet(name) {
+    print("Hello, " + name + "!")
+}
+greet("World")
+func noop() {
+}
+print(noop())
+func makeCounter() {
+    let count = 0
+    func increment() {
+        count += 1
+        return count
+    }
+    return increment
+}
+let counter = makeCounter()
+print(counter())
+print(counter())
+print(counter())
+func twice(fn, x) {
+    return fn(fn(x))
+}
+func double(n) {
+    return n * 2
+}
+print(twice(double, 10))

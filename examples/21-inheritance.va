@@ -1,0 +1,72 @@
+print("=== 1. Basic inheritance ===")
+Obj Animal(name) {
+    this.name = name
+    func speak() {
+        print("Generic animal sound")
+    }
+    func getName() {
+        return this.name
+    }
+}
+Obj Dog : Animal(name, breed) {
+    this.breed = breed
+    func speak() {
+        print("Woof! I'm " + this.name + " the " + this.breed)
+    }
+    func getBreed() {
+        return this.breed
+    }
+}
+let d = Dog("Rex", "Husky")
+print("Name: " + d.name)
+print("Breed: " + d.breed)
+print("\n=== 2. Method override ===")
+d.speak()
+print("\n=== 3. Inherited method ===")
+let name = d.getName()
+print("getName: " + name)
+print("\n=== 4. Own method ===")
+print("getBreed: " + d.getBreed())
+print("\n=== 5. Multi-level inheritance ===")
+Obj Puppy : Dog(name, breed, toy) {
+    this.toy = toy
+    func speak() {
+        print("Yip yip! I'm " + this.name + " and I love my " + this.toy)
+    }
+}
+let p = Puppy("Max", "Golden", "ball")
+print("Name: " + p.name)
+print("Breed: " + p.breed)
+print("Toy: " + p.toy)
+p.speak()
+print("\n=== 6. Inherited two levels up ===")
+print("getName: " + p.getName())
+print("\n=== 7. Method from intermediate class ===")
+print("getBreed: " + p.getBreed())
+print("\n=== 8. Multiple inheritance ===")
+Obj Speaker() {
+    func speak() {
+        return "hello from Speaker"
+    }
+    func greet() {
+        return "hi from Speaker"
+    }
+}
+Obj Walker() {
+    func walk() {
+        return "walking from Walker"
+    }
+    func greet() {
+        return "hi from Walker"
+    }
+}
+Obj Robot : Speaker, Walker() {
+    func work() {
+        return "working"
+    }
+}
+let r = Robot()
+print("speak: " + r.speak())
+print("walk: " + r.walk())
+print("greet: " + r.greet())
+print("work: " + r.work())

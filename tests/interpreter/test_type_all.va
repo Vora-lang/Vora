@@ -1,0 +1,33 @@
+// interpreter/test_type_all.va — type() return values (TEST-003)
+// Run: vora tests/interpreter/test_type_all.va
+
+print("=== type() All Return Values ===")
+
+// Primitive types
+assert(type(null) == "null", "type(null)")
+assert(type(true) == "boolean", "type(true)")
+assert(type(42) == "int", "type(int)")
+assert(type(3.14) == "float", "type(float)")
+assert(type("hello") == "string", "type(string)")
+
+// Collection types
+assert(type([1, 2, 3]) == "array", "type(array)")
+assert(type({"a": 1}) == "dict", "type(dict)")
+assert(type(Set([1])) == "set", "type(set)")
+assert(type(Map()) == "map", "type(map)")
+
+// Callable types (class constructors are Callables → "function")
+func foo() {}
+assert(type(foo) == "function", "type(function)")
+assert(type(print) == "function", "type(print)")
+
+// Class instances
+Obj Person(name) {
+    this.name = name
+}
+// Class constructor is a Callable → "function"
+assert(type(Person) == "function", "type(class constructor)")
+// Instance is ObjectInstance → "object"
+assert(type(Person("test")) == "object", "type(class instance)")
+
+print("type() all returns: PASS")

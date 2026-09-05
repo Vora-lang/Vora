@@ -1,0 +1,38 @@
+// examples/44-std-fs.va — Filesystem module demonstration
+import "fs"
+
+// exists(path) — check if file/directory exists
+print("Current directory exists: " + toString(fs.exists(".")))
+
+// writeFile(path, content) — write string to file
+let testFile = "_test_fs_demo.txt"
+let ok = fs.writeFile(testFile, "Hello from Vora std/fs!\nLine 2\nLine 3")
+print("writeFile: " + toString(ok))
+
+// readFile(path) — read entire file as string
+let content = fs.readFile(testFile)
+print("readFile: " + content)
+
+// exists on the newly created file
+print("Test file exists: " + toString(fs.exists(testFile)))
+
+// listDir(path) — list directory contents
+let files = fs.listDir(".")
+print("Files in current dir (first 5):")
+let count = 0
+for f in files {
+    if (count >= 5) { break }
+    print("  " + f)
+    count = count + 1
+}
+
+// mkdir(path) — create a directory
+let testDir = "_test_fs_demo_dir"
+let dirOk = fs.mkdir(testDir)
+print("mkdir: " + toString(dirOk))
+print("dir exists: " + toString(fs.exists(testDir)))
+
+// cleanup
+fs.delete(testFile)
+fs.delete(testDir)
+print("Cleaned up test files")

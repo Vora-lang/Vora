@@ -1,0 +1,42 @@
+// examples/49-std-regex.va — Regular Expression module demonstration
+import "regex"
+
+// --- test(pattern, text) — test if pattern matches ---
+print("=== test ===")
+print("Digits in 'abc123': " + toString(regex.test("\\d+", "abc123")))
+print("Digits in 'hello': " + toString(regex.test("\\d+", "hello")))
+print("Email pattern: " + toString(regex.test("\\w+@\\w+\\.\\w+", "user@example.com")))
+print("Starts with A: " + toString(regex.test("^A", "Apple")))
+
+// --- find(pattern, text) — find all matches ---
+print("\n=== find ===")
+let nums = regex.find("\\d+", "The numbers 42, 100, and 7 are here.")
+print("Numbers found: " + toString(nums))
+
+let words = regex.find("[A-Z][a-z]+", "John and Mary went to Paris.")
+print("Capitalized words: " + toString(words))
+
+let empty = regex.find("z+", "hello")
+print("No match returns empty array: " + toString(empty))
+
+// --- replace(pattern, text, replacement) ---
+print("\n=== replace ===")
+let cleaned = regex.replace("\\s+", "This   has    extra   spaces", " ")
+print("Normalized spaces: '" + cleaned + "'")
+
+let masked = regex.replace("\\d{3}-\\d{4}", "Phone: 555-1234", "XXX-XXXX")
+print("Masked phone: " + masked)
+
+let redacted = regex.replace("secret", "the secret code is secret", "****")
+print("Redacted: " + redacted)
+
+// --- split(pattern, text) — split by regex delimiter ---
+print("\n=== split ===")
+let parts = regex.split("\\s+", "one two  three   four")
+print("Split by whitespace: " + toString(parts))
+
+let csv = regex.split(",\\s*", "apple, banana, orange, grape")
+print("Split CSV: " + toString(csv))
+
+let pathParts = regex.split("[/\\\\]", "path/to/file.txt")
+print("Split path: " + toString(pathParts))

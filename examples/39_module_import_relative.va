@@ -1,0 +1,6 @@
+// examples/39_module_import_relative.va — Relative module import demonstration
+import "./38_module_export"
+
+print(module_export.hello("Vora"))
+print("Version: " + module_export.VERSION)
+print("Max retries: " + toString(module_export.MAX_RETRIES))

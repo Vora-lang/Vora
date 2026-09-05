@@ -1,0 +1,17 @@
+let x = 10
+print(x)
+x = 20
+print(x)
+{
+    let y = 99
+    print(y)
+    let x = 100
+    print(x)
+}
+print(x)
+let z = 1
+{
+    let z = 2
+    print(z)
+}
+print(z)

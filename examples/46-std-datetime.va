@@ -1,0 +1,36 @@
+// examples/46-std-datetime.va — Datetime module demonstration
+import "datetime"
+
+// now() — current Unix timestamp in seconds
+let ts = datetime.now()
+print("Current timestamp (seconds): " + toString(ts))
+
+// nowMs() — current Unix timestamp in milliseconds
+let ms = datetime.nowMs()
+print("Current timestamp (ms): " + toString(ms))
+
+// timestampToDate(ts) — convert to date components
+let date = datetime.timestampToDate(ts)
+print("Date breakdown:")
+print("  year:   " + toString(date["year"]))
+print("  month:  " + toString(date["month"]))
+print("  day:    " + toString(date["day"]))
+print("  hour:   " + toString(date["hour"]))
+print("  minute: " + toString(date["minute"]))
+print("  second: " + toString(date["second"]))
+
+// formatDuration(seconds) — human-readable duration
+print("")
+print("Duration formatting:")
+print("  0.5s  → " + datetime.formatDuration(0.5))
+print("  5s    → " + datetime.formatDuration(5))
+print("  65s   → " + datetime.formatDuration(65))
+print("  3661s → " + datetime.formatDuration(3661))
+
+// sleep(seconds) — brief pause
+print("")
+print("Sleeping for 0.1 seconds...")
+let before = datetime.nowMs()
+datetime.sleep(0.1)
+let after = datetime.nowMs()
+print("Slept for ~" + toString(after - before) + "ms")

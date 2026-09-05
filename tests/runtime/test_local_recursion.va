@@ -1,0 +1,145 @@
+// runtime/test_local_recursion.va — Edge case tests for local function self-recursion
+// Run: vora tests/runtime/test_local_recursion.va
+
+print("=== Runtime: Local Recursion Edge Cases ===")
+
+// --- 1. Basic local function self-recursion ---
+func test1() {
+    func fact(n) {
+        if (n <= 1) { return 1 }
+        return n * fact(n - 1)
+    }
+    return fact(5)
+}
+assert(test1() == 120, "local factorial 5")
+
+// --- 2. Mutual recursion via global functions (works with sequential definition) ---
+// NOTE: Local mutual recursion (A calls B, B calls A, both defined as local func)
+// requires forward declarations and is not yet supported.
+
+// --- 3. Local self-recursion with captured upvalue ---
+func test3(base) {
+    let multiplier = 3
+    func pow3(n) {
+        if (n <= 0) { return base }
+        return multiplier * pow3(n - 1)
+    }
+    return pow3(2)
+}
+assert(test3(2) == 18, "self-recursion with capture: 3*3*2")  // pow3(2) = 3*3*2=18
+
+// --- 4. Nested local function with self-recursion ---
+func test4() {
+    func outer(x) {
+        func inner(n) {
+            if (n <= 0) { return 1 }
+            return x * inner(n - 1)  // captures x, recurses on inner
+        }
+        return inner(3)
+    }
+    return outer(2)
+}
+assert(test4() == 8, "nested local recursion: 2*2*2")  // 2^3
+
+// --- 5. Local self-recursion with default params ---
+func test5() {
+    func countdown(n, acc) {
+        if (n <= 0) { return acc }
+        return countdown(n - 1, acc + n)
+    }
+    return countdown(5, 0)
+}
+assert(test5() == 15, "self-recursion with default: 5+4+3+2+1")
+
+// --- 6. Self-recursion in block scope ---
+func test6() {
+    let result = 0
+    {
+        func helper(n) {
+            if (n <= 0) { return }
+            result = result + n
+            helper(n - 1)
+        }
+        helper(4)
+    }
+    return result
+}
+assert(test6() == 10, "self-recursion in block: 4+3+2+1")
+
+// --- 7. Return self-recursing closure ---
+func test7() {
+    func makeCounter(start, limit) {
+        func count() {
+            if (start >= limit) { return start }
+            start = start + 1
+            return count()
+        }
+        return count
+    }
+    let c = makeCounter(0, 5)
+    return c()
+}
+assert(test7() == 5, "return self-recursing closure")
+
+// --- 8. Deep local self-recursion (50 levels) ---
+func test8() {
+    func sumTo(n) {
+        if (n <= 0) { return 0 }
+        return n + sumTo(n - 1)
+    }
+    return sumTo(50)
+}
+assert(test8() == 1275, "deep local recursion 50")
+
+// --- 9. Self-recursion with try/catch ---
+func test9() {
+    func safeDiv(a, b) {
+        if (b == 0) { return 0 }
+        return a / b
+    }
+    func helper(n) {
+        if (n <= 0) { return 0 }
+        return safeDiv(n, 2) + helper(n - 1)
+    }
+    return helper(4)
+}
+assert(test9() == 5, "self-recursion with nested call: 2+1.5+1+0.5=5")
+
+// --- 10. Multiple local self-recursive functions in same scope ---
+func test10() {
+    func fib(n) {
+        if (n <= 1) { return n }
+        return fib(n - 1) + fib(n - 2)
+    }
+    func fact(n) {
+        if (n <= 1) { return 1 }
+        return n * fact(n - 1)
+    }
+    return fib(6) + fact(4)
+}
+assert(test10() == 32, "two self-recursive locals: fib(6)=8 + fact(4)=24")
+
+// --- 11. Self-recursion with multiple upvalues ---
+func test11(init) {
+    let a = init
+    let b = init * 2
+    func sumBoth(n) {
+        if (n <= 0) { return 0 }
+        return a + b + sumBoth(n - 1)
+    }
+    return sumBoth(3)
+}
+assert(test11(10) == 90, "multi-upvalue recursion: (10+20)*3")
+
+// --- 12. Ackermann-style local recursion ---
+func test12() {
+    func ack(m, n) {
+        if (m == 0) { return n + 1 }
+        if (n == 0) { return ack(m - 1, 1) }
+        return ack(m - 1, ack(m, n - 1))
+    }
+    return ack(3, 2)
+}
+assert(test12() == 29, "local ackermann: ack(3,2)=29")
+
+print("Local recursion edge case tests: PASS")

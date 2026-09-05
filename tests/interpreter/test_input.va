@@ -1,0 +1,26 @@
+// interpreter/test_input.va — input() built-in function tests
+// Run with piped stdin:
+//   printf 'hello\n\n42' | vora tests/interpreter/test_input.va
+//   (empty stdin → tests EOF → null behavior)
+
+// Test 1: input() with piped data returns the string
+let s = input()
+assert(s == "hello", "input() reads first line")
+
+// Test 2: input() with empty line returns empty string (NOT null)
+let empty = input()
+assert(empty == "", "input() empty line returns ''")
+
+// Test 3: input() with no newline at end still returns the data
+let partial = input()
+assert(partial == "42", "input() reads partial last line")
+
+// Test 4: input() after all data consumed → EOF → null
+let eof = input()
+assert(eof == null, "input() returns null on EOF")
+
+// Test 5: input(prompt) with prompt string
+// (prompt goes to stdout, doesn't affect return value)
+// This is tested via manual inspection of prompt output
+
+print("Input tests: PASS")

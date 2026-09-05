@@ -1,0 +1,39 @@
+// std/regex.va — Vora Regular Expression Standard Library
+//
+// Pattern matching, search, replace, and split using regex.
+// Powered by C++ std::regex (ECMAScript syntax by default).
+//
+// Usage: import "regex"
+//        regex.test("\\d+", "abc123")        // true — pattern matched
+//        regex.find("\\d+", "a1b2c3")         // ["1", "2", "3"]
+//        regex.replace("\\s+", "a b  c", "_") // "a_b_c"
+//        regex.split("[,;]", "a,b;c")         // ["a", "b", "c"]
+//
+// Pattern syntax (ECMAScript):
+//   .       any char (except newline)
+//   *       zero or more
+//   +       one or more
+//   ?       zero or one
+//   {n,m}   between n and m times
+//   [abc]   character class
+//   [^abc]  negated character class
+//   [a-z]   character range
+//   (ab)    capturing group
+//   (?:ab)  non-capturing group
+//   a|b     alternation
+//   ^       start of string
+//   $       end of string
+//   \d      digit [0-9]
+//   \w      word char [a-zA-Z0-9_]
+//   \s      whitespace
+//   \D,\W,\S  negated shorthand
+//   \b      word boundary
+//   \\      literal backslash (double-escape in Vora strings)
+//
+// Important: Backslashes must be escaped in Vora string literals.
+//   "\\d+"  means \d+ (one or more digits)
+
+export let test = vora_regex_match
+export let find = vora_regex_find
+export let replace = vora_regex_replace
+export let split = vora_regex_split

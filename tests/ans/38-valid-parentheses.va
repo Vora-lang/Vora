@@ -1,0 +1,46 @@
+// Problem #38: Valid Parentheses (Easy)
+// Check if string of ()[]{} is valid. Array-based stack.
+// Push opening brackets, pop and check matching on closing brackets.
+
+func isValid(s) {
+    let stack = [];
+
+    for i in range(s.length) {
+        let ch = s[i];
+        if (ch == "(" or ch == "[" or ch == "{") {
+            stack.add(ch);
+        } else {
+            if (stack.length == 0) {
+                return false;
+            }
+            let top = stack.pop();
+            if (ch == ")" and top != "(") {
+                return false;
+            }
+            if (ch == "]" and top != "[") {
+                return false;
+            }
+            if (ch == "}" and top != "{") {
+                return false;
+            }
+        }
+    }
+
+    return stack.length == 0;
+}
+
+// Test cases
+assert(isValid("()") == true);
+assert(isValid("()[]{}") == true);
+assert(isValid("(]") == false);
+assert(isValid("([)]") == false);
+assert(isValid("{[]}") == true);
+assert(isValid("") == true);
+assert(isValid("(") == false);
+assert(isValid(")") == false);
+assert(isValid("((()))") == true);
+assert(isValid("(()))(") == false);
+assert(isValid("{[()]}") == true);
+assert(isValid("]") == false);
+
+print("PASS: 38-valid-parentheses");

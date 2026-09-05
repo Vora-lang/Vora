@@ -1,0 +1,94 @@
+// interpreter/test_scopes.va — Variable scoping and shadowing
+// Run: vora tests/interpreter/test_scopes.va
+
+print("=== Interpreter: Scope Tests ===")
+
+// Block scope: let inside block
+let outer = 10
+{
+    let inner = 20
+    assert(inner == 20, "block local")
+    assert(outer == 10, "block sees outer")
+}
+// inner is not accessible here (out of scope)
+
+// Shadowing: inner let shadows outer
+let val = 100
+{
+    let val = 200
+    assert(val == 200, "shadow override")
+}
+assert(val == 100, "shadow restored")
+
+// While loop scope
+let i = 0
+let wSum = 0
+while (i < 3) {
+    let temp = i * 10
+    wSum = wSum + temp
+    i = i + 1
+}
+assert(wSum == 30, "while scope sum")  // 0+10+20
+
+// For-in loop scope
+let fSum = 0
+for item in [5, 10, 15] {
+    fSum = fSum + item
+}
+assert(fSum == 30, "for-in scope sum")
+
+// C-for scope — init variable is local to loop
+let before = 99
+for (let i = 0; i < 3; i = i + 1) {
+    // 'i' is local to the C-for scope
+}
+assert(before == 99, "C-for does not leak init var")
+
+// Function parameter scope
+func add(a, b) {
+    let sum = a + b
+    return sum
+}
+assert(add(3, 4) == 7, "func param scope")
+
+// Nested function scope
+func outerFn(x) {
+    func innerFn(y) {
+        return x + y  // captures x from outer scope
+    }
+    return innerFn(x + 1)
+}
+assert(outerFn(5) == 11, "nested func scope")  // 5 + (5+1)
+
+// Shadowing in nested blocks
+let a = 1
+{
+    let a = 2
+    {
+        let a = 3
+        assert(a == 3, "triple nested inner")
+    }
+    assert(a == 2, "triple nested middle")
+}
+assert(a == 1, "triple nested outer")
+
+// Sequential blocks
+let x = 1
+{
+    let y = 10
+    x = x + y
+}
+{
+    let y = 100
+    x = x + y
+}
+assert(x == 111, "sequential blocks")  // 1+10+100
+
+// C-for variable shadowing
+let shadowed = 99
+for (let shadowed = 0; shadowed < 3; shadowed = shadowed + 1) {
+    // uses inner shadowed
+}
+assert(shadowed == 99, "C-for shadow outer")
+
+print("Scope tests: PASS")

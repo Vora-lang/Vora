@@ -1,0 +1,64 @@
+// interpreter/test_lambda.va — Anonymous function expression tests
+// Run: vora tests/interpreter/test_lambda.va
+
+print("=== Interpreter: Lambda Tests ===")
+
+// Basic lambda
+let double = func(x) { return x * 2 }
+assert(double(5) == 10, "basic lambda")
+assert(double(0) == 0, "lambda zero")
+
+// Lambda with no params
+let greet = func() { return "hi" }
+assert(greet() == "hi", "no-params lambda")
+
+// Lambda with multiple params
+let add = func(a, b) { return a + b }
+assert(add(3, 4) == 7, "multi-params lambda")
+
+// Lambda as callback
+func apply(f, x) { return f(x) }
+let square = func(n) { return n * n }
+assert(apply(square, 7) == 49, "lambda callback")
+
+// Lambda with closure capturing outer variable
+func makeMultiplier(factor) {
+    return func(x) { return x * factor }
+}
+let triple = makeMultiplier(3)
+assert(triple(5) == 15, "lambda closure 1")
+assert(triple(10) == 30, "lambda closure 2")
+
+// Lambda returning lambda
+func makeAdder(x) {
+    return func(y) { return x + y }
+}
+let add5 = makeAdder(5)
+assert(add5(3) == 8, "lambda returning lambda")
+
+// Immediately invoked lambda expression
+let result = func(x, y) { return x * y }(6, 7)
+assert(result == 42, "IIFE")
+
+// Lambda with default parameter
+let withDefault = func(x, y) {
+    if (y == null) { y = 10 }
+    return x + y
+}
+assert(withDefault(5, 3) == 8, "lambda args override")
+assert(withDefault(5, null) == 15, "lambda args default")
+
+// Lambda with if/else
+let absVal = func(x) {
+    if (x < 0) { return -(x) }
+    return x
+}
+assert(absVal(-5) == 5, "lambda if/else negative")
+assert(absVal(3) == 3, "lambda if/else positive")
+
+// Lambda in array
+let funcs = [func(x) { return x + 1 }, func(x) { return x * 2 }]
+assert(funcs[0](10) == 11, "lambda array[0]")
+assert(funcs[1](10) == 20, "lambda array[1]")
+
+print("Lambda tests: PASS")

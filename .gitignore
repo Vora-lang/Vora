@@ -1,0 +1,10 @@
+build/
+out/
+.vs/
+.zed/
+.wix/
+CLAUDE.md
+.claude/
+callgrind.out.*
+perf.data
+.workbuddy/

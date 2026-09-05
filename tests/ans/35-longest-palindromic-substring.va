@@ -1,0 +1,62 @@
+// Problem #35: Longest Palindromic Substring (Medium)
+// Find the longest palindrome substring in s.
+// Expand around center: 2n-1 centers (each character and each between-characters gap).
+
+func max(a, b) {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+// Expand around center, return palindrome length
+func expandAroundCenter(s, left, right) {
+    let n = s.length;
+    while (left >= 0 and right < n and s[left] == s[right]) {
+        left = left - 1;
+        right = right + 1;
+    }
+    // Length of palindrome = (right - left - 1)
+    return right - left - 1;
+}
+
+func longestPalindrome(s) {
+    let n = s.length;
+    if (n < 2) {
+        return s;
+    }
+
+    let start = 0;
+    let maxLen = 1;
+
+    for i in range(n) {
+        // Odd-length palindrome (center at character i)
+        let len1 = expandAroundCenter(s, i, i);
+        // Even-length palindrome (center between i and i+1)
+        let len2 = expandAroundCenter(s, i, i + 1);
+
+        let len = max(len1, len2);
+        if (len > maxLen) {
+            maxLen = len;
+            // Integer-floor division: (len-1 - (len-1)%2) / 2
+            // Works for both odd (len-1 even) and even (len-1 odd, subtracted to even) lengths
+            start = i - (len - 1 - (len - 1) % 2) / 2;
+        }
+    }
+
+    return s.substring(start, start + maxLen);
+}
+
+// Test cases
+assert(longestPalindrome("babad") == "bab");    // or "aba", either is fine; "bab" is first found
+assert(longestPalindrome("cbbd") == "bb");
+assert(longestPalindrome("a") == "a");
+assert(longestPalindrome("ac") == "a");         // or "c"
+assert(longestPalindrome("bb") == "bb");
+assert(longestPalindrome("racecar") == "racecar");
+assert(longestPalindrome("abacdfgdcaba") == "aba"); // multiple palindromes
+assert(longestPalindrome("") == "");
+assert(longestPalindrome("aaaa") == "aaaa");
+assert(longestPalindrome("abcba") == "abcba");
+
+print("PASS: 35-longest-palindromic-substring");

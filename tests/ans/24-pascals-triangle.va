@@ -1,0 +1,64 @@
+// Problem #24: Pascal's Triangle (Easy)
+// Generate first numRows of Pascal's triangle.
+// Nested loop: each row built from previous row.
+// Vora: newRow.add() builds rows without arr[idx]=val.
+
+func generate(numRows) {
+    let triangle = [];
+    if (numRows <= 0) {
+        return triangle;
+    }
+
+    // First row is always [1]
+    triangle.add([1]);
+
+    for i in range(1, numRows) {
+        let prevRow = triangle[i - 1];
+        let newRow = [];
+        // First element is always 1
+        newRow.add(1);
+        // Middle elements: sum of two above
+        for j in range(1, prevRow.length) {
+            newRow.add(prevRow[j - 1] + prevRow[j]);
+        }
+        // Last element is always 1
+        newRow.add(1);
+        triangle.add(newRow);
+    }
+
+    return triangle;
+}
+
+// Helper to compare 2D arrays
+func matricesEqual(a, b) {
+    if (a.length != b.length) {
+        return false;
+    }
+    for i in range(a.length) {
+        if (a[i].length != b[i].length) {
+            return false;
+        }
+        for j in range(a[i].length) {
+            if (a[i][j] != b[i][j]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Test cases
+assert(matricesEqual(generate(1), [[1]]));
+assert(matricesEqual(generate(2), [[1], [1, 1]]));
+assert(matricesEqual(generate(3), [[1], [1, 1], [1, 2, 1]]));
+assert(matricesEqual(generate(4), [[1], [1, 1], [1, 2, 1], [1, 3, 3, 1]]));
+assert(matricesEqual(generate(5), [[1], [1, 1], [1, 2, 1], [1, 3, 3, 1], [1, 4, 6, 4, 1]]));
+assert(generate(0).length == 0);
+
+// Check specific values
+let t = generate(7);
+assert(t[5][2] == 10);   // row 6, col 2: C(5,2)=10
+assert(t[6][3] == 20);   // row 7, col 3: C(6,3)=20
+assert(t[6].length == 7);
+
+print("PASS: 24-pascals-triangle");

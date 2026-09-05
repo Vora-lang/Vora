@@ -1,0 +1,80 @@
+// runtime/test_recursion.va — Recursion tests
+// Run: vora tests/runtime/test_recursion.va
+
+print("=== Runtime: Recursion Tests ===")
+
+// Simple recursion
+func factorial(n) {
+    if (n <= 1) { return 1 }
+    return n * factorial(n - 1)
+}
+assert(factorial(0) == 1, "factorial 0")
+assert(factorial(1) == 1, "factorial 1")
+assert(factorial(5) == 120, "factorial 5")
+assert(factorial(7) == 5040, "factorial 7")
+
+// Fibonacci
+func fib(n) {
+    if (n <= 1) { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+assert(fib(0) == 0, "fib 0")
+assert(fib(1) == 1, "fib 1")
+assert(fib(6) == 8, "fib 6")
+assert(fib(10) == 55, "fib 10")
+
+// Deep recursion (100 levels)
+func sumTo(n) {
+    if (n <= 0) { return 0 }
+    return n + sumTo(n - 1)
+}
+assert(sumTo(10) == 55, "sumTo 10")
+assert(sumTo(100) == 5050, "sumTo 100")
+
+// GCD (Euclidean)
+func gcd(a, b) {
+    if (b == 0) { return a }
+    return gcd(b, a % b)
+}
+assert(gcd(48, 18) == 6, "gcd 48,18")
+assert(gcd(17, 13) == 1, "gcd coprime")
+assert(gcd(100, 10) == 10, "gcd 100,10")
+
+// Power
+func power(base, exp) {
+    if (exp == 0) { return 1 }
+    if (exp == 1) { return base }
+    return base * power(base, exp - 1)
+}
+assert(power(2, 0) == 1, "power 0")
+assert(power(2, 8) == 256, "power 8")
+assert(power(3, 4) == 81, "power 3^4")
+assert(power(5, 3) == 125, "power 5^3")
+
+// Recursive sum of array
+func sumArray(arr, idx) {
+    if (idx >= arr.length) { return 0 }
+    return arr[idx] + sumArray(arr, idx + 1)
+}
+let nums = [1, 2, 3, 4, 5]
+assert(sumArray(nums, 0) == 15, "sum array")
+
+// Recursive max
+func maxArray(arr, idx) {
+    if (idx >= arr.length) { return 0 }
+    let rest = maxArray(arr, idx + 1)
+    if (arr[idx] > rest) { return arr[idx] }
+    return rest
+}
+assert(maxArray([3, 7, 2, 9, 1], 0) == 9, "max array")
+
+// Recursive palindrome check
+func isPalindrome(s, left, right) {
+    if (left >= right) { return true }
+    if (s[left] != s[right]) { return false }
+    return isPalindrome(s, left + 1, right - 1)
+}
+assert(isPalindrome("racecar", 0, 6) == true, "palindrome true")
+assert(isPalindrome("hello", 0, 4) == false, "palindrome false")
+
+print("Runtime recursion tests: PASS")

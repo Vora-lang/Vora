@@ -1,0 +1,83 @@
+print("=== 1. Simple multiple inheritance ===")
+Obj Speaker() {
+    func speak() { return "hello from Speaker" }
+    func greet() { return "hi from Speaker" }
+}
+Obj Walker() {
+    func walk() { return "walking from Walker" }
+    func greet() { return "hi from Walker" }
+}
+Obj Robot : Speaker, Walker() {
+    func work() { return "working" }
+}
+let r = Robot()
+print("speak:", r.speak())
+print("walk:", r.walk())
+print("greet:", r.greet())
+print("work:", r.work())
+
+print("\n=== 2. Diamond inheritance (C3 MRO) ===")
+Obj A() {
+    func who() { return "A" }
+    func fromA() { return "method from A" }
+}
+Obj B : A() {
+    func who() { return "B" }
+}
+Obj C : A() {
+    func who() { return "C" }
+}
+Obj D : B, C() {}
+let d = D()
+print("who:", d.who())
+print("fromA:", d.fromA())
+
+print("\n=== 3. Constructor chain (reverse MRO order) ===")
+Obj Base(name) {
+    this.name = name
+    this.chain = ["Base"]
+}
+Obj Middle : Base(name, value) {
+    this.value = value
+    this.chain.add("Middle")
+}
+Obj Leaf : Middle(name, value, extra) {
+    this.extra = extra
+    this.chain.add("Leaf")
+}
+let leaf = Leaf("root", 42, "extra")
+print("name:", leaf.name)
+print("value:", leaf.value)
+print("extra:", leaf.extra)
+print("constructor chain:", leaf.chain)
+
+print("\n=== 4. Three-way diamond ===")
+Obj X() {
+    func tag() { return "X" }
+}
+Obj Y : X() {
+    func tag() { return "Y" }
+}
+Obj Z : X() {
+    func tag() { return "Z" }
+}
+Obj W : Y, Z() {}
+let w = W()
+print("W tag:", w.tag())
+print("W tag resolves to first parent (Y)")
+
+print("\n=== 5. Method inheritance across MRO ===")
+Obj P() {
+    func foo() { return "P.foo" }
+    func bar() { return "P.bar" }
+}
+Obj Q : P() {
+    func foo() { return "Q.foo" }
+}
+Obj R : P() {
+    func bar() { return "R.bar" }
+}
+Obj S : Q, R() {}
+let s = S()
+print("S.foo:", s.foo())
+print("S.bar:", s.bar())

@@ -1,0 +1,115 @@
+// Problem #39: Min Stack (Medium)
+// Stack supporting push/pop/top/getMin.
+// Store pairs of (value, currentMin) in a single array.
+
+func min(a, b) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+// Each element in stack is a pair: [value, currentMin]
+let MinStack = [];
+let minStackSize = 0;
+
+func msPush(val) {
+    if (minStackSize == 0) {
+        MinStack.add([val, val]);
+    } else {
+        let last = MinStack[minStackSize - 1];
+        MinStack.add([val, min(val, last[1])]);
+    }
+    minStackSize = minStackSize + 1;
+}
+
+func msPop() {
+    if (minStackSize > 0) {
+        MinStack.pop();
+        minStackSize = minStackSize - 1;
+    }
+}
+
+func msTop() {
+    if (minStackSize == 0) {
+        return null;
+    }
+    let last = MinStack[minStackSize - 1];
+    return last[0];
+}
+
+func msGetMin() {
+    if (minStackSize == 0) {
+        return null;
+    }
+    let last = MinStack[minStackSize - 1];
+    return last[1];
+}
+
+// Test cases
+msPush(-2);
+msPush(0);
+msPush(-3);
+assert(msGetMin() == -3);
+msPop();
+assert(msTop() == 0);
+assert(msGetMin() == -2);
+
+// Reset for more tests
+MinStack = [];
+minStackSize = 0;
+
+msPush(5);
+assert(msGetMin() == 5);
+msPush(6);
+assert(msGetMin() == 5);
+msPush(3);
+assert(msGetMin() == 3);
+msPush(3);
+assert(msGetMin() == 3);
+msPop();
+assert(msGetMin() == 3);
+msPop();
+assert(msGetMin() == 5);
+msPop();
+assert(msGetMin() == 5);
+
+// Reset
+MinStack = [];
+minStackSize = 0;
+
+msPush(2147483646);
+msPush(2147483646);
+msPush(2147483647);
+assert(msTop() == 2147483647);
+msPop();
+assert(msGetMin() == 2147483646);
+msPop();
+assert(msGetMin() == 2147483646);
+msPop();
+
+// Reset
+MinStack = [];
+minStackSize = 0;
+
+msPush(-10);
+msPush(14);
+assert(msGetMin() == -10);
+assert(msGetMin() == -10);
+msPush(-20);
+assert(msGetMin() == -20);
+assert(msGetMin() == -20);
+assert(msTop() == -20);
+assert(msGetMin() == -20);
+msPop();
+msPush(10);
+msPush(-7);
+assert(msGetMin() == -10);
+msPush(-7);
+msPop();
+assert(msTop() == -7);
+assert(msGetMin() == -10);
+msPop();
+assert(msGetMin() == -10);
+
+print("PASS: 39-min-stack");

@@ -1,0 +1,80 @@
+// test_std_regex.va — Regex module tests
+import "regex"
+
+// --- test ---
+assert(regex.test("\\d+", "abc123def") == true)
+assert(regex.test("\\d+", "abcdef") == false)
+assert(regex.test("^hello", "hello world") == true)
+assert(regex.test("world$", "hello world") == true)
+assert(regex.test("^\\d{3}$", "123") == true)
+assert(regex.test("^\\d{3}$", "12") == false)
+// Word boundary
+assert(regex.test("\\bcat\\b", "the cat sat") == true)
+assert(regex.test("\\bcat\\b", "the cats sat") == false)
+
+// --- find ---
+let digits = regex.find("\\d+", "a1b22c333")
+assert(len(digits) == 3)
+assert(digits[0] == "1")
+assert(digits[1] == "22")
+assert(digits[2] == "333")
+
+// No matches returns empty array
+let noMatch = regex.find("z+", "hello")
+assert(noMatch != null)
+assert(len(noMatch) == 0)
+
+// Find words matching pattern
+let caps = regex.find("[A-Z][a-z]+", "Alice Bob charlie Dave")
+assert(len(caps) == 3)
+assert(caps[0] == "Alice")
+assert(caps[1] == "Bob")
+assert(caps[2] == "Dave")
+
+// --- replace ---
+let r1 = regex.replace("\\s+", "a   b  c", "_")
+assert(r1 == "a_b_c")
+
+let r2 = regex.replace("\\d", "a1b2c3", "X")
+assert(r2 == "aXbXcX")
+
+let r3 = regex.replace("apple", "I like apple pie", "cherry")
+assert(r3 == "I like cherry pie")
+
+// Replace with no match returns original
+let r4 = regex.replace("z+", "hello", "x")
+assert(r4 == "hello")
+
+// --- split ---
+let s1 = regex.split("\\s+", "one two three")
+assert(len(s1) == 3)
+assert(s1[0] == "one")
+assert(s1[1] == "two")
+assert(s1[2] == "three")
+
+// Split with multiple consecutive delimiters
+let s2 = regex.split("\\s+", "a  b   c")
+assert(len(s2) == 3)
+assert(s2[0] == "a")
+assert(s2[1] == "b")
+assert(s2[2] == "c")
+
+// Split by character class (comma OR semicolon)
+let s3 = regex.split("[,;]", "a,b;c")
+assert(len(s3) == 3)
+assert(s3[0] == "a")
+assert(s3[1] == "b")
+assert(s3[2] == "c")
+
+// No match returns original string wrapped in array
+let s4 = regex.split("z+", "hello")
+assert(len(s4) == 1)
+assert(s4[0] == "hello")
+
+// --- error handling: invalid pattern returns null ---
+assert(regex.test("[invalid", "test") == null)
+assert(regex.find("[invalid", "test") == null)
+assert(regex.replace("[invalid", "test", "x") == null)
+assert(regex.split("[invalid", "test") == null)
+
+print("test_std_regex OK")

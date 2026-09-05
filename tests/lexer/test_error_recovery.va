@@ -1,0 +1,9 @@
+// lexer/test_error_recovery.va — Lexer error recovery test
+// The lexer now skips illegal characters instead of producing INVALID tokens.
+// Valid code around illegal characters should compile and run.
+
+let x = 10
+let y = x + 1
+print(y)
+
+print("=== Recovery OK: valid code after bad char executed ===")

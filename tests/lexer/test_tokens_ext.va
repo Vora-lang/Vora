@@ -1,0 +1,35 @@
+// lexer/test_tokens_ext.va — Extended token recognition tests (TEST-011)
+// Run: vora tests/lexer/test_tokens_ext.va
+
+print("=== Lexer: Extended Token Tests ===")
+
+// --- Number formats ---
+assert(0xFF == 255, "hex literal")
+assert(0o10 == 8, "octal literal")
+assert(0b1010 == 10, "binary literal")
+assert(1.5 == 1.5, "float literal")
+assert(0.5 == 0.5, "float zero prefix")
+assert(-42 == -42, "negative integer")
+assert(-3.14 == -3.14, "negative float")
+
+// --- String escape sequences ---
+assert("\n".length == 1, "newline escape")
+assert("\t".length == 1, "tab escape")
+assert("\\".length == 1, "backslash escape")
+assert("\"".length == 1, "double quote escape")
+
+// --- Compound assignment operators ---
+let x = 5
+x += 1
+assert(x == 6, "increment (+=)")
+x -= 2
+assert(x == 4, "decrement (-=)")
+x *= 3
+assert(x == 12, "multiply-assign (*=)")
+x /= 4
+assert(x == 3, "divide-assign (/=)")
+let y = 10
+y %= 3
+assert(y == 1, "modulo-assign (%=)")
+
+print("Lexer extended token tests: PASS")

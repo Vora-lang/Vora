@@ -1,0 +1,41 @@
+let user = null
+let displayName = user && user.name
+print("null && ... =>", displayName)
+user = null
+let name = "Guest"
+displayName = (user && user.name) || name
+print("(user && user.name) || name =>", displayName)
+let input = ""
+let value = input || "default"
+print("'' || 'default' =>", value)
+let count = 0
+let display = count || 10
+print("0 || 10 =>", display)
+let a = null
+let b = 0
+let c = 42
+let firstTruthy = a || b || c
+print("null || 0 || 42 =>", firstTruthy)
+let x = 1
+let y = 2
+let z = 3
+let allTruthy = x && y && z
+print("1 && 2 && 3 =>", allTruthy)
+let age = 25
+let isAdult = age >= 18 && age < 65
+print("25 in [18, 65) =>", isAdult)
+let temperature = -5
+let isExtreme = temperature < 0 || temperature > 40
+print("-5 is extreme =>", isExtreme)
+print("true and 42 =>", true and 42)
+print("false or 'fallback' =>", false or "fallback")
+func expensiveCheck() {
+    print("  (expensiveCheck called)")
+    return true
+}
+print("true || expensiveCheck():")
+print("  =>", true || expensiveCheck())
+print("false && expensiveCheck():")
+print("  =>", false && expensiveCheck())
+print("false || expensiveCheck():")
+print("  =>", false || expensiveCheck())

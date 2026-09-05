@@ -1,0 +1,62 @@
+// 51-call-spread.va — Call-site spread ...expr examples
+// Demonstrates expanding an array into individual function arguments.
+
+print("=== Call-Site Spread (...expr) ===")
+print()
+
+// --- Basic spread ---
+// ...arr expands an array into individual positional arguments.
+func greet(greeting, name) {
+    return greeting + ", " + name + "!"
+}
+let args = ["Hello", "World"]
+print("greet(...[\"Hello\", \"World\"]) =", greet(...args))
+
+// --- Mixed fixed + spread arguments ---
+func format(tag, a, b, c, d) {
+    return tag + ": " + ("" + (a + b + c + d))
+}
+print("Mixed args:", format("sum", 1, ...[2, 3], 4))  // → "sum: 10"
+
+// --- Argument forwarding (rest/spread symmetry) ---
+// Collect extra args with ...rest, forward them with ...spread.
+func forwarder(prefix, ...rest) {
+    print("  Forwarding", len(rest), "arguments with prefix:", prefix)
+    return format(prefix, ...rest)
+}
+print("Forwarded:", forwarder("fwd", 10, 20, 30, 40))
+
+// --- Dynamic argument construction ---
+// Build arguments at runtime and spread them into a call.
+func sumAll(...nums) {
+    let total = 0
+    for n in nums {
+        total = total + n
+    }
+    return total
+}
+let dynamicArgs = range(1, 6)  // [1, 2, 3, 4, 5]
+print("sumAll(...range(1,6)) =", sumAll(...dynamicArgs))
+
+// --- Multiple spreads ---
+let part1 = [1, 2]
+let part2 = [3, 4]
+let part3 = [5]
+print("Multiple spreads:", sumAll(...part1, ...part2, ...part3))
+
+// --- Spread with built-in functions ---
+// print() accepts any number of arguments via rest.
+print("print with spread:", ...[ "a", "b", "c" ])
+
+// --- Practical: variadic math ---
+func average(...vals) {
+    if (len(vals) == 0) { return 0 }
+    let total = 0
+    for v in vals { total = total + v }
+    return total / len(vals)
+}
+let scores = [85, 92, 78, 95, 88]
+print("Average:", average(...scores))
+
+print()
+print("=== Done ===")

@@ -1,0 +1,63 @@
+// #4 Median of Two Sorted Arrays (Hard)
+// Median of two sorted arrays. Merge approach (O(m+n)).
+
+func findMedianSortedArrays(nums1, nums2) {
+    let m = nums1.length;
+    let n = nums2.length;
+    let total = m + n;
+
+    if (total == 0) {
+        return 0.0;
+    }
+
+    // Merge the two sorted arrays
+    let merged = [];
+    let i = 0;
+    let j = 0;
+
+    while (i < m and j < n) {
+        if (nums1[i] < nums2[j]) {
+            merged.add(nums1[i]);
+            i = i + 1;
+        } else {
+            merged.add(nums2[j]);
+            j = j + 1;
+        }
+    }
+
+    while (i < m) {
+        merged.add(nums1[i]);
+        i = i + 1;
+    }
+
+    while (j < n) {
+        merged.add(nums2[j]);
+        j = j + 1;
+    }
+
+    // Find median
+    let mid = int(total / 2);
+    if (total % 2 == 1) {
+        return float(merged[mid]);
+    }
+
+    return (float(merged[mid - 1]) + float(merged[mid])) / 2.0;
+}
+
+// Tests
+let r1 = findMedianSortedArrays([1,3], [2]);
+assert(r1 == 2.0, "Test 1 failed: " + type(r1));
+
+let r2 = findMedianSortedArrays([1,2], [3,4]);
+assert(r2 == 2.5, "Test 2 failed: " + type(r2));
+
+let r3 = findMedianSortedArrays([0,0], [0,0]);
+assert(r3 == 0.0, "Test 3 failed");
+
+let r4 = findMedianSortedArrays([], [1]);
+assert(r4 == 1.0, "Test 4 failed");
+
+let r5 = findMedianSortedArrays([2], []);
+assert(r5 == 2.0, "Test 5 failed");
+
+print("58-median-two-sorted: PASS");

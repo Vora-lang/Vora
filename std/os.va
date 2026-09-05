@@ -1,0 +1,17 @@
+// std/os.va — Vora OS Standard Library
+//
+// Operating system operations: environment variables, working directory,
+// process control, shell command execution, command-line arguments.
+//
+// Usage: import "os"
+//        os.getenv("PATH")     // read environment variable
+//        os.getcwd()           // get current working directory
+//        os.exit(0)            // exit the process
+//        os.shell("dir")       // execute shell command, capture output
+//        os.args               // array of command-line arguments
+
+export let getenv = vora_os_getenv
+export let getcwd = vora_os_getcwd
+export let exit = vora_os_exit
+export let shell = vora_os_shell
+export let args = vora_os_args()

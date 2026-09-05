@@ -1,0 +1,11 @@
+func makeCounter() {
+    let count = 0
+    func counter() {
+        count = count + 1
+        return count
+    }
+    return counter
+}
+let c = makeCounter()
+assert(c() == 1)
+assert(c() == 2)

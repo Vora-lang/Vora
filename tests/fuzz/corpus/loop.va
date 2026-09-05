@@ -1,0 +1,12 @@
+let sum = 0
+for i in range(0, 10) {
+    sum = sum + i
+}
+assert(sum == 45)
+
+let arr = [1, 2, 3]
+let s = 0
+for v in arr {
+    s = s + v
+}
+assert(s == 6)

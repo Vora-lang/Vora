@@ -1,0 +1,73 @@
+// runtime/test_for_in_object.va — For-in iteration over object properties
+// Run: vora tests/runtime/test_for_in_object.va
+
+print("=== For-in Object Property Iteration ===")
+
+// --- Basic: iterate keys ---
+Obj Pt(x, y) { this.x = x; this.y = y }
+let pt = Pt(10, 20)
+
+let keys = []
+for k in pt { keys.add(k) }
+assert(len(keys) == 2, "two properties")
+// std::map sorted by key: "x" < "y"
+assert(keys[0] == "x" and keys[1] == "y", "sorted keys")
+
+// --- Empty object ---
+Obj Empty() {}
+let e = Empty()
+let emptyKeys = []
+for k in e { emptyKeys.add(k) }
+assert(len(emptyKeys) == 0, "empty object")
+
+// --- Object with many properties ---
+Obj Big() {
+    this.a = 1; this.b = 2; this.c = 3
+    this.d = 4; this.e = 5
+}
+let big = Big()
+let bigKeys = []
+for k in big { bigKeys.add(k) }
+assert(len(bigKeys) == 5, "five properties")
+
+// --- Access values via key ---
+let sumVals = 0
+for k in big {
+    if (k == "a") { sumVals = sumVals + big.a }
+    if (k == "b") { sumVals = sumVals + big.b }
+    if (k == "c") { sumVals = sumVals + big.c }
+    if (k == "d") { sumVals = sumVals + big.d }
+    if (k == "e") { sumVals = sumVals + big.e }
+}
+assert(sumVals == 15, "sum of all values")
+
+// --- Object with methods (methods are NOT properties) ---
+Obj Meth() {
+    this.val = 42
+    func getVal() { return this.val }
+}
+let m = Meth()
+let mKeys = []
+for k in m { mKeys.add(k) }
+assert(len(mKeys) == 1 and mKeys[0] == "val", "methods not in properties")
+
+// --- Inherited object ---
+Obj Base() { this.baseVal = 100 }
+Obj Sub : Base () { this.subVal = 200 }
+let s = Sub()
+let sKeys = []
+for k in s { sKeys.add(k) }
+// Each constructor sets its own fields; inherited vals go through constructor chain
+assert(len(sKeys) == 2, "inherited object has both fields")
+
+// --- Nested for-in ---
+let allPairs = ""
+for k in pt {
+    for j in pt {
+        allPairs = allPairs + k + j + ","
+    }
+}
+// Should have "xx,xy,yx,yy,"
+assert(allPairs == "xx,xy,yx,yy,", "nested for-in")
+
+print("For-in object iteration test: PASS")

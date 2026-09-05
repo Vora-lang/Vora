@@ -1,0 +1,48 @@
+// examples/56-for-in-patterns.va — For-in loop destructuring examples
+
+print("=== For-in Pattern Destructuring Examples ===")
+
+let arr = [[1, 2], [3, 4], [5, 6]]
+let sum = 0
+for [a, b] in arr {
+    sum = sum + a + b
+}
+assert(sum == 21, "array tuple destructuring")
+
+let m = Map()
+m.set("x", 10)
+m.set("y", 20)
+let keys = []
+let values = []
+for k in m {
+    keys.add(k)
+    values.add(m[k])
+}
+assert(len(keys) == 2, "map key iteration")
+assert(len(values) == 2, "map value access by key")
+
+let obj = {x: 5, y: 15}
+let total = 0
+for [k, v] in [["x", obj.x], ["y", obj.y]] {
+    total = total + v
+}
+assert(total == 20, "manual key/value pair destructuring")
+
+// Destructuring default values in let declarations
+let arr = [1]
+let [a, b = 0] = arr
+assert(a == 1, "default array destructure first element")
+assert(b == 0, "default array destructure missing second element")
+
+let obj2 = {x: 2}
+let {x, y = 1} = obj2
+assert(x == 2, "object destructure shorthand x")
+assert(y == 1, "object destructure default y")
+
+let pairs = []
+for [k, v] in [["a", 1], ["b", 2], ["c", 3]] {
+    pairs.add(k + ":" + v)
+}
+assert(len(pairs) == 3, "destructuring list of pairs")
+
+print("For-in pattern examples: PASS")

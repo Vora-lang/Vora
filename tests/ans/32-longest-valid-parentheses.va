@@ -1,0 +1,59 @@
+// Problem #32: Longest Valid Parentheses (Hard)
+// Find the length of the longest valid (well-formed) parentheses substring.
+// Use array-based stack of indices. Push -1 base, push index on '(', pop on ')'.
+
+func max(a, b) {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+func longestValidParentheses(s) {
+    let n = s.length;
+    if (n < 2) {
+        return 0;
+    }
+
+    let maxLen = 0;
+    // Array-based stack of indices
+    let stack = [];
+    stack.add(-1);  // base index before the first character
+
+    for i in range(n) {
+        let ch = s[i];
+        if (ch == "(") {
+            stack.add(i);
+        } else {
+            // ch == ")"
+            // Pop the last index
+            stack.pop();
+            if (stack.length == 0) {
+                // No matching '(', push current index as new base
+                stack.add(i);
+            } else {
+                // Calculate valid substring length
+                let lastIdx = stack.length - 1;
+                maxLen = max(maxLen, i - stack[lastIdx]);
+            }
+        }
+    }
+
+    return maxLen;
+}
+
+// Test cases
+assert(longestValidParentheses("(()") == 2);          // The valid substring is "()"
+assert(longestValidParentheses(")()())") == 4);       // The valid substring is "()()"
+assert(longestValidParentheses("") == 0);
+assert(longestValidParentheses("(") == 0);
+assert(longestValidParentheses(")") == 0);
+assert(longestValidParentheses("()") == 2);
+assert(longestValidParentheses("()(()") == 2);        // "()" at the start
+assert(longestValidParentheses("(()())") == 6);       // Entire string
+assert(longestValidParentheses("()(()()") == 4);      // "()()" = 4
+assert(longestValidParentheses("))))()") == 2);       // "()"
+assert(longestValidParentheses("((()))") == 6);       // Nested valid
+assert(longestValidParentheses("((()))())") == 8);    // "((()))()" = 8 characters
+
+print("PASS: 32-longest-valid-parentheses");

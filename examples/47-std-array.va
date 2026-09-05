@@ -1,0 +1,39 @@
+// examples/47-std-array.va — Array module demonstration
+import "array"
+
+// sort(arr) — sort ascending
+let unsorted = [3, 1, 4, 1, 5, 9, 2, 6]
+let sorted = array.sort(unsorted)
+print("sort: " + toString(sorted))
+
+// reverse(arr) — reverse elements
+let rev = array.reverse(sorted)
+print("reverse: " + toString(rev))
+
+// join(arr, sep) — join with separator
+let words = ["Vora", "is", "a", "scripting", "language"]
+let joined = array.join(words, " ")
+print("join: " + joined)
+
+// flatten(arr) — flatten one level
+let nested = [[1, 2], [3, 4], [5]]
+let flat = array.flatten(nested)
+print("flatten: " + toString(flat))
+
+// unique(arr) — remove duplicates
+let dupes = [1, 2, 2, 3, 1, 4, 4, 5]
+let uniq = array.unique(dupes)
+print("unique: " + toString(uniq))
+
+// chunk(arr, size) — split into chunks
+let items = [1, 2, 3, 4, 5, 6, 7]
+let chunks = array.chunk(items, 3)
+print("chunk(3):")
+for c in chunks {
+    print("  " + toString(c))
+}
+
+// compact(arr) — remove null values
+let withNulls = [1, null, 2, null, 3]
+let compacted = array.compact(withNulls)
+print("compact: " + toString(compacted))

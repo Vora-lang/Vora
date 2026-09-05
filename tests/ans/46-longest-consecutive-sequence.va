@@ -1,0 +1,79 @@
+// Problem #46: Longest Consecutive Sequence (Medium)
+// Length of the longest consecutive elements sequence.
+// Build a sorted copy of the array, then scan for consecutive runs.
+// Vora does not support arr[idx] = val, so we build sorted array via selection.
+
+func max(a, b) {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+// Build a sorted copy using selection sort
+func sortAsc(arr) {
+    let n = arr.length;
+    let result = [];
+    for i in range(n) {
+        result.add(arr[i]);
+    }
+
+    for i in range(n) {
+        let minIdx = i;
+        let minVal = result[i];
+        for j in range(i + 1, n) {
+            if (result[j] < minVal) {
+                minVal = result[j];
+                minIdx = j;
+            }
+        }
+        if (minIdx != i) {
+            // Swap using remove+insert
+            result.remove(minIdx);
+            result.insert(minIdx, result[i]);
+            result.remove(i);
+            result.insert(i, minVal);
+        }
+    }
+
+    return result;
+}
+
+func longestConsecutive(nums) {
+    let n = nums.length;
+    if (n == 0) {
+        return 0;
+    }
+
+    let sorted = sortAsc(nums);
+
+    let longest = 1;
+    let current = 1;
+
+    for i in range(1, n) {
+        if (sorted[i] == sorted[i - 1]) {
+            // Skip duplicates
+        } else if (sorted[i] == sorted[i - 1] + 1) {
+            current = current + 1;
+        } else {
+            longest = max(longest, current);
+            current = 1;
+        }
+    }
+
+    return max(longest, current);
+}
+
+// Test cases
+assert(longestConsecutive([100, 4, 200, 1, 3, 2]) == 4);  // [1,2,3,4]
+assert(longestConsecutive([0, 3, 7, 2, 5, 8, 4, 6, 0, 1]) == 9);  // [0..8]
+assert(longestConsecutive([]) == 0);
+assert(longestConsecutive([1]) == 1);
+assert(longestConsecutive([1, 2, 0, 1]) == 3);  // [0,1,2]
+assert(longestConsecutive([5, 4, 3, 2, 1]) == 5);
+assert(longestConsecutive([9, 1, 4, 7, 3, 8, 5, 2, 0, 6]) == 10);
+assert(longestConsecutive([0, 0]) == 1);
+assert(longestConsecutive([1, 3, 5, 7]) == 1);
+assert(longestConsecutive([-1, 0, 1]) == 3);
+
+print("PASS: 46-longest-consecutive-sequence");

@@ -1,0 +1,50 @@
+// Tests for bare destructuring assignment: [a,b]=arr  and  {x,y}=obj
+// Feature: NEW-003 — compileAssignPattern
+
+// --- Array destructuring assignment (global scope) ---
+let a1 = 0;
+let b1 = 0;
+[a1, b1] = [10, 20];
+assert(a1 == 10);
+assert(b1 == 20);
+
+// --- Assignment expression returns RHS value ---
+let x = [a1, b1] = [30, 40];
+assert(a1 == 30);
+assert(b1 == 40);
+assert(x[0] == 30);
+assert(x[1] == 40);
+
+// --- Nested array destructuring (function scope) ---
+func testNested() {
+    let c = 0;
+    let d = 0;
+    let e = 0;
+    [c, [d, e]] = [1, [2, 3]];
+    assert(c == 1);
+    assert(d == 2);
+    assert(e == 3);
+}
+testNested();
+
+// --- Destructuring in expression context ---
+func testInExpr() {
+    let f = 0;
+    let g = 0;
+    let result = ([f, g] = [100, 200]);
+    assert(f == 100);
+    assert(g == 200);
+    assert(result[0] == 100);
+    assert(result[1] == 200);
+}
+testInExpr();
+
+// --- Swap using destructuring ---
+func swapTest() {
+    let m = 5;
+    let n = 10;
+    [m, n] = [n, m];
+    assert(m == 10);
+    assert(n == 5);
+}
+swapTest();

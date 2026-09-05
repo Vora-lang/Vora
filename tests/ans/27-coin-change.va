@@ -1,0 +1,54 @@
+// Problem #27: Coin Change (Medium)
+// Fewest number of coins to make up a given amount.
+// DP: dp[i] = min over coins c of dp[i - c] + 1, if i >= c.
+
+func min(a, b) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+func coinChange(coins, amount) {
+    if (amount == 0) {
+        return 0;
+    }
+    if (amount < 0) {
+        return -1;
+    }
+
+    // Initialize dp array: dp[0] = 0, others = amount+1 (infinity proxy)
+    let dp = [];
+    dp.add(0);
+    for i in range(1, amount + 1) {
+        dp.add(amount + 1);
+    }
+
+    for i in range(1, amount + 1) {
+        for each in range(coins.length) {
+            let coin = coins[each];
+            if (coin <= i) {
+                dp[i] = min(dp[i], dp[i - coin] + 1);
+            }
+        }
+    }
+
+    if (dp[amount] > amount) {
+        return -1;
+    }
+    return dp[amount];
+}
+
+// Test cases
+assert(coinChange([1, 2, 5], 11) == 3);     // 5+5+1 = 3 coins
+assert(coinChange([2], 3) == -1);           // impossible
+assert(coinChange([1], 0) == 0);
+assert(coinChange([1], 1) == 1);
+assert(coinChange([1], 2) == 2);
+assert(coinChange([1, 5, 10], 18) == 5);   // 10+5+1+1+1 = 5 coins
+assert(coinChange([2, 5, 10], 1) == -1);    // impossible
+assert(coinChange([186, 419, 83, 408], 6249) == 20); // standard LC test
+assert(coinChange([1, 3, 5], 9) == 3);     // 3+3+3 = 3 coins
+assert(coinChange([25, 10, 5], 30) == 2);  // 25+5 = 2 coins
+
+print("PASS: 27-coin-change");

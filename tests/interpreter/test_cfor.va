@@ -1,0 +1,102 @@
+// interpreter/test_cfor.va — C-style for loop tests
+// Run: vora tests/interpreter/test_cfor.va
+
+print("=== Interpreter: C-For Loop Tests ===")
+
+// Basic counting
+let sum = 0
+for (let i = 1; i <= 5; i = i + 1) {
+    sum = sum + i
+}
+assert(sum == 15, "sum 1..5")
+
+// Empty initializer
+let j = 0
+for (; j < 3; j = j + 1) {
+    print("loop")
+}
+assert(j == 3, "empty init")
+
+// Empty condition (always true, break exit)
+let count = 0
+for (let k = 0; ; k = k + 1) {
+    count = count + 1
+    if (count >= 3) { break }
+}
+assert(count == 3, "empty cond")
+
+// Empty increment
+let acc = 0
+for (let m = 0; m < 5;) {
+    acc = acc + m
+    m = m + 1
+}
+assert(acc == 10, "empty incr")
+
+// Continue skips print
+let seen = []
+for (let n = 0; n < 5; n = n + 1) {
+    if (n == 2) { continue }
+    seen.add(n)
+}
+assert(seen.length == 4, "continue count")
+assert(seen[0] == 0, "continue[0]")
+assert(seen[1] == 1, "continue[1]")
+assert(seen[2] == 3, "continue[2]")
+assert(seen[3] == 4, "continue[3]")
+
+// Break exits early
+let early = 0
+for (let p = 0; p < 10; p = p + 1) {
+    if (p == 4) { break }
+    early = p
+}
+assert(early == 3, "break exit")
+
+// Nested C-for loops
+let product = 0
+for (let a = 0; a < 3; a = a + 1) {
+    for (let b = 0; b < 2; b = b + 1) {
+        product = product + 1
+    }
+}
+assert(product == 6, "nested")
+
+// Variable shadowing: C-for init 'let' shadows outer variable
+let x = 100
+for (let x = 0; x < 3; x = x + 1) {
+    // inner x shadows outer x
+}
+assert(x == 100, "shadow outer")
+
+// C-for and for-in coexist
+let items = [10, 20, 30]
+let total = 0
+for item in items {
+    total = total + item
+}
+assert(total == 60, "for-in still works")
+
+// All three clauses empty (;;) — infinite loop with break
+let forever = 0
+for (;;) {
+    forever = forever + 1
+    if (forever >= 5) { break }
+}
+assert(forever == 5, "forever loop")
+
+// Step > 1
+let step2 = 0
+for (let s = 0; s < 10; s = s + 2) {
+    step2 = step2 + s
+}
+assert(step2 == 20, "step by 2")  // 0+2+4+6+8 = 20
+
+// Count down
+let cd = 0
+for (let d = 5; d > 0; d = d - 1) {
+    cd = cd + d
+}
+assert(cd == 15, "countdown")  // 5+4+3+2+1 = 15
+
+print("C-for loop tests: PASS")

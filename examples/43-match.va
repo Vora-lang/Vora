@@ -1,0 +1,81 @@
+print("=== 1. Basic literal match ===")
+let r1 = match 1 { 1 => "one", 2 => "two", _ => "other" }
+print("match 1:", r1)
+let r2 = match 2 { 1 => "one", 2 => "two", _ => "other" }
+print("match 2:", r2)
+let r3 = match 99 { 1 => "one", 2 => "two", _ => "other" }
+print("match 99 (wildcard):", r3)
+
+print("\n=== 2. Boolean and null patterns ===")
+let rb = match true { true => "yes", false => "no" }
+print("match true:", rb)
+let rn = match null { null => "is null", _ => "not null" }
+print("match null:", rn)
+
+print("\n=== 3. String patterns ===")
+let rs = match "hello" {
+    "hello" => "greeting",
+    "bye" => "farewell",
+    _ => "unknown"
+}
+print("match 'hello':", rs)
+
+print("\n=== 4. Match in functions ===")
+func describe(n) {
+    return match n {
+        0 => "zero",
+        1 => "one",
+        2 => "two",
+        _ => "many"
+    }
+}
+print("describe(0):", describe(0))
+print("describe(1):", describe(1))
+print("describe(5):", describe(5))
+
+print("\n=== 5. Range pattern (inclusive ..=) ===")
+let grade = match 85 {
+    90..=100 => "A",
+    80..=89 => "B",
+    70..=79 => "C",
+    60..=69 => "D",
+    _ => "F"
+}
+print("grade 85:", grade)
+
+print("\n=== 6. Range pattern (exclusive ..) ===")
+let re1 = match 5 { 1..5 => "low", _ => "high" }
+print("5 in 1..5 (exclusive):", re1)
+let re2 = match 3 { 1..5 => "low", _ => "high" }
+print("3 in 1..5:", re2)
+
+print("\n=== 7. Block body ===")
+let rb2 = match 2 {
+    1 => "one",
+    2 => {
+        let x = 10;
+        let y = 20;
+        x + y;
+    },
+    _ => 0
+}
+print("block body result:", rb2)
+
+print("\n=== 8. Nested match ===")
+let nested = match 1 {
+    1 => match 2 { 2 => "inner ok", _ => "no" },
+    _ => "outer no"
+}
+print("nested match:", nested)
+
+print("\n=== 9. Match as standalone statement ===")
+let flag = 0
+match 1 {
+    1 => { flag = 42; },
+    _ => { flag = 0; }
+}
+print("flag after match:", flag)
+
+print("\n=== 10. Match in expression context ===")
+let total = (match 1 { 1 => 10, _ => 0 }) + (match 2 { 2 => 20, _ => 0 })
+print("sum of two matches:", total)

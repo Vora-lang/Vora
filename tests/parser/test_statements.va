@@ -1,0 +1,103 @@
+// parser/test_statements.va — Statement parsing tests
+// Run: vora tests/parser/test_statements.va
+
+print("=== Parser: Statement Tests ===")
+
+// Variable declaration
+let a = 1
+assert(a == 1, "let statement")
+
+// Reassignment
+a = 2
+assert(a == 2, "assignment")
+
+// Compound assignment
+a += 3
+assert(a == 5, "+=")
+a -= 2
+assert(a == 3, "-=")
+a *= 4
+assert(a == 12, "*=")
+a /= 3
+assert(a == 4, "/=")
+a %= 3
+assert(a == 1, "%=")
+
+// Block
+{
+    let b = 10
+    assert(b == 10, "block scope")
+}
+
+// If-else
+if (true) {
+    assert(true, "if branch")
+} else {
+    assert(false, "should not reach else")
+}
+if (false) {
+    assert(false, "should not reach if")
+} else {
+    assert(true, "else branch")
+}
+
+// While
+let i = 0
+while (i < 3) {
+    i += 1
+}
+assert(i == 3, "while loop")
+
+// For-in (array)
+let sum = 0
+for x in [1, 2, 3] {
+    sum += x
+}
+assert(sum == 6, "for-in array")
+
+// For-in (string)
+let chars = ""
+for c in "ab" {
+    chars += c
+}
+assert(chars == "ab", "for-in string")
+
+// For-in (range)
+let count = 0
+for n in range(3) {
+    count += 1
+}
+assert(count == 3, "for-in range")
+
+// Break
+let k = 0
+while (k < 10) {
+    k += 1
+    if (k == 3) { break }
+}
+assert(k == 3, "break")
+
+// Continue
+let s = 0
+for x in [1, 2, 3, 4, 5] {
+    if (x == 3) { continue }
+    s += x
+}
+assert(s == 12, "continue")  // 1+2+4+5
+
+// Return from function
+func ret_test() {
+    return 42
+}
+assert(ret_test() == 42, "return value")
+
+// Expression statement
+1 + 1
+assert(true, "expression statement")
+
+// Semicolon optional
+let sc = 1
+sc = 2
+assert(sc == 2, "no semicolon")
+
+print("Parser statement tests: PASS")

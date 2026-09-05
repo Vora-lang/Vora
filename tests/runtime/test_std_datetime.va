@@ -1,0 +1,47 @@
+// test_std_datetime.va — Datetime module tests
+import "datetime"
+
+// --- now ---
+let ts = datetime.now()
+assert(ts != null)
+assert(ts > 1700000000)  // way after 2023
+assert(type(ts) == "float")
+
+// --- nowMs ---
+let ms = datetime.nowMs()
+assert(ms != null)
+assert(ms > 1700000000000)
+assert(type(ms) == "int")
+
+// --- timestampToDate ---
+// Test with a known timestamp: 2024-01-15 10:30:45 UTC
+// 2024-01-15 = 1705311045 (approx)
+let date = datetime.timestampToDate(1705311045)
+assert(date != null)
+assert(date["year"] == 2024)
+assert(date["month"] == 1)
+assert(date["day"] == 15)
+
+// Test epoch start: 1970-01-01 00:00:00
+let epoch = datetime.timestampToDate(0)
+assert(epoch["year"] == 1970)
+assert(epoch["month"] == 1)
+assert(epoch["day"] == 1)
+assert(epoch["hour"] == 0)
+assert(epoch["minute"] == 0)
+assert(epoch["second"] == 0)
+
+// --- formatDuration ---
+assert(datetime.formatDuration(0.5) == "500ms" || datetime.formatDuration(0.5) == "501ms")
+assert(datetime.formatDuration(5) == "5s")
+assert(datetime.formatDuration(65) == "1m 5s")
+assert(datetime.formatDuration(3661) == "1h 1m 1s")
+assert(datetime.formatDuration(0) != null)
+
+// --- sleep ---
+let before = datetime.nowMs()
+datetime.sleep(0.05)
+let after = datetime.nowMs()
+assert(after >= before)  // time should not go backwards
+
+print("test_std_datetime OK")
