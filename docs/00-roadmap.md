@@ -104,9 +104,9 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
 [X] P0 #4 import 路径非法标识符时编译错误 —— commit 830a2f2
 [X] P0 #3 命名参数解析修复                —— commit c3bc77a（已 lock-in）
 [X] 把上述冻结为 v1.0 EBNF               —— docs/16-v1.0-grammar-ebnf.md
-[ ] P1 修复：推导式要么实现完整，要么从 lexer / parser 删掉避免静默
-[ ] P1 修复：match or-pattern（先决定要不要，要么真做要么删文档）
-[ ] docs/08 顶部加"时效性提示"指向 CHANGELOG.md
+[X] P1 修复：推导式要么实现完整，要么从 lexer / parser 删掉避免静默
+[X] P1 修复：match or-pattern —— 本次 commit，lexer + parser 已通，EBNF §4.6 已同步
+[X] docs/08 顶部加"时效性提示"指向 CHANGELOG.md
 ```
 
 ### Phase 2：补能力（2–3 月）
