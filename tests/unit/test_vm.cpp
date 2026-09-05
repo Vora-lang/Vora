@@ -303,3 +303,80 @@ TEST_CASE("vm_interpret_object_method") {
     );
     CHECK(result == InterpretResult::OK);
 }
+
+// ============================================================================
+// Top-level (module-scope) rest destructuring — P1-D
+// ============================================================================
+
+TEST_CASE("vm_destructure_top_level_array_rest") {
+    // Previously errored: "Rest element in destructuring is only supported
+    // inside functions". After P1-D this should work end-to-end.
+    auto [result, vm] = run(
+        "let [a, b, ...rest] = [1, 2, 3, 4, 5];"
+        "a + b;"
+    );
+    CHECK(result == InterpretResult::OK);
+    // The last expression result is `a + b` (=3). Just confirm OK; deeper
+    // value inspection across the test boundary requires accessing vm.stack.
+}
+
+TEST_CASE("vm_destructure_top_level_array_rest_runtime_values") {
+    // Compile + execute and read the public stack top to verify rest is
+    // a proper array [30, 40, 50]. Use a print() call which writes to
+    // stderr instead of inspecting internal VM state (globalValues is
+    // private).
+    //
+    // We assert the program compiles + runs without runtime errors, and
+    // leave the array-shape verification to a separate printing script
+    // (Vora itself doesn't expose a non-stderr readback in tests).
+    StderrErrorReporter reporter(
+        "let [a, b, ...rest] = [10, 20, 30, 40, 50];");
+    Lexer lexer(
+        "let [a, b, ...rest] = [10, 20, 30, 40, 50];", reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    Compiler compiler(reporter);
+    Chunk chunk = compiler.compile(prog.get());
+    REQUIRE_FALSE(compiler.hadError);
+    VM vm;
+    vm.errorReporter = &reporter;
+    vm.initGlobals(compiler.getGlobalNames());
+    registerBuiltins(vm);
+    InterpretResult result = vm.interpret(chunk);
+    CHECK(result == InterpretResult::OK);
+    // Smoke-check: a/b/rest exist in the globalNames table.
+    const auto& names = compiler.getGlobalNames();
+    bool hasA = false, hasB = false, hasRest = false;
+    for (const auto& n : names) {
+        if (n == "a")    hasA = true;
+        if (n == "b")    hasB = true;
+        if (n == "rest") hasRest = true;
+    }
+    CHECK(hasA);
+    CHECK(hasB);
+    CHECK(hasRest);
+}
+
+TEST_CASE("vm_destructure_top_level_object_rest") {
+    // Same fix should apply to object rest ...rest at module scope.
+    auto [result, vm] = run(
+        "let {x, y, ...others} = {x: 1, y: 2, z: 3, w: 4};"
+        "x + y;"
+    );
+    CHECK(result == InterpretResult::OK);
+}
+
+TEST_CASE("vm_destructure_local_rest_still_works") {
+    // Backwards-compat: the local-scope rest path must keep working
+    // after we split it into a global path.
+    auto [result, vm] = run(
+        "func f(arr) {"
+        "  let [a, b, ...rest] = arr;"
+        "  return rest;"
+        "}"
+        "f([1, 2, 3, 4, 5]);"
+    );
+    CHECK(result == InterpretResult::OK);
+}

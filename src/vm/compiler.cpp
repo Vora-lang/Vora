@@ -434,6 +434,50 @@ bool Compiler::isLocalConst(const std::string& name) const {
     return false;
 }
 
+// =========================================================================
+// Top-level (module-scope) rest destructuring support
+// =========================================================================
+
+int Compiler::allocGlobalTemp(const std::string& name) {
+    // Walk to root compiler so nested functions share the same numbering.
+    Compiler* root = this;
+    while (root->enclosing) {
+        root = root->enclosing;
+    }
+    // Forward-declare as a non-const, undefined slot.
+    int slot = static_cast<int>(root->globalNames.size());
+    root->globalNames.push_back(name);
+    root->globalDefined.push_back(false);   // will mark defined after first define
+    root->globalIsConst.push_back(false);
+    return slot;
+}
+
+void Compiler::emitDefineGlobalTemp(int slot) {
+    // Pop value from stack and store as the global's initial value.
+    // OP_DEFINE_GLOBAL pops its value; globalDefined gets marked by VM at
+    // first store (we set globalDefined[slot] = true below for safety).
+    emitDefineGlobal(slot);
+    Compiler* root = this;
+    while (root->enclosing) {
+        root = root->enclosing;
+    }
+    if (slot >= 0 && static_cast<size_t>(slot) < root->globalDefined.size()) {
+        root->globalDefined[static_cast<size_t>(slot)] = true;
+    }
+}
+
+void Compiler::emitSetGlobalTemp(int slot) {
+    // Replaces the local-scope `OP_SET_LOCAL; OP_POP` pair: set global and
+    // pop the value being assigned.
+    emitSetGlobal(slot);
+    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+}
+
+void Compiler::emitGetGlobalTemp(int slot) {
+    // Push current value of the global onto stack (replaces OP_GET_LOCAL).
+    emitGetGlobal(slot);
+}
+
 int Compiler::resolveUpvalue(Compiler* compiler, const std::string& name) {
     // Walk up the enclosing compiler chain to find the variable
     if (compiler->enclosing == nullptr) return -1;

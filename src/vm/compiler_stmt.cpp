@@ -150,11 +150,75 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
         }
 
         // Rest element: ...rest
+        bool restPoppedSource = false;  // set when rest path consumed source
         if (hasRest) {
             if (scopeDepth == 0) {
-                error("Rest element in destructuring is only supported inside functions");
-                emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+                // Module-scope path: there are no locals, so we can't use
+                // addLocal(). Instead, allocate synthetic module-scope
+                // globals (forward-declared via allocGlobalTemp) and emit
+                // OP_DEFINE_GLOBAL / OP_GET_GLOBAL / OP_SET_GLOBAL for the
+                // same loop body the local-scope path uses.
+                //
+                // Because the source array will already have been bound by
+                // the array element extraction above (with OP_DUP), and
+                // since OP_DEFINE_GLOBAL pops, the source array is no longer
+                // on the stack. Save it to a synthetic global first.
+                int restStartIdx = static_cast<int>(arr.elements.size());
+
+                int srcSlot = allocGlobalTemp("_vora_ds_rest_" + std::to_string(tempId) + "_src");
+                emitDefineGlobalTemp(srcSlot);  // pops source from stack
+                restPoppedSource = true;
+
+                // Empty rest accumulator
+                int arrSlot = allocGlobalTemp("_vora_ds_rest_" + std::to_string(tempId) + "_arr");
+                emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 0);
+                emitDefineGlobalTemp(arrSlot);
+
+                // Loop counter _i = restStartIdx
+                int iSlot = allocGlobalTemp("_vora_ds_rest_" + std::to_string(tempId) + "_i");
+                emitConstant(static_cast<double>(restStartIdx));
+                emitDefineGlobalTemp(iSlot);
+
+                // _len = _vora_len(_src)
+                int lenBuiltinSlot = resolveGlobal("_vora_len");
+                emitGetGlobal(lenBuiltinSlot);
+                emitGetGlobalTemp(srcSlot);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                int lenSlot = allocGlobalTemp("_vora_ds_rest_" + std::to_string(tempId) + "_len");
+                emitDefineGlobalTemp(lenSlot);
+
+                // While loop: _i < _len
+                size_t loopStart = chunk.code.size();
+                emitGetGlobalTemp(iSlot);
+                emitGetGlobalTemp(lenSlot);
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN));
+                size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+
+                // _arr = _arr + [_src[_i]]
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+                emitGetGlobalTemp(arrSlot);
+                emitGetGlobalTemp(srcSlot);
+                emitGetGlobalTemp(iSlot);
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 1);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitSetGlobalTemp(arrSlot);
+
+                // _i = _i + 1
+                emitGetGlobalTemp(iSlot);
+                emitConstant(1.0);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitSetGlobalTemp(iSlot);
+
+                emitLoop(loopStart);
+                patchJump(exitJump);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                // Push rest array and bind
+                emitGetGlobalTemp(arrSlot);
                 compileBindPattern(*arr.rest, -1, isConst, typeAnnotation);
+                // compileBindPattern for a global rest emits OP_DEFINE_GLOBAL
+                // which pops the rest array; stack is now empty.
             } else {
                 int restStartIdx = static_cast<int>(arr.elements.size());
 
@@ -226,8 +290,9 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
 
         // Pop the source array temp (no longer needed)
         // Actually, the temp will be cleaned up by endScope.
-        // For global scope, pop the original array.
-        if (scopeDepth == 0) {
+        // For global scope, pop the original array — unless the rest path
+        // already consumed it via emitDefineGlobalTemp.
+        if (scopeDepth == 0 && !restPoppedSource) {
             emitByte(static_cast<uint8_t>(OpCode::OP_POP));
         }
         break;
@@ -239,6 +304,7 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
         int tempId = destructureTempCounter++;
         bool isGlobal = (scopeDepth == 0);
         int srcSlot = -1;
+        bool restPoppedSource = false;  // module-scope rest path consumes source
 
         if (isGlobal) {
             // Global scope: OP_DUP works because OP_DEFINE_GLOBAL pops.
@@ -264,8 +330,89 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
         // Object rest: ...rest
         if (obj.rest) {
             if (scopeDepth == 0) {
-                error("Object rest in destructuring is only supported inside functions");
-                emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+                // Module-scope path: same desugaring strategy as the local
+                // branch, but temps are synthetic forward-declared globals.
+                // Source object has already been on stack since the property
+                // extraction loop (which uses OP_DUP), so we save it first.
+
+                int srcObjSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_obj");
+                emitDefineGlobalTemp(srcObjSlot);
+                restPoppedSource = true;
+
+                // Empty rest dict
+                int restSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_rest");
+                emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 0);
+                emitDefineGlobalTemp(restSlot);
+
+                // _keys = _src.keys()
+                emitGetGlobalTemp(srcObjSlot);
+                size_t keysMethodIdx = identifierConstant("keys");
+                emitGetProperty(keysMethodIdx);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 0);
+                int keysSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_keys");
+                emitDefineGlobalTemp(keysSlot);
+
+                // _i = 0
+                emitConstant(0.0);
+                int iSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_i");
+                emitDefineGlobalTemp(iSlot);
+
+                // _len = _vora_len(_keys)
+                int lenBuiltin = resolveGlobal("_vora_len");
+                emitGetGlobal(lenBuiltin);
+                emitGetGlobalTemp(keysSlot);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                int lenSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_len");
+                emitDefineGlobalTemp(lenSlot);
+
+                // While loop: _i < _len
+                size_t restLoopStart = chunk.code.size();
+                emitGetGlobalTemp(iSlot);
+                emitGetGlobalTemp(lenSlot);
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN));
+                size_t restExitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                // _k = _keys[_i]
+                emitGetGlobalTemp(keysSlot);
+                emitGetGlobalTemp(iSlot);
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+                int kSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_k");
+                emitDefineGlobalTemp(kSlot);
+
+                // _rest[_k] = _src[_k]
+                emitGetGlobalTemp(restSlot);
+                emitGetGlobalTemp(kSlot);
+                emitGetGlobalTemp(srcObjSlot);
+                emitGetGlobalTemp(kSlot);
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+                emitByte(static_cast<uint8_t>(OpCode::OP_SET_INDEX));
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                // _i = _i + 1
+                emitGetGlobalTemp(iSlot);
+                emitConstant(1.0);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitSetGlobalTemp(iSlot);
+
+                emitLoop(restLoopStart);
+                patchJump(restExitJump);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                // Remove explicit properties from rest dict
+                for (size_t pi = 0; pi < obj.properties.size(); pi++) {
+                    emitGetGlobalTemp(restSlot);
+                    size_t removeIdx = identifierConstant("remove");
+                    emitGetProperty(removeIdx);
+                    size_t keyIdx = identifierConstant(obj.properties[pi].key);
+                    emitBytes(static_cast<uint8_t>(OpCode::OP_CONSTANT),
+                              static_cast<uint8_t>(keyIdx));
+                    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+                }
+
+                // Push rest dict and bind
+                emitGetGlobalTemp(restSlot);
                 compileBindPattern(*obj.rest, -1, isConst, typeAnnotation);
             } else {
                 // ── Strategy: copy all keys to rest dict, then remove explicit ones ──
@@ -378,8 +525,8 @@ void Compiler::compileBindPattern(const BindingPattern& pattern,
             }
         }
 
-        // Pop source object at global scope
-        if (scopeDepth == 0) {
+        // Pop source object at global scope — unless rest already consumed it.
+        if (scopeDepth == 0 && !restPoppedSource) {
             emitByte(static_cast<uint8_t>(OpCode::OP_POP));
         }
         break;
@@ -459,12 +606,64 @@ void Compiler::compileAssignPattern(const BindingPattern& pattern) {
             compileAssignPattern(*arr.elements[i]);           // assign + pop
         }
 
-        // Rest element: ...rest (local scope only — needs temp locals)
+        // Rest element: ...rest
         if (arr.rest) {
             if (scopeDepth == 0) {
-                error("Rest element in destructuring is only supported inside functions");
-                emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+                // Module-scope bare-assignment path: same shape as the bind
+                // path but we MUST leave the original source on the stack
+                // (it's the expression result). Save to a synthetic global
+                // first.
+                int restStartIdx = static_cast<int>(arr.elements.size());
+
+                int srcSlot = allocGlobalTemp("_vora_ds_rest_" + std::to_string(tempId) + "_src");
+                emitDefineGlobalTemp(srcSlot);  // pops source
+
+                int arrSlot = allocGlobalTemp("_vora_ds_rest_" + std::to_string(tempId) + "_arr");
+                emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 0);
+                emitDefineGlobalTemp(arrSlot);
+
+                int iSlot = allocGlobalTemp("_vora_ds_rest_" + std::to_string(tempId) + "_i");
+                emitConstant(static_cast<double>(restStartIdx));
+                emitDefineGlobalTemp(iSlot);
+
+                int lenBuiltinSlot = resolveGlobal("_vora_len");
+                emitGetGlobal(lenBuiltinSlot);
+                emitGetGlobalTemp(srcSlot);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                int lenSlot = allocGlobalTemp("_vora_ds_rest_" + std::to_string(tempId) + "_len");
+                emitDefineGlobalTemp(lenSlot);
+
+                size_t loopStart = chunk.code.size();
+                emitGetGlobalTemp(iSlot);
+                emitGetGlobalTemp(lenSlot);
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN));
+                size_t exitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+                emitGetGlobalTemp(arrSlot);
+                emitGetGlobalTemp(srcSlot);
+                emitGetGlobalTemp(iSlot);
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+                emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 1);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitSetGlobalTemp(arrSlot);
+
+                emitGetGlobalTemp(iSlot);
+                emitConstant(1.0);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitSetGlobalTemp(iSlot);
+
+                emitLoop(loopStart);
+                patchJump(exitJump);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                emitGetGlobalTemp(arrSlot);
                 compileAssignPattern(*arr.rest);
+                // compileAssignPattern for a global rest emits OP_SET_GLOBAL
+                // + OP_POP, so the rest array is gone from stack.
+
+                // Restore the original source as the expression result.
+                emitGetGlobalTemp(srcSlot);
             } else {
                 // Save source in a temp so the rest loop can reload it.
                 // The source is at the TOP of stack; addLocal names it.
@@ -555,12 +754,83 @@ void Compiler::compileAssignPattern(const BindingPattern& pattern) {
             compileAssignPattern(*prop.pattern);             // assign + pop
         }
 
-        // Object rest: ...rest (local scope only — needs temp locals)
+        // Object rest: ...rest
         if (obj.rest) {
             if (scopeDepth == 0) {
-                error("Object rest in destructuring is only supported inside functions");
-                emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+                // Module-scope bare-assignment path; must leave the original
+                // source on the stack as the expression result.
+
+                int srcObjSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_obj");
+                emitDefineGlobalTemp(srcObjSlot);  // pops source
+
+                int restSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_rest");
+                emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 0);
+                emitDefineGlobalTemp(restSlot);
+
+                emitGetGlobalTemp(srcObjSlot);
+                size_t keysMethodIdx = identifierConstant("keys");
+                emitGetProperty(keysMethodIdx);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 0);
+                int keysSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_keys");
+                emitDefineGlobalTemp(keysSlot);
+
+                emitConstant(0.0);
+                int iSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_i");
+                emitDefineGlobalTemp(iSlot);
+
+                int lenBuiltin = resolveGlobal("_vora_len");
+                emitGetGlobal(lenBuiltin);
+                emitGetGlobalTemp(keysSlot);
+                emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                int lenSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_len");
+                emitDefineGlobalTemp(lenSlot);
+
+                size_t restLoopStart = chunk.code.size();
+                emitGetGlobalTemp(iSlot);
+                emitGetGlobalTemp(lenSlot);
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN));
+                size_t restExitJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                emitGetGlobalTemp(keysSlot);
+                emitGetGlobalTemp(iSlot);
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+                int kSlot = allocGlobalTemp("_vora_ds_o_rest_" + std::to_string(tempId) + "_k");
+                emitDefineGlobalTemp(kSlot);
+
+                emitGetGlobalTemp(restSlot);
+                emitGetGlobalTemp(kSlot);
+                emitGetGlobalTemp(srcObjSlot);
+                emitGetGlobalTemp(kSlot);
+                emitByte(static_cast<uint8_t>(OpCode::OP_INDEX));
+                emitByte(static_cast<uint8_t>(OpCode::OP_SET_INDEX));
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                emitGetGlobalTemp(iSlot);
+                emitConstant(1.0);
+                emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+                emitSetGlobalTemp(iSlot);
+
+                emitLoop(restLoopStart);
+                patchJump(restExitJump);
+                emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+
+                for (size_t pi = 0; pi < obj.properties.size(); pi++) {
+                    emitGetGlobalTemp(restSlot);
+                    size_t removeIdx = identifierConstant("remove");
+                    emitGetProperty(removeIdx);
+                    size_t keyIdx = identifierConstant(obj.properties[pi].key);
+                    emitBytes(static_cast<uint8_t>(OpCode::OP_CONSTANT),
+                              static_cast<uint8_t>(keyIdx));
+                    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+                    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+                }
+
+                emitGetGlobalTemp(restSlot);
                 compileAssignPattern(*obj.rest);
+
+                // Restore the original source as the expression result.
+                emitGetGlobalTemp(srcObjSlot);
             } else {
                 // Save source in a temp so the rest logic can reload it
                 std::string srcName = "_da" + std::to_string(tempId) + "_obj";

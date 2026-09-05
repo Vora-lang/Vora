@@ -663,6 +663,35 @@ private:
     /// @return The constant pool index.
     size_t identifierConstant(const std::string& name);
 
+    // =========================================================================
+    // Top-level (module-scope) rest destructuring support
+    // =========================================================================
+    //
+    // Inside functions, the rest destructuring compiler allocates OP_GET_LOCAL /
+    // OP_SET_LOCAL temp slots via `addLocal()`. At module scope (scopeDepth==0)
+    // there are no locals, so we use synthetic forward-declared globals
+    // (`_vora_ds_rest_<N>_*`) and emit OP_DEFINE_GLOBAL once for the initial
+    // value, then OP_GET_GLOBAL / OP_SET_GLOBAL for reads/writes. The value
+    // is popped off the stack at the end (matching the existing global path).
+
+    /// @brief Allocate a synthetic module-scope global slot for a temp value.
+    /// @param name Synthetic name with prefix `_vora_ds_rest_`.
+    /// @return The global slot index.
+    int allocGlobalTemp(const std::string& name);
+
+    /// @brief Emit the initial definition of a module-scope temp: pop from
+    /// stack, store via OP_DEFINE_GLOBAL.
+    /// @param slot The global slot index returned by allocGlobalTemp().
+    void emitDefineGlobalTemp(int slot);
+
+    /// @brief Emit OP_SET_GLOBAL for a module-scope temp, then OP_POP the value.
+    /// @param slot The global slot index.
+    void emitSetGlobalTemp(int slot);
+
+    /// @brief Emit OP_GET_GLOBAL for a module-scope temp (pushes value on stack).
+    /// @param slot The global slot index.
+    void emitGetGlobalTemp(int slot);
+
     /// @brief Add a function prototype to the constant pool and return its index.
     /// @param proto The function prototype to add.
     /// @return The constant pool index.
