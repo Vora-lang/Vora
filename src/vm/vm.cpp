@@ -1727,6 +1727,36 @@ InterpretResult VM::run() {
                 }
                 break;
             }
+            case OpCode::OP_IN: {
+                // Membership test: `a in container`.
+                // Stack top: [container (b), candidate (a)] with a on top.
+                Value container = pop();
+                Value candidate = pop();
+                bool found = false;
+                if (container.isArray()) {
+                    auto arr = container.asArray();
+                    for (const auto& el : arr->elements) {
+                        if (valuesEqual(el, candidate)) { found = true; break; }
+                    }
+                } else if (container.isDict()) {
+                    auto dict = container.asDict();
+                    // `in` on a dict checks key membership.
+                    std::string key = valueToString(candidate);
+                    found = dict->pairs.find(key) != dict->pairs.end();
+                } else if (container.isGcString()) {
+                    const std::string& s = container.asGcString()->value;
+                    if (candidate.isGcString()) {
+                        const std::string& needle = candidate.asGcString()->value;
+                        found = s.find(needle) != std::string::npos;
+                    } else {
+                        found = false;
+                    }
+                } else {
+                    RUNTIME_ERROR_OR_THROW("'in' requires array, dict, or string on right side");
+                }
+                push(found);
+                break;
+            }
 
             // --- Globals (integer-indexed, no string hashing) ---
             case OpCode::OP_DEFINE_GLOBAL: {

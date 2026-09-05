@@ -716,6 +716,14 @@ private:
     Token peek() const;
 
     /**
+     * @brief Two-token lookahead: return the token after the current one.
+     *
+     * @return The token at `current + 1` in the token stream, or TOKEN_EOF
+     *         if at/past the end. Does not consume.
+     */
+    Token peekNext() const;
+
+    /**
      * @brief Return the most recently consumed token.
      *
      * @return The token that was returned by the last advance() call.

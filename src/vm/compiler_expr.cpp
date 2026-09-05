@@ -277,6 +277,7 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
         case TokenType::LESS_EQUAL:       emitByte(static_cast<uint8_t>(OpCode::OP_LESS_EQ_NN)); break;
         case TokenType::GREATER:          emitByte(static_cast<uint8_t>(OpCode::OP_GREATER_NN)); break;
         case TokenType::GREATER_EQUAL:    emitByte(static_cast<uint8_t>(OpCode::OP_GREATER_EQ_NN)); break;
+        case TokenType::IN:               emitByte(static_cast<uint8_t>(OpCode::OP_IN)); break;
         default: break;
     }
 }
@@ -296,6 +297,12 @@ void Compiler::visitUnaryExpr(const UnaryExpr& expr) {
                 emitConstant(-lit->value.asDouble());
             return;
         }
+        if (expr.op.type == TokenType::PLUS &&
+            isNumeric(lit->value)) {
+            // +numeric_literal → same value (no-op fold)
+            emitConstant(lit->value);
+            return;
+        }
         if (expr.op.type == TokenType::NOT &&
             lit->value.isBool()) {
             emitByte(lit->value.asBool()
@@ -310,6 +317,9 @@ void Compiler::visitUnaryExpr(const UnaryExpr& expr) {
     switch (expr.op.type) {
         case TokenType::MINUS:
             emitByte(static_cast<uint8_t>(OpCode::OP_NEGATE));
+            break;
+        case TokenType::PLUS:
+            // Unary + is identity; emit nothing (left value on stack).
             break;
         case TokenType::NOT:
             emitByte(static_cast<uint8_t>(OpCode::OP_NOT));

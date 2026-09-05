@@ -1226,3 +1226,110 @@ TEST_CASE("parser_asi_single_line_subtraction_unchanged") {
     CHECK(binExpr != nullptr);
 }
 
+// ============================================================================
+// `in` expression & paren for-in (P1-G & P1-H)
+// ============================================================================
+
+TEST_CASE("parser_in_expression_array_basic") {
+    // `x in arr` should parse as a BinaryExpr with operator IN.
+    auto prog = parse("let r = 3 in [1,2,3,4];");
+    REQUIRE(prog != nullptr);
+    REQUIRE(prog->statements.size() == 1);
+    auto* letStmt = dynamic_cast<LetStmt*>(prog->statements[0].get());
+    REQUIRE(letStmt != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(letStmt->initializer.get());
+    CHECK(bin != nullptr);
+    REQUIRE(bin != nullptr);
+    CHECK(bin->op.type == TokenType::IN);
+}
+
+TEST_CASE("parser_in_expression_dict_basic") {
+    auto prog = parse("let r = \"k\" in {a:1, b:2};");
+    REQUIRE(prog != nullptr);
+    auto* letStmt = dynamic_cast<LetStmt*>(prog->statements[0].get());
+    REQUIRE(letStmt != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(letStmt->initializer.get());
+    CHECK(bin != nullptr);
+    CHECK(bin->op.type == TokenType::IN);
+}
+
+TEST_CASE("parser_in_expression_string_basic") {
+    auto prog = parse("let r = \"foo\" in \"foobarbaz\";");
+    REQUIRE(prog != nullptr);
+    auto* letStmt = dynamic_cast<LetStmt*>(prog->statements[0].get());
+    REQUIRE(letStmt != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(letStmt->initializer.get());
+    CHECK(bin != nullptr);
+    CHECK(bin->op.type == TokenType::IN);
+}
+
+TEST_CASE("parser_unary_plus_basic") {
+    // +literal and +identifier both parse to UnaryExpr(PLUS).
+    {
+        auto prog = parse("let r = +5;");
+        REQUIRE(prog != nullptr);
+        auto* letStmt = dynamic_cast<LetStmt*>(prog->statements[0].get());
+        REQUIRE(letStmt != nullptr);
+        auto* u = dynamic_cast<UnaryExpr*>(letStmt->initializer.get());
+        CHECK(u != nullptr);
+        if (u) CHECK(u->op.type == TokenType::PLUS);
+    }
+    {
+        auto prog = parse("let r = +x;");
+        REQUIRE(prog != nullptr);
+        auto* letStmt = dynamic_cast<LetStmt*>(prog->statements[0].get());
+        REQUIRE(letStmt != nullptr);
+        auto* u = dynamic_cast<UnaryExpr*>(letStmt->initializer.get());
+        CHECK(u != nullptr);
+    }
+}
+
+TEST_CASE("parser_in_expression_left_associative") {
+    // `in` at prec 4 should bind tighter than `&&` (prec 2): top-level
+    // expression is `(&& ...)`, with IN inside the left operand.
+    auto prog = parse("let r = 1 in [1] && true;");
+    REQUIRE(prog != nullptr);
+    auto* letStmt = dynamic_cast<LetStmt*>(prog->statements[0].get());
+    REQUIRE(letStmt != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(letStmt->initializer.get());
+    REQUIRE(bin != nullptr);
+    CHECK(bin->op.type == TokenType::AND);  // AND (prec 2) > IN (prec 4)
+    auto* inLeft = dynamic_cast<BinaryExpr*>(bin->left.get());
+    REQUIRE(inLeft != nullptr);
+    CHECK(inLeft->op.type == TokenType::IN);
+}
+
+TEST_CASE("parser_paren_for_in_basic") {
+    // `for (x in xs) { ... }` should be a valid for-in, not a C-for.
+    auto prog = parse("for (x in [1,2,3]) { print(x); }");
+    REQUIRE(prog != nullptr);
+    REQUIRE(prog->statements.size() == 1);
+    auto* forStmt = dynamic_cast<ForStmt*>(prog->statements[0].get());
+    REQUIRE(forStmt != nullptr);
+    // iterable should parse as ArrayExpr.
+    auto* arr = dynamic_cast<ArrayExpr*>(forStmt->iterable.get());
+    CHECK(arr != nullptr);
+}
+
+TEST_CASE("parser_paren_for_in_destructured_pattern") {
+    // P1-H must also accept destructured patterns inside parens.
+    auto prog = parse("for ([a, b] in [[1,2],[3,4]]) { print(a + b); }");
+    REQUIRE(prog != nullptr);
+    REQUIRE(prog->statements.size() == 1);
+    auto* forStmt = dynamic_cast<ForStmt*>(prog->statements[0].get());
+    CHECK(forStmt != nullptr);
+}
+
+TEST_CASE("parser_c_style_for_still_works") {
+    // Regression: a true C-for with parens must keep parsing correctly.
+    auto prog = parse("for (let i = 0; i < 3; i = i + 1) { print(i); }");
+    REQUIRE(prog != nullptr);
+    REQUIRE(prog->statements.size() == 1);
+    auto* cforStmt = dynamic_cast<CForStmt*>(prog->statements[0].get());
+    REQUIRE(cforStmt != nullptr);
+    // Condition should be a binary less-than.
+    auto* cond = dynamic_cast<BinaryExpr*>(cforStmt->condition.get());
+    REQUIRE(cond != nullptr);
+    CHECK(cond->op.type == TokenType::LESS);
+}
+

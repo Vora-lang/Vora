@@ -732,6 +732,77 @@ std::unique_ptr<Stmt> Parser::forStatement() {
 }
 
 std::unique_ptr<Stmt> Parser::cForStatement(Token forToken) {
+    // Detect `for (<pattern> in <iterable>)` — for-in style with parens.
+    // We classify the form by a small brace-aware scan:
+    //   for ( IDENT in          )   → for-in shape (2-token lookahead)
+    //   for ( [ ... ] in        )   → for-in shape (scan over brackets)
+    //   for ( { ... } in        )   → for-in shape
+    //   for ( let / ;           )   → C-for shape (no binding pattern possible)
+    bool isForInShape = false;
+    Token currentTok = peek();
+    if (currentTok.type == TokenType::IDENTIFIER &&
+        peekNext().type == TokenType::IN) {
+        isForInShape = true;
+    } else if (currentTok.type == TokenType::LEFT_BRACKET ||
+               currentTok.type == TokenType::LEFT_BRACE) {
+        // Scan to the matching closer; if the next non-trivia token is IN,
+        // this is a for-in.
+        int depth = 0;
+        Token opener = currentTok;
+        size_t scanIndex = current;
+        while (scanIndex < tokens.size()) {
+            TokenType tt = tokens[scanIndex].type;
+            if (tt == opener.type) depth++;
+            else if ((opener.type == TokenType::LEFT_BRACKET &&
+                      tt == TokenType::RIGHT_BRACKET) ||
+                     (opener.type == TokenType::LEFT_BRACE &&
+                      tt == TokenType::RIGHT_BRACE)) {
+                depth--;
+                if (depth == 0) {
+                    // Position just after the closer; check the next token.
+                    if (scanIndex + 1 < tokens.size() &&
+                        tokens[scanIndex + 1].type == TokenType::IN) {
+                        isForInShape = true;
+                    }
+                    break;
+                }
+            }
+            if (tt == TokenType::END_OF_FILE) break;
+            scanIndex++;
+        }
+    }
+    if (isForInShape) {
+        // We've already consumed '('. Parse binding pattern, then in, then
+        // iterable, then expect ')'.
+        auto variablePattern = parseForBindingPattern();
+        if (!match(TokenType::IN)) {
+            error("Expected 'in' after loop variable");
+        }
+        auto iterable = expression();
+        if (!iterable) {
+            iterable = std::make_unique<ErrorExpr>("Expected iterable after 'in'", peek());
+        }
+        if (!match(TokenType::RIGHT_PAREN)) {
+            error("Expected ')' after for-in iterable");
+        }
+        std::unique_ptr<BlockStmt> body;
+        if (match(TokenType::LEFT_BRACE)) {
+            body = blockStatement();
+            if (!body) {
+                body = std::make_unique<BlockStmt>(std::vector<std::unique_ptr<Stmt>>{});
+            }
+        } else {
+            error("Expected '{' before for loop body");
+            body = std::make_unique<BlockStmt>(std::vector<std::unique_ptr<Stmt>>{});
+        }
+        return std::make_unique<ForStmt>(
+            std::move(variablePattern),
+            std::move(iterable),
+            std::move(body),
+            forToken
+        );
+    }
+
     // Parse: for (initializer? ; condition? ; increment?) body
 
     std::unique_ptr<Stmt> initializer;
@@ -1484,6 +1555,16 @@ Token Parser::peek() const {
     return tokens[current];
 }
 
+Token Parser::peekNext() const {
+    if (current + 1 >= tokens.size()) {
+        // Return a synthesized EOF token to avoid OOB; the caller can check
+        // the type to detect end-of-stream. Mirrors lexer END_OF_FILE.
+        static const Token kEof{TokenType::END_OF_FILE, "", 0, 0};
+        return kEof;
+    }
+    return tokens[current + 1];
+}
+
 Token Parser::previous() const {
     return tokens[current - 1];
 }
@@ -1553,6 +1634,12 @@ int Parser::getPrecedence(TokenType type) const {
         case TokenType::NOT_EQUAL:
             return 3;
 
+        // P1-G: `in` is now also an infix operator (returns bool).
+        // Precedence between comparison (3) and additive (5) so
+        // `a + b in arr` parses as `(a + b) in arr` (matches Python).
+        case TokenType::IN:
+            return 4;
+
         case TokenType::LESS:
         case TokenType::LESS_EQUAL:
         case TokenType::GREATER:
@@ -1589,6 +1676,18 @@ std::unique_ptr<Expr> Parser::primary() {
         auto right = call();
 
         if (!right) right = std::make_unique<ErrorExpr>("Expected expression after '-'", op);
+
+        return std::make_unique<UnaryExpr>(op, std::move(right));
+    }
+
+    // Unary plus: +x is just x (identity). Allowed for symmetry with -x
+    // and so expressions like `+"42"` (Number coerce) and `+a` parse.
+    // The compiler folds this into a no-op at codegen time.
+    if (match(TokenType::PLUS)) {
+        Token op = previous();
+        auto right = call();
+
+        if (!right) right = std::make_unique<ErrorExpr>("Expected expression after '+'", op);
 
         return std::make_unique<UnaryExpr>(op, std::move(right));
     }

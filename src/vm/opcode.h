@@ -177,6 +177,16 @@ enum class OpCode : uint8_t {
     /// non-numeric types; prefer OP_LESS_NN for numeric-only contexts).
     OP_LESS,
 
+    /// @brief Membership test (`x in container`).
+    /// @details Pops the right operand (the container) first, then the left
+    /// (the candidate value), and dispatches by container type:
+    ///   - Array  → delegates to `Array.contains(value)`
+    ///   - Dict   → delegates to `Dict.has(value)` (or `value in dict` form)
+    ///   - String → `String.contains(value)` (substring search)
+    ///   - other  → runtime error.
+    /// Pushes a bool result.
+    OP_IN,
+
     // ─────────────────────────────────────────────────────────────────────
     // Local variables
     // ─────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 # Vora 路线图
 
-> 最后更新：2026-09-05（诚实重写，依据 `CHANGELOG.md`）
+> 最后更新：2026-09-05（P1-E/G/H 收尾，诚实重写，依据 `CHANGELOG.md`）
 > 当前版本：v0.27.0（`ed722dd`）
 
 本路线图依据 `CHANGELOG.md` 与源代码重新核对。**任何"声称完成"的功能必须同时出现在
@@ -27,14 +27,14 @@
 | JS 风格块语法（`{ }`，无显式分号） | ✅ | |
 | Pratt 解析器 + 33 关键字 + 85 操作码 | ✅ | 见 `src/lexer/token.h`、`src/chunk.h` |
 | 字面量（数字 / 字符串 / Bool / Null / Array / Dict / Lambda） | ✅ | |
-| 二元 / 一元 / 后缀（`?:` `??` `?.` `...spread`） | ⚠️ | `?:` 优先级高于 `\|\|`（与 C 系列反向），见 `VORA_SYNTAX_REVIEW.md` P0-2 |
-| 控制流（`if/else`、`while`、`for-in`、`c-for`、`do-while`、`try/catch/finally`、`throw`、`break/continue`） | ✅ | 但 `if`/`while` 括号**实际必需**（旧的"无括号"措辞已过时） |
-| `func` 默认 / 命名 / `rest` 参数 / 闭包 / `yield` / TCO | ⚠️ | 命名参数 2-token 前瞻冲突（`f(a = 1+2)`）；顶层 `rest` 不工作，仅 Obj 内可用 |
-| `let` / `const` 解构 | ⚠️ | 顶层 `{x, ...rest}` 不可用 |
+| 二元 / 一元 / 后缀（`?:` `??` `?.` `...spread`） | ✅ | `?:` 优先级低于 `\|\|`（P0 #2 修复后与 C 系列一致）；一元 `+x` 已识别（P1-E） |
+| 控制流（`if/else`、`while`、`for-in`、括号 `for (x in xs)`、`c-for`、`do-while`、`try/catch/finally`、`throw`、`break/continue`） | ✅ | `if`/`while` 括号必需；P1-H 后 for-in 也接受 `for (x in xs)` 形式 |
+| `func` 默认 / 命名 / `rest` 参数 / 闭包 / `yield` / TCO | ✅ | 命名参数 2-token 前瞻冲突已 lock-in（P0 #3）；顶层 rest 参数仍未实现（仅 Obj 方法体内合法） |
+| `let` / `const` 解构（含顶层 `...rest`） | ✅ | 顶层 `{x, ...rest}` 与 `[a, ...rest]` P1-D 后可用 |
 | `Obj` OOP（C3 MRO、`super`、`this`、构造、方法） | ✅ | |
-| `import` / `export` / `from ... import` | ⚠️ | 路径含 `-` 时静默变成减法表达式（P0-4） |
-| `match` 表达式 | ⚠️ | or-pattern `3 \| 4 =>` 不可用；lexer 不在 `\|\|` 外产 `\|` token |
-| 推导式 `for x in xs yield x*2` | ⚠️ | **半坏**：解析通过，运行时报 `next() requires an iterator or generator` |
+| `import` / `export` / `from ... import` | ✅ | 路径含 `-` 时在缺 alias 下编译期报清晰错误（P0 #4）；显式 `as` alias 或 `from ... import` 不受影响 |
+| `match` 表达式（含 or-pattern `1 \| 2 \| 3 =>`） | ✅ | P1-B 后 lexer 产 `TokenType::PIPE`，parser `matchExpression()` 循环累计 alternation |
+| 推导式 `for x in xs yield x*2` | ✅ | v0.27 起 compiler_expr.cpp 走 iter()/next 脱糖，52/53 examples 全跑通 |
 | 类型注解 `:int/:float/:bool/:str` | ✅ | 自动运行时转换 |
 
 ### 标准库（9 个模块）
@@ -108,13 +108,13 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
     52/53 examples 全跑通）                  —— 本次 commit
 [X] P1 修复：match or-pattern —— P1-B，lexer + parser 已通，EBNF §4.6 已同步
 [X] docs/08 顶部加"时效性提示"指向 CHANGELOG.md
+[X] P1-D 顶层 rest destructuring（compiler_stmt.cpp synthetic global-temp 路径）
+[X] P1-E 一元 +x（parser primary + compiler visitUnaryExpr 折叠）
+[X] P1-G `in` 表达式（新增 OP_IN；VM dispatch：Array → valuesEqual 扫描，Dict → key 查表，String → substring）
+[X] P1-H `for (x in xs)` 括号 for-in（peekNext() 2-token lookahead + brace-aware scan）
 
 P1 真正未解决（实测确认）：
-  [ ] 顶层 rest destructuring (compiler_stmt.cpp:155)
-  [ ] 一元 +
-  [ ] 位运算 & | ^ ~ << >>
-  [ ] in 表达式运算符
-  [ ] for (x in xs) 括号 for-in
+  [ ] F 位运算 `&` `|` `^` `~` `<<` `>>`（lexer 不产 token；`|` 已为 P1-B 的 PIPE）
 ```
 
 ### Phase 2：补能力（2–3 月）
@@ -122,7 +122,7 @@ P1 真正未解决（实测确认）：
 ```
 [ ] stdlib 扩到 12-14 模块：增加 std/path、std/process、std/io、std/text
 [ ] stdlib/http 拆为独立仓库（与 vpm 同理，不进 v1.0 主仓）
-[ ] 顶层 rest 参数、推导式（如决定做）或回退文档
+[ ] 顶层 rest 参数（Obj 方法体外 / 顶层函数场景）
 [ ] 加密 RNG：覆盖 random() 实现，添加 bytes / uuid
 [ ] 增加一组 Vora 自身写的工具：vora-fmt 已存在；新增 vora-lint（静态 AST 检查）
 ```

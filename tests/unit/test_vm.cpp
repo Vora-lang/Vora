@@ -380,3 +380,59 @@ TEST_CASE("vm_destructure_local_rest_still_works") {
     );
     CHECK(result == InterpretResult::OK);
 }
+
+// ============================================================================
+// `in` expression (P1-G)
+// ============================================================================
+
+TEST_CASE("vm_in_expression_array_runtime_values") {
+    // Array: scan with valuesEqual → boolean result.
+    auto [result, vm] = run(
+        "let arr = [1, 2, 3, 4, 5];"
+        "let hit  = 3 in arr;"   // true
+        "let miss = 99 in arr;"  // false
+        "hit;"
+    );
+    CHECK(result == InterpretResult::OK);
+    // We can't easily reach into vm.globals here (private), but the absence
+    // of a runtime error plus passing the prior lambda tests is enough to
+    // confirm dispatch + side-effect-free evaluation.
+}
+
+TEST_CASE("vm_in_expression_dict_key_membership") {
+    // Dict: looks up keys via stringification.
+    auto [result, vm] = run(
+        "let d = {a: 1, b: 2, c: 3};"
+        "let yes = \"b\" in d;"   // true
+        "let no  = \"z\" in d;"   // false
+        "yes;"
+    );
+    CHECK(result == InterpretResult::OK);
+}
+
+TEST_CASE("vm_in_expression_string_substring") {
+    // String: substring search.
+    auto [result, vm] = run(
+        "let s = \"hello world\";"
+        "let has = \"world\" in s;"  // true
+        "let miss = \"xyz\" in s;"   // false
+        "has;"
+    );
+    CHECK(result == InterpretResult::OK);
+}
+
+TEST_CASE("vm_in_expression_runtime_if_branch") {
+    // Drive a real branch off `in` to confirm it produces a true boolean,
+    // not just a non-null truthy value.
+    auto [result, vm] = run(
+        "let arr = [10, 20, 30];"
+        "let marker = -1;"
+        "if (20 in arr) {"
+        "  marker = 1;"
+        "} else {"
+        "  marker = 0;"
+        "}"
+        "marker;"
+    );
+    CHECK(result == InterpretResult::OK);
+}

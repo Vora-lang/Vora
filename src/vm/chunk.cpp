@@ -41,6 +41,7 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_EQUAL:          return "OP_EQUAL";
         case OpCode::OP_NOT_EQUAL:      return "OP_NOT_EQUAL";
         case OpCode::OP_LESS:           return "OP_LESS";
+        case OpCode::OP_IN:             return "OP_IN";
         case OpCode::OP_GET_LOCAL:      return "OP_GET_LOCAL";
         case OpCode::OP_SET_LOCAL:      return "OP_SET_LOCAL";
         case OpCode::OP_GET_LOCAL_PROP:       return "OP_GET_LOCAL_PROP";
