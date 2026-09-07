@@ -25,6 +25,37 @@ namespace vora {
 volatile sig_atomic_t VM::interruptFlag = 0;
 
 // =========================================================================
+// Bitwise operand coercion (P1-F)
+// =========================================================================
+// Bitwise operators (& | ^ ~ << >>) require 64-bit integer operands.
+// Accepts int Values directly, and integral doubles within int64 range
+// (so `5.0 & 3` works); rejects non-integral doubles and non-numeric
+// values with false.
+static bool bitwiseToInt64(const Value& v, int64_t& out) {
+    if (v.isInt()) {
+        out = v.asInt();
+        return true;
+    }
+    // Bools coerce to 0/1 (matches C/JS: `1 & (b == c)` works because the
+    // bool result of `==` feeds into the bitwise AND).
+    if (v.isBool()) {
+        out = v.asBool() ? 1 : 0;
+        return true;
+    }
+    if (v.isDouble()) {
+        double d = v.asDouble();
+        if (std::floor(d) == d &&
+            d >= -9.2233720368547758e18 &&
+            d <= 9.2233720368547758e18) {
+            out = static_cast<int64_t>(d);
+            return true;
+        }
+        return false;
+    }
+    return false;
+}
+
+// =========================================================================
 // C3 Linearization (Python-style MRO)
 // =========================================================================
 // Computes Method Resolution Order for a class given its parent classes.
@@ -1755,6 +1786,76 @@ InterpretResult VM::run() {
                     RUNTIME_ERROR_OR_THROW("'in' requires array, dict, or string on right side");
                 }
                 push(found);
+                break;
+            }
+
+            // --- Bitwise operators (P1-F) ---
+            case OpCode::OP_BITWISE_AND: {
+                Value b = pop();
+                Value a = pop();
+                int64_t ai, bi;
+                if (!bitwiseToInt64(a, ai) || !bitwiseToInt64(b, bi)) {
+                    RUNTIME_ERROR_OR_THROW("Bitwise & requires integer operands");
+                }
+                push(ai & bi);
+                break;
+            }
+            case OpCode::OP_BITWISE_OR: {
+                Value b = pop();
+                Value a = pop();
+                int64_t ai, bi;
+                if (!bitwiseToInt64(a, ai) || !bitwiseToInt64(b, bi)) {
+                    RUNTIME_ERROR_OR_THROW("Bitwise | requires integer operands");
+                }
+                push(ai | bi);
+                break;
+            }
+            case OpCode::OP_BITWISE_XOR: {
+                Value b = pop();
+                Value a = pop();
+                int64_t ai, bi;
+                if (!bitwiseToInt64(a, ai) || !bitwiseToInt64(b, bi)) {
+                    RUNTIME_ERROR_OR_THROW("Bitwise ^ requires integer operands");
+                }
+                push(ai ^ bi);
+                break;
+            }
+            case OpCode::OP_BITWISE_NOT: {
+                Value a = pop();
+                int64_t ai;
+                if (!bitwiseToInt64(a, ai)) {
+                    RUNTIME_ERROR_OR_THROW("Bitwise ~ requires an integer operand");
+                }
+                push(~ai);
+                break;
+            }
+            case OpCode::OP_SHIFT_LEFT: {
+                Value b = pop();  // shift count
+                Value a = pop();  // value
+                int64_t ai, bi;
+                if (!bitwiseToInt64(a, ai) || !bitwiseToInt64(b, bi)) {
+                    RUNTIME_ERROR_OR_THROW("Shift << requires integer operands");
+                }
+                if (bi < 0 || bi >= 64) {
+                    push(static_cast<int64_t>(0));
+                } else {
+                    push(static_cast<int64_t>(static_cast<uint64_t>(ai) << bi));
+                }
+                break;
+            }
+            case OpCode::OP_SHIFT_RIGHT: {
+                Value b = pop();  // shift count
+                Value a = pop();  // value
+                int64_t ai, bi;
+                if (!bitwiseToInt64(a, ai) || !bitwiseToInt64(b, bi)) {
+                    RUNTIME_ERROR_OR_THROW("Shift >> requires integer operands");
+                }
+                if (bi < 0 || bi >= 64) {
+                    // Arithmetic right shift by >= 64 is sign-fill.
+                    push(ai < 0 ? static_cast<int64_t>(-1) : static_cast<int64_t>(0));
+                } else {
+                    push(ai >> bi);
+                }
                 break;
             }
 

@@ -227,6 +227,20 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
                         // INT64_MIN % -1 overflows
                         if (a == INT64_MIN && b == -1) break;
                         emitConstant(static_cast<double>(std::fmod(static_cast<double>(a), static_cast<double>(b)))); return;
+                    case TokenType::AMPERSAND:
+                        emitConstant(a & b); return;
+                    case TokenType::PIPE:
+                        emitConstant(a | b); return;
+                    case TokenType::CARET:
+                        emitConstant(a ^ b); return;
+                    case TokenType::LESS_LESS:
+                        if (b < 0 || b >= 64) emitConstant(static_cast<int64_t>(0));
+                        else emitConstant(static_cast<int64_t>(static_cast<uint64_t>(a) << b));
+                        return;
+                    case TokenType::GREATER_GREATER:
+                        if (b < 0 || b >= 64) emitConstant(a < 0 ? static_cast<int64_t>(-1) : static_cast<int64_t>(0));
+                        else emitConstant(a >> b);
+                        return;
                     default: break;
                 }
             } else {
@@ -278,6 +292,11 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
         case TokenType::GREATER:          emitByte(static_cast<uint8_t>(OpCode::OP_GREATER_NN)); break;
         case TokenType::GREATER_EQUAL:    emitByte(static_cast<uint8_t>(OpCode::OP_GREATER_EQ_NN)); break;
         case TokenType::IN:               emitByte(static_cast<uint8_t>(OpCode::OP_IN)); break;
+        case TokenType::AMPERSAND:        emitByte(static_cast<uint8_t>(OpCode::OP_BITWISE_AND)); break;
+        case TokenType::PIPE:             emitByte(static_cast<uint8_t>(OpCode::OP_BITWISE_OR)); break;
+        case TokenType::CARET:            emitByte(static_cast<uint8_t>(OpCode::OP_BITWISE_XOR)); break;
+        case TokenType::LESS_LESS:        emitByte(static_cast<uint8_t>(OpCode::OP_SHIFT_LEFT)); break;
+        case TokenType::GREATER_GREATER:  emitByte(static_cast<uint8_t>(OpCode::OP_SHIFT_RIGHT)); break;
         default: break;
     }
 }
@@ -310,6 +329,12 @@ void Compiler::visitUnaryExpr(const UnaryExpr& expr) {
                 : static_cast<uint8_t>(OpCode::OP_TRUE));
             return;
         }
+        if (expr.op.type == TokenType::TILDE &&
+            lit->value.isInt()) {
+            // ~int_literal → constant fold
+            emitConstant(~lit->value.asInt());
+            return;
+        }
     }
 
     expr.right->accept(*this);
@@ -323,6 +348,9 @@ void Compiler::visitUnaryExpr(const UnaryExpr& expr) {
             break;
         case TokenType::NOT:
             emitByte(static_cast<uint8_t>(OpCode::OP_NOT));
+            break;
+        case TokenType::TILDE:
+            emitByte(static_cast<uint8_t>(OpCode::OP_BITWISE_NOT));
             break;
         default:
             break;

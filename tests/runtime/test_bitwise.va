@@ -1,0 +1,71 @@
+// =========================================================================
+// test_bitwise.va — Bitwise operator runtime tests (P1-F)
+// Tests: & | ^ ~ << >> on int64, precedence, shift clamping,
+//        and coexistence with match or-pattern '|'
+// Run: vora tests/runtime/test_bitwise.va
+// =========================================================================
+
+// --- Basic binary ops ---
+// NOTE: == binds tighter than & | ^ (C/JS layout, see EBNF §6), so bitwise
+// operands compared against a value must be parenthesized.
+assert((6 & 3) == 2, "6 & 3 should be 2")
+assert((6 | 3) == 7, "6 | 3 should be 7")
+assert((6 ^ 3) == 5, "6 ^ 3 should be 5")
+let trap = 6 & 3 == 2
+assert(trap == 0, "== tighter than &: 6 & (3 == 2) is 6 & false = 0")
+
+// --- Unary NOT ---
+assert(~5 == -6, "~5 should be -6")
+assert(~0 == -1, "~0 should be -1")
+assert(~(-1) == 0, "~(-1) should be 0")
+assert(~~7 == 7, "double NOT should be identity")
+
+// --- Shifts ---
+assert(1 << 4 == 16, "1 << 4 should be 16")
+assert(32 >> 3 == 4, "32 >> 3 should be 4")
+assert(-8 >> 1 == -4, "-8 >> 1 should be -4 (arithmetic shift)")
+
+// --- Shift count clamping: <0 or >=64 ---
+assert(1 << 64 == 0, "1 << 64 should clamp to 0")
+assert(1 << 100 == 0, "1 << 100 should clamp to 0")
+assert(1 << -1 == 0, "1 << -1 should clamp to 0")
+assert(5 >> 64 == 0, "5 >> 64 should clamp to 0 (non-negative sign-fill)")
+assert(-8 >> 100 == -1, "-8 >> 100 should clamp to -1 (negative sign-fill)")
+
+// --- Precedence: shift tighter than additive, & tighter than ^ tighter than | ---
+assert(1 << 2 + 1 == 8, "1 << 2 + 1 should be 1 << 3 = 8")
+assert((1 | 2 ^ 3 & 1) == 3, "& > ^ > | ordering: 1 | (2 ^ (3 & 1)) should be 3")
+assert((3 & 1 | 4) == 5, "3 & 1 | 4 should be (3 & 1) | 4 = 5")
+
+// --- Negative operands ---
+assert((-6 & 3) == 2, "-6 & 3 should be 2")
+assert((-1 ^ 255) == -256, "-1 ^ 255 should be -256")
+assert(-1 << 4 == -16, "-1 << 4 should be -16")
+
+// --- Flag/mask idiom ---
+const READ = 1
+const WRITE = 2
+const EXEC = 4
+let perms = READ | EXEC
+assert((perms & READ) == READ, "perms & READ should be READ")
+assert((perms & WRITE) == 0, "perms & WRITE should be 0")
+perms = perms | WRITE
+assert(perms == 7, "adding WRITE should make perms 7")
+perms = perms & ~WRITE
+assert(perms == 5, "clearing WRITE should leave READ|EXEC = 5")
+
+// --- Bit tricks ---
+assert((1 << 63) < 0, "1 << 63 should be negative (sign bit)")
+let n = 13
+let count = 0
+while (n != 0) {
+    count += n & 1
+    n = n >> 1
+}
+assert(count == 3, "popcount(13) should be 3")
+
+// --- '|' as match or-pattern still works alongside bitwise '|' ---
+let r = match 3 { 1 | 2 => "low", 3 | 4 => "mid", _ => "high" }
+assert(r == "mid", "match or-pattern 3 | 4 should hit with bitwise '|' present")
+
+print("All bitwise tests passed!")

@@ -368,7 +368,10 @@ namespace vora {
             break;
 
         case '<':
-            if (match('=')) {
+            if (match('<')) {
+                addToken(TokenType::LESS_LESS);
+            }
+            else if (match('=')) {
                 addToken(TokenType::LESS_EQUAL);
             }
             else {
@@ -377,7 +380,10 @@ namespace vora {
             break;
 
         case '>':
-            if (match('=')) {
+            if (match('>')) {
+                addToken(TokenType::GREATER_GREATER);
+            }
+            else if (match('=')) {
                 addToken(TokenType::GREATER_EQUAL);
             }
             else {
@@ -399,7 +405,8 @@ namespace vora {
                 addToken(TokenType::AND);
             }
             else {
-                error("Unexpected character: '&' (did you mean '&&'?)");
+                // Single '&' is bitwise AND (P1-F). '&&' stays logical AND.
+                addToken(TokenType::AMPERSAND);
             }
             break;
 
@@ -407,12 +414,21 @@ namespace vora {
             if (match('|')) {
                 addToken(TokenType::OR);
             } else {
-                // Single '|' is the match-arm or-pattern separator
-                // (e.g. `1 | 2 | 3 => "small"` inside a match expression).
-                // This is intentionally NOT a bitwise OR — Vora v1.0 has
-                // no bitwise operators (see docs/16-v1.0-grammar-ebnf.md §7).
+                // Single '|' is dual-purpose:
+                //   - bitwise OR in expressions (`a | b`, P1-F)
+                //   - match-arm or-pattern separator (`1 | 2 | 3 => ...`, P1-B)
+                // The parser disambiguates by context; the lexer emits one
+                // token for both.
                 addToken(TokenType::PIPE);
             }
+            break;
+
+        case '^':
+            addToken(TokenType::CARET);
+            break;
+
+        case '~':
+            addToken(TokenType::TILDE);
             break;
 
         case '"':

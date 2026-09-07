@@ -188,6 +188,39 @@ enum class OpCode : uint8_t {
     OP_IN,
 
     // ─────────────────────────────────────────────────────────────────────
+    // Bitwise operators (P1-F)
+    // ─────────────────────────────────────────────────────────────────────
+    // All operate on 64-bit integers. Non-integral operands are a runtime
+    // error. Results are pushed as int64 Values.
+
+    /// @brief Bitwise AND (`a & b`).
+    /// @details Pops right then left, computes int64 & int64, pushes result.
+    OP_BITWISE_AND,
+
+    /// @brief Bitwise OR (`a | b`).
+    /// @details Pops right then left, computes int64 | int64, pushes result.
+    OP_BITWISE_OR,
+
+    /// @brief Bitwise XOR (`a ^ b`).
+    /// @details Pops right then left, computes int64 ^ int64, pushes result.
+    OP_BITWISE_XOR,
+
+    /// @brief Bitwise NOT (`~a`, unary).
+    /// @details Pops the operand, computes ~int64, pushes result.
+    OP_BITWISE_NOT,
+
+    /// @brief Left shift (`a << b`).
+    /// @details Pops shift count then value, computes value << count.
+    /// Shift count is clamped/checked: <0 or >=64 yields 0.
+    OP_SHIFT_LEFT,
+
+    /// @brief Arithmetic right shift (`a >> b`).
+    /// @details Pops shift count then value, computes value >> count.
+    /// Shift count <0 or >=64 yields sign-fill (0 for non-negative, -1 for
+    /// negative).
+    OP_SHIFT_RIGHT,
+
+    // ─────────────────────────────────────────────────────────────────────
     // Local variables
     // ─────────────────────────────────────────────────────────────────────
 

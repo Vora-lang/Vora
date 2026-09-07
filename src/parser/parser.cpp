@@ -1630,33 +1630,53 @@ int Parser::getPrecedence(TokenType type) const {
                       // ternary to wrap the resulting logical value
                       // (matches JS / C / Java semantics).
 
-        case TokenType::EQUAL_EQUAL:
-        case TokenType::NOT_EQUAL:
+        // P1-F: bitwise operators. Precedence follows C/JS — `&` < `^`
+        // < `|` (each more tightly bound than the next), all looser than
+        // `==`/`!=`. This is the classic C/JS layout: `a & b == c`
+        // parses as `a & (b == c)`. Documented explicitly in the EBNF
+        // (see docs/16-v1.0-grammar-ebnf.md §6) because it surprises.
+        case TokenType::PIPE:
             return 3;
 
+        case TokenType::CARET:
+            return 4;
+
+        case TokenType::AMPERSAND:
+            return 5;
+
+        case TokenType::EQUAL_EQUAL:
+        case TokenType::NOT_EQUAL:
+            return 6;
+
         // P1-G: `in` is now also an infix operator (returns bool).
-        // Precedence between comparison (3) and additive (5) so
+        // Precedence between comparison (6) and additive (9) so
         // `a + b in arr` parses as `(a + b) in arr` (matches Python).
         case TokenType::IN:
-            return 4;
+            return 7;
 
         case TokenType::LESS:
         case TokenType::LESS_EQUAL:
         case TokenType::GREATER:
         case TokenType::GREATER_EQUAL:
-            return 4;
+            return 7;
+
+        // P1-F: shifts bind tighter than relational but looser than
+        // additive (C/JS): `a + b << c` = `(a + b) << c`.
+        case TokenType::LESS_LESS:
+        case TokenType::GREATER_GREATER:
+            return 8;
 
         case TokenType::PLUS:
         case TokenType::MINUS:
-            return 5;
+            return 9;
 
         case TokenType::MULTIPLY:
         case TokenType::DIVIDE:
         case TokenType::MODULO:
-            return 6;
+            return 10;
 
         case TokenType::POWER:
-            return 7;
+            return 11;
 
         default:
             return 0;
@@ -1698,6 +1718,16 @@ std::unique_ptr<Expr> Parser::primary() {
         auto right = call();
 
         if (!right) right = std::make_unique<ErrorExpr>("Expected expression after '!'", op);
+
+        return std::make_unique<UnaryExpr>(op, std::move(right));
+    }
+
+    // Bitwise NOT (~x, P1-F). Unary prefix, binds like unary minus.
+    if (match(TokenType::TILDE)) {
+        Token op = previous();
+        auto right = call();
+
+        if (!right) right = std::make_unique<ErrorExpr>("Expected expression after '~'", op);
 
         return std::make_unique<UnaryExpr>(op, std::move(right));
     }

@@ -436,3 +436,104 @@ TEST_CASE("vm_in_expression_runtime_if_branch") {
     );
     CHECK(result == InterpretResult::OK);
 }
+
+// ============================================================================
+// Bitwise operators (P1-F)
+// ============================================================================
+
+TEST_CASE("vm_bitwise_and_or_xor") {
+    auto [result, vm] = run(
+        "let a = 6 & 3;"    // 0b110 & 0b011 = 2
+        "let b = 5 | 2;"    // 0b101 | 0b010 = 7
+        "let c = 5 ^ 2;"    // 0b101 ^ 0b010 = 7
+        "let d = 12 & 10;"  // 0b1100 & 0b1010 = 8
+        "let e = 12 | 10;"  // 0b1100 | 0b1010 = 14
+        "let f = 12 ^ 10;"  // 0b1100 ^ 0b1010 = 6
+        "a + b + c + d + e + f;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(vm.getGlobal("a").asInt() == 2);
+    CHECK(vm.getGlobal("b").asInt() == 7);
+    CHECK(vm.getGlobal("c").asInt() == 7);
+    CHECK(vm.getGlobal("d").asInt() == 8);
+    CHECK(vm.getGlobal("e").asInt() == 14);
+    CHECK(vm.getGlobal("f").asInt() == 6);
+}
+
+TEST_CASE("vm_bitwise_not") {
+    auto [result, vm] = run(
+        "let a = ~5;"   // ~0b0101 = -6
+        "let b = ~0;"   // ~0 = -1
+        "let c = ~-1;"  // ~(-1) = 0
+        "a + b + c;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(vm.getGlobal("a").asInt() == -6);
+    CHECK(vm.getGlobal("b").asInt() == -1);
+    CHECK(vm.getGlobal("c").asInt() == 0);
+}
+
+TEST_CASE("vm_bitwise_shift_left") {
+    auto [result, vm] = run(
+        "let a = 1 << 3;"    // 8
+        "let b = 5 << 1;"    // 10
+        "let c = 1 << 0;"    // 1
+        "let d = 3 << 4;"    // 48
+        "a + b + c + d;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(vm.getGlobal("a").asInt() == 8);
+    CHECK(vm.getGlobal("b").asInt() == 10);
+    CHECK(vm.getGlobal("c").asInt() == 1);
+    CHECK(vm.getGlobal("d").asInt() == 48);
+}
+
+TEST_CASE("vm_bitwise_shift_right_arithmetic") {
+    auto [result, vm] = run(
+        "let a = 8 >> 2;"    // 2
+        "let b = -8 >> 2;"   // -2 (sign-extending)
+        "let c = 100 >> 3;"  // 12
+        "a + b + c;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(vm.getGlobal("a").asInt() == 2);
+    CHECK(vm.getGlobal("b").asInt() == -2);
+    CHECK(vm.getGlobal("c").asInt() == 12);
+}
+
+TEST_CASE("vm_bitwise_shift_out_of_range") {
+    // Shift count >= 64 or negative is defined: << yields 0, >> yields
+    // sign-fill. This must NOT be UB.
+    auto [result, vm] = run(
+        "let a = 1 << 64;"   // 0
+        "let b = -1 >> 64;"  // -1 (sign-fill)
+        "let c = 1 << -1;"   // 0
+        "a + b + c;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(vm.getGlobal("a").asInt() == 0);
+    CHECK(vm.getGlobal("b").asInt() == -1);
+    CHECK(vm.getGlobal("c").asInt() == 0);
+}
+
+TEST_CASE("vm_bitwise_precedence_end_to_end") {
+    // `a & b == c` parses as `a & (b == c)` (C/JS). 1 & (2 == 3) = 1 & false
+    // = 1 & 0 = 0.
+    auto [result, vm] = run(
+        "let r = 1 & 2 == 3;"   // 1 & false = 1 & 0 = 0
+        "r;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(vm.getGlobal("r").asInt() == 0);
+}
+
+TEST_CASE("vm_bitwise_integer_double_mix") {
+    // Integral doubles are accepted: 5.0 & 3 == 1.
+    auto [result, vm] = run(
+        "let r = 5.0 & 3;"
+        "r;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(vm.getGlobal("r").asInt() == 1);
+}
+

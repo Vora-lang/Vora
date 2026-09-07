@@ -1333,3 +1333,108 @@ TEST_CASE("parser_c_style_for_still_works") {
     CHECK(cond->op.type == TokenType::LESS);
 }
 
+// ============================================================================
+// Bitwise operators (P1-F)
+// ============================================================================
+
+TEST_CASE("parser_bitwise_and") {
+    auto expr = parseExpr("6 & 3");
+    REQUIRE(expr != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(expr.get());
+    REQUIRE(bin != nullptr);
+    CHECK(bin->op.type == TokenType::AMPERSAND);
+}
+
+TEST_CASE("parser_bitwise_or") {
+    auto expr = parseExpr("5 | 2");
+    REQUIRE(expr != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(expr.get());
+    REQUIRE(bin != nullptr);
+    CHECK(bin->op.type == TokenType::PIPE);
+}
+
+TEST_CASE("parser_bitwise_xor") {
+    auto expr = parseExpr("5 ^ 2");
+    REQUIRE(expr != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(expr.get());
+    REQUIRE(bin != nullptr);
+    CHECK(bin->op.type == TokenType::CARET);
+}
+
+TEST_CASE("parser_bitwise_shift_left") {
+    auto expr = parseExpr("1 << 3");
+    REQUIRE(expr != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(expr.get());
+    REQUIRE(bin != nullptr);
+    CHECK(bin->op.type == TokenType::LESS_LESS);
+}
+
+TEST_CASE("parser_bitwise_shift_right") {
+    auto expr = parseExpr("8 >> 2");
+    REQUIRE(expr != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(expr.get());
+    REQUIRE(bin != nullptr);
+    CHECK(bin->op.type == TokenType::GREATER_GREATER);
+}
+
+TEST_CASE("parser_bitwise_not_unary") {
+    auto expr = parseExpr("~5");
+    REQUIRE(expr != nullptr);
+    auto* un = dynamic_cast<UnaryExpr*>(expr.get());
+    REQUIRE(un != nullptr);
+    CHECK(un->op.type == TokenType::TILDE);
+}
+
+TEST_CASE("parser_bitwise_and_looser_than_equality") {
+    // C/JS semantics: `&` is looser than `==`, so `a & b == c`
+    // parses as `a & (b == c)`. Top-level op is AMPERSAND.
+    auto expr = parseExpr("1 & 2 == 3");
+    REQUIRE(expr != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(expr.get());
+    REQUIRE(bin != nullptr);
+    CHECK(bin->op.type == TokenType::AMPERSAND);
+    auto* eq = dynamic_cast<BinaryExpr*>(bin->right.get());
+    REQUIRE(eq != nullptr);
+    CHECK(eq->op.type == TokenType::EQUAL_EQUAL);
+}
+
+TEST_CASE("parser_bitwise_or_looser_than_xor") {
+    // `|` is looser than `^`, so `1 ^ 2 | 3` = `(1 ^ 2) | 3`.
+    auto expr = parseExpr("1 ^ 2 | 3");
+    REQUIRE(expr != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(expr.get());
+    REQUIRE(bin != nullptr);
+    CHECK(bin->op.type == TokenType::PIPE);
+    auto* xr = dynamic_cast<BinaryExpr*>(bin->left.get());
+    REQUIRE(xr != nullptr);
+    CHECK(xr->op.type == TokenType::CARET);
+}
+
+TEST_CASE("parser_shift_tighter_than_additive") {
+    // `<<` is tighter than `+`, so `a + b << c` = `(a + b) << c`.
+    auto expr = parseExpr("1 + 2 << 3");
+    REQUIRE(expr != nullptr);
+    auto* bin = dynamic_cast<BinaryExpr*>(expr.get());
+    REQUIRE(bin != nullptr);
+    CHECK(bin->op.type == TokenType::LESS_LESS);
+    auto* add = dynamic_cast<BinaryExpr*>(bin->left.get());
+    REQUIRE(add != nullptr);
+    CHECK(add->op.type == TokenType::PLUS);
+}
+
+TEST_CASE("parser_match_or_pattern_still_works_after_bitwise") {
+    // P1-B regression: `|` inside match arms is still an or-pattern
+    // separator, NOT a bitwise OR.
+    auto prog = parse("let x = match (n) { 1 | 2 | 3 => \"small\", _ => \"other\" }");
+    REQUIRE(prog != nullptr);
+    REQUIRE(prog->statements.size() == 1);
+    auto* letStmt = dynamic_cast<LetStmt*>(prog->statements[0].get());
+    REQUIRE(letStmt != nullptr);
+    auto* me = dynamic_cast<MatchExpr*>(letStmt->initializer.get());
+    REQUIRE(me != nullptr);
+    REQUIRE(me->cases.size() == 2);
+    // First case should have 3 patterns (1, 2, 3).
+    CHECK(me->cases[0].patterns.size() == 3);
+}
+
+

@@ -346,3 +346,33 @@ TEST_CASE("lexer_line_column_multi_line") {
     CHECK(t[5].line == 2);  // "let" on line 2
     CHECK(t[5].column == 1);
 }
+
+// ============================================================================
+// Bitwise operators (P1-F)
+// ============================================================================
+
+TEST_CASE("lexer_bitwise_single_char") {
+    auto t = scan("& ^ ~");
+    REQUIRE(t.size() >= 4);
+    CHECK(t[0].type == TokenType::AMPERSAND);
+    CHECK(t[1].type == TokenType::CARET);
+    CHECK(t[2].type == TokenType::TILDE);
+}
+
+TEST_CASE("lexer_bitwise_shift") {
+    auto t = scan("<< >>");
+    REQUIRE(t.size() >= 3);
+    CHECK(t[0].type == TokenType::LESS_LESS);
+    CHECK(t[1].type == TokenType::GREATER_GREATER);
+}
+
+TEST_CASE("lexer_bitwise_vs_logical") {
+    // '&&' is AND, '&' is AMPERSAND; '||' is OR, '|' is PIPE.
+    auto t = scan("&& & || |");
+    REQUIRE(t.size() >= 5);
+    CHECK(t[0].type == TokenType::AND);
+    CHECK(t[1].type == TokenType::AMPERSAND);
+    CHECK(t[2].type == TokenType::OR);
+    CHECK(t[3].type == TokenType::PIPE);
+}
+

@@ -42,6 +42,12 @@ static const char* opcodeName(OpCode op) {
         case OpCode::OP_NOT_EQUAL:      return "OP_NOT_EQUAL";
         case OpCode::OP_LESS:           return "OP_LESS";
         case OpCode::OP_IN:             return "OP_IN";
+        case OpCode::OP_BITWISE_AND:    return "OP_BITWISE_AND";
+        case OpCode::OP_BITWISE_OR:     return "OP_BITWISE_OR";
+        case OpCode::OP_BITWISE_XOR:    return "OP_BITWISE_XOR";
+        case OpCode::OP_BITWISE_NOT:    return "OP_BITWISE_NOT";
+        case OpCode::OP_SHIFT_LEFT:     return "OP_SHIFT_LEFT";
+        case OpCode::OP_SHIFT_RIGHT:    return "OP_SHIFT_RIGHT";
         case OpCode::OP_GET_LOCAL:      return "OP_GET_LOCAL";
         case OpCode::OP_SET_LOCAL:      return "OP_SET_LOCAL";
         case OpCode::OP_GET_LOCAL_PROP:       return "OP_GET_LOCAL_PROP";
@@ -255,13 +261,6 @@ size_t Chunk::addConstant(Value value) {
     // Insert and update hash indices.
     size_t idx = constants.size();
     constants.push_back(value);
-    // Diagnostic: log large integer constant insertions to help debug
-    if (value.isInt()) {
-        int64_t vi = value.asInt();
-        if (vi >= 250) {
-            std::cerr << "Chunk::addConstant: added int " << vi << " at idx " << idx << "\n";
-        }
-    }
 
     if (value.isGcString()) {
         // Store a string_view pointing into the GcString storage to avoid

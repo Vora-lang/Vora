@@ -49,6 +49,14 @@ namespace vora {
         MINUS_MINUS,  ///< '--'  Postfix/prefix decrement
         POWER,        ///< '**'  Power (exponentiation) operator
 
+        // ---- Bitwise operators (P1-F) ----
+
+        AMPERSAND,       ///< '&'   Bitwise AND (single &; '&&' is logical AND)
+        CARET,           ///< '^'   Bitwise XOR
+        TILDE,           ///< '~'   Bitwise NOT (unary)
+        LESS_LESS,       ///< '<<'  Left shift
+        GREATER_GREATER, ///< '>>'  Right shift (arithmetic)
+
         // ---- Compound assignment operators ----
 
         PLUS_EQUAL,     ///< '+='  Add-assign
@@ -80,7 +88,7 @@ namespace vora {
         DOT,              ///< '.'  Dot — property access, decimal point
         DOT_DOT_DOT,      ///< '...'  Rest parameter / spread operator
         COLON,            ///< ':'  Colon — dict key-value separator, ternary else
-        PIPE,             ///< '|'  Match or-pattern separator (NOT a bitwise OR)
+        PIPE,             ///< '|'  Bitwise OR (expression) / match or-pattern separator (in match arms)
         QUESTION,         ///< '?'  Question mark — ternary conditional
         QUESTION_QUESTION,///< '??'  Null-coalescing operator
         QUESTION_DOT,     ///< '?.'  Optional chaining
