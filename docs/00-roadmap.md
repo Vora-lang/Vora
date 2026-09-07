@@ -1,7 +1,7 @@
 # Vora 路线图
 
-> 最后更新：2026-09-05（P1-E/G/H 收尾，诚实重写，依据 `CHANGELOG.md`）
-> 当前版本：v0.27.0（`ed722dd`）
+> 最后更新：2026-09-07（P1-F 位运算收尾，Phase 1 主体完成）
+> 当前基线：v0.27.0（`ed722dd`）之上叠加 Phase 1 修复提交（见 `CHANGELOG.md [Unreleased]`）
 
 本路线图依据 `CHANGELOG.md` 与源代码重新核对。**任何"声称完成"的功能必须同时出现在
 `CHANGELOG.md` 的 `[0.27.0] / [Unreleased]` 部分，并由源码支撑。**仅出现在文档但
@@ -25,7 +25,7 @@
 | 特性 | 状态 | 备注 |
 |------|------|------|
 | JS 风格块语法（`{ }`，无显式分号） | ✅ | |
-| Pratt 解析器 + 33 关键字 + 85 操作码 | ✅ | 见 `src/lexer/token.h`、`src/chunk.h` |
+| Pratt 解析器 + 33 关键字 + 91 操作码 | ✅ | 见 `src/lexer/token.h`、`src/chunk.h`；85 + P1-F 新增 6 位运算 opcode |
 | 字面量（数字 / 字符串 / Bool / Null / Array / Dict / Lambda） | ✅ | |
 | 二元 / 一元 / 后缀（`?:` `??` `?.` `...spread`） | ✅ | `?:` 优先级低于 `\|\|`（P0 #2 修复后与 C 系列一致）；一元 `+x` 已识别（P1-E） |
 | 控制流（`if/else`、`while`、`for-in`、括号 `for (x in xs)`、`c-for`、`do-while`、`try/catch/finally`、`throw`、`break/continue`） | ✅ | `if`/`while` 括号必需；P1-H 后 for-in 也接受 `for (x in xs)` 形式 |
@@ -74,12 +74,14 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
 > 但 `ed722dd` 实际已包含这两项（commit `992907d`、`22a70ed` 于 7 月 3 日合入，
 > 7 月 22 日 `ed722dd` 重新打底）。本路线图修正此差异。
 
-### 已知 P0 设计缺陷（待修，与 `VORA_SYNTAX_REVIEW.md` 同步）
+### 已知 P0 设计缺陷 —— ✅ 全部修复（Phase 1，2026-09）
 
-1. **跨行吞并**：当前 parser 跨行不报错，导致 `let b = a \n -1` 被吞成减法。
-2. **`?:` 优先级反转**：`a || b ? c : d` 与 C/JS/Go/Python 都相反。
-3. **命名参数 2-token 前瞻吞掉表达式**：`f(a = 1+2)` 局部解析失败。
-4. **`import` 路径非合法标识符时静默归并减法**：含 `-` 的合法文件名被吞。
+与 `VORA_SYNTAX_REVIEW.md` §1 对应，修复详情见 `CHANGELOG.md [Unreleased]`：
+
+1. ~~跨行吞并~~ → Go 式词法 ASI（statement-level 换行终止语句；括号/调用内不触发）。
+2. ~~`?:` 优先级反转~~ → 三元降到 `\|\|`/`??` 同级（1），左结合先吃完 `\|\|`，与 C/JS/Go/Python 一致。
+3. ~~命名参数 2-token 前瞻吞掉表达式~~ → 经评审决策 lock-in：保留 `f(name = value)` 记号（见 CHANGELOG 说明）。
+4. ~~`import` 路径非合法标识符静默归并减法~~ → 含 `-` 等非法标识符字符的路径在缺 alias 时编译期报清晰错误。
 
 ---
 
@@ -99,10 +101,14 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
 ### Phase 1：语法锁版本 v1.0 文法（4–6 周）
 
 ```
-[X] P0 #1 ASI / 跨行吞并（parser.cpp）  —— commit 970caa4
-[X] P0 #2 ?: 优先级降到 || 之下          —— commit 61366f9
-[X] P0 #4 import 路径非法标识符时编译错误 —— commit 830a2f2
-[X] P0 #3 命名参数解析修复                —— commit c3bc77a（已 lock-in）
+[X] P0 #1 ASI / 跨行吞并（parser.cpp，Go 式词法 ASI）
+[X] P0 #2 ?: 优先级降到 || 之下
+[X] P0 #4 import 路径非法标识符时编译错误
+[X] P0 #3 命名参数解析（评审决策 lock-in，保留 `f(name = value)` 记号）
+
+> 注：P0 各项修复详情记录于 `CHANGELOG.md [Unreleased]`。早期 roadmap 版本
+> 引用的 per-fix 提交哈希（970caa4 / 61366f9 / 830a2f2 / c3bc77a）在 2026-09
+> 历史重写（`3f4f71e` snapshot）后已不可解析，不再作为引用依据。
 [X] 把上述冻结为 v1.0 EBNF               —— docs/16-v1.0-grammar-ebnf.md
 [X] P1 推导式：实测已实现（v0.27 起 compiler_expr.cpp 走 iter()/next 脱糖，
     52/53 examples 全跑通）                  —— 本次 commit
@@ -112,9 +118,16 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
 [X] P1-E 一元 +x（parser primary + compiler visitUnaryExpr 折叠）
 [X] P1-G `in` 表达式（新增 OP_IN；VM dispatch：Array → valuesEqual 扫描，Dict → key 查表，String → substring）
 [X] P1-H `for (x in xs)` 括号 for-in（peekNext() 2-token lookahead + brace-aware scan）
+[X] P1-F 位运算 `&` `|` `^` `~` `<<` `>>`（lexer 5 新 token + PIPE 复用；6 新 opcode；
+    precedence 低于等值高于关系，见 EBNF §6；移位计数夹取；tests/runtime/test_bitwise.va + 三层单测锁定）
 
-P1 真正未解决（实测确认）：
-  [ ] F 位运算 `&` `|` `^` `~` `<<` `>>`（lexer 不产 token；`|` 已为 P1-B 的 PIPE）
+Phase 1 剩余（语法评审第 5 节"第三批"项，尚未纳入本清单，实测确认仍未解决）：
+  [ ] 插值转义 `\$`（实测 `\${x}` → `\5`，反斜杠保留且插值照常；EBNF §2.3 已改正声明）
+  [ ] `not` 关键字（2.9：与 `and`/`or` 配齐）
+  [ ] `**=` 幂赋值（2.6）
+  [ ] `let x` 免初始化声明（2.7）
+  [ ] 标签 break/continue（2.8）
+  [ ] 对象字面量简写 `{x}`（2.11）
 ```
 
 ### Phase 2：补能力（2–3 月）

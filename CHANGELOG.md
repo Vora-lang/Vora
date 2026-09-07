@@ -16,7 +16,51 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+> **Scope note (2026-09):** the P0/P1 fixes below were implemented across the
+> 2026-09 Phase 1 work. Part of that history was later rewritten into a single
+> snapshot commit (`3f4f71e`), so the original per-fix commit hashes cited in
+> older roadmap revisions (`970caa4`, `61366f9`, `830a2f2`, `c3bc77a`) are no
+> longer resolvable on `main`. This section is the authoritative record.
+
+### Added
+- **Bitwise operators `&` `|` `^` `~` `<<` `>>`** (Phase 1 P1-F):
+  - Lexer: 5 new tokens (`AMPERSAND`, `CARET`, `TILDE`, `LESS_LESS`,
+    `GREATER_GREATER`); `PIPE` reused from P1-B (bitwise OR in expressions,
+    or-pattern separator inside `match` arms).
+  - Compiler/VM: 6 new opcodes (`OP_BITWISE_AND/OR/XOR/NOT`,
+    `OP_SHIFT_LEFT/RIGHT`); int64 only, runtime error on non-int operands.
+  - Precedence follows C/JS (`<<`/`>>` > `&` > `^` > `|`, all *looser* than
+    `==`/`!=` — see EBNF §6 for the surprise note). Shift counts `<0` or
+    `>=64` clamp to `0` (`-1` sign-fill for negative right-shift).
+  - Constant folding for int-literal operands (binary and unary `~`).
+  - Tests: `tests/runtime/test_bitwise.va` (35+ assertions) plus lexer /
+    parser / VM unit tests.
+- **Match or-patterns** `1 | 2 | 3 =>` (P1-B): lexer `PIPE` token + parser
+  alternation loop in `matchExpression()`; EBNF §4.6.
+- **Top-level rest destructuring** `let [a, ...rest] = arr` (P1-D):
+  compiler synthetic global-temp path; previously only valid inside functions.
+- **Unary `+x`** (P1-E): parser primary; int-literal constant folding,
+  runtime identity.
+- **`in` expression operator** (P1-G): new `OP_IN`; Array → linear scan with
+  `valuesEqual`, Dict → key lookup, String → substring. Precedence with
+  relational so `a + b in arr` = `(a + b) in arr` (Python-style).
+- **Parenthesized for-in** `for (x in xs)` (P1-H): 2-token lookahead +
+  brace-aware scan; previously a syntax dead-end.
+
 ### Fixed
+- **Cross-line statement swallowing** (P0 #1): Go-style lexical ASI — a
+  newline now terminates a statement at statement level (paren/bracket depth
+  0). `let b = a` followed by `-1` is two statements, not a subtraction.
+- **Ternary precedence inversion** (P0 #2): `?:` lowered to precedence 1
+  (shared with `||`/`??`), restoring C/JS/Go/Python semantics:
+  `a || b ? c : d` now parses as `(a || b) ? c : d`.
+- **Named arguments vs assignment arguments** (P0 #3): reviewed and
+  **lock-in** decision — `f(name = value)` remains the named-argument syntax;
+  passing an assignment expression as a positional argument requires
+  parentheses (`f((a = 5))`). Documented as a known sharp edge.
+- **Silent import binding derivation** (P0 #4): paths that are not valid
+  identifiers (e.g. containing `-`) now produce a clear compile-time error
+  unless an explicit `as` alias or `from ... import` form is used.
 - Build portability (GCC / MinGW):
   - `src/ast/binding_pattern.h`: explicit `#include <cstdint>`
     (`enum class BindingKind : uint8_t`).
@@ -26,6 +70,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
     `<optional>`. GCC does not transitively re-expose `std::uint8_t`
     nor `std::remove_if`, causing compile errors under
     `build.sh -G "MinGW Makefiles"`.
+- Removed leftover debug diagnostic in `Chunk::addConstant` that printed
+  every integer constant ≥ 250 to stderr during normal script runs.
 
 ### Documentation
 - `CHANGELOG.md` added — first formal changelog in the project, backfilled
@@ -33,6 +79,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - `docs/00-roadmap.md` rewritten to reflect real shipped state, not aspirational.
 - `docs/08-已实现功能总结.md` annotated with a header note that its body is a
   historical version-by-version record; current state is in `CHANGELOG.md`.
+- `docs/16-v1.0-grammar-ebnf.md`: precedence tables (§2.4 / §6) aligned 1:1
+  with `getPrecedence()` (bitwise levels added; `in` and shift rows corrected);
+  §2.3 correction — `\$` interpolation escape marked **not implemented**
+  (previously claimed working); §7 status rows updated for P1-D/E/F/G/H.
 
 ---
 
@@ -125,6 +175,17 @@ from `git log --oneline` on `main` and from `docs/08-已实现功能总结.md`
 ---
 
 ## Known unimplemented / problematic features in `ed722dd`
+
+> ⚠ **Historical snapshot (2026-09-05, baseline `ed722dd`).** The table below
+> describes the state of `ed722dd`, **not** the current `main`. Since then the
+> following rows have been fixed (see `[Unreleased]` for details):
+> ternary precedence, match or-patterns, top-level `...rest` destructuring,
+> named-argument handling (lock-in decision), silent `import` binding
+> derivation, bitwise operators (`&` `|` `^` `~` `<<` `>>`), and
+> list/dict comprehensions (verified working at Phase 1 P1-A).
+> Still open at time of writing: `**=`, `\$` interpolation escape, `not`
+> keyword, labeled break/continue, `let` without initializer, object-literal
+> shorthand, stdlib expansion, DAP server (verify against Vora-LSP repo).
 
 These are real and verifiable in current code; do not write code that
 depends on them. Confirmed via syntax review (2026-09) and inspection
