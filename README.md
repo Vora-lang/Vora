@@ -161,7 +161,8 @@ let nothing = null
 | Comparison / 比较 | `<` `<=` `>` `>=` `==` `!=` |
 | Logical / 逻辑 | `&&` `||` `!` (short-circuit / 短路求值) |
 | Logical aliases / 逻辑别名 | `and` `or` (equivalent to `&&` `||` / 等价于 `&&` `||`) |
-| Ternary / 三元 | `cond ? a : b` |
+| Bitwise / 位运算 | `&` `\|` `^` `~` `<<` `>>` (int64 only; `\|` is the or-pattern separator inside `match` / 仅 int64；`\|` 在 `match` 分支内为或模式) |
+| Ternary / 三元 | `cond ? a : b` (lower precedence than `&&`/`\|\|`, C-style / 优先级低于 `&&`\|`\|\|`，与 C 系一致) |
 | Increment/Decrement / 自增自减 | `++` `--` |
 | Compound Assignment / 复合赋值 | `+=` `-=` `*=` `/=` `%=` |
 
@@ -580,12 +581,12 @@ match flag { 1 => { doSomething(); }, _ => {} }
 
 | Module / 模块 | Lines / 行数 | Description / 说明 |
 |--------|-------|-------------|
-| `lexer/` | ~770 | Hand-written scanner, 23 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b / 手写扫描器，23 个关键字 |
-| `parser/` | ~2,200 | Pratt (precedence climbing), 7-level precedence table, panic-mode error recovery / Pratt 解析器，7 级优先级表 |
+| `lexer/` | ~770 | Hand-written scanner, 33 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b / 手写扫描器，33 个关键字 |
+| `parser/` | ~2,200 | Pratt (precedence climbing), Go-style ASI, panic-mode error recovery / Pratt 解析器，Go 式词法 ASI |
 | `ast/` | ~2,630 | 38 node types (22 exprs + 16 stmts), templated Visitor pattern / 38 种节点类型，模板化 Visitor 模式 |
-| `vm/` | ~6,260 | Bytecode compiler + stack-based VM, 58 opcodes (incl. OP_TAIL_CALL), constant folding, fast numeric ops / 字节码编译器 + 栈式 VM，58 条操作码 |
-| `runtime/` | ~2,380 | `Value` (std::variant, 11 types), `Environment` (lexical scope chain), `Callable` hierarchy, `builtins` module, `Upvalue` (index-based) |
-| `gc/` | ~280 | Mark-sweep garbage collector, `GcPtr<T>`, `GcHeap` singleton / 标记-清除 GC |
+| `vm/` | ~6,260 | Bytecode compiler + stack-based VM (opcode set in `src/vm/opcode.h`, incl. OP_TAIL_CALL + bitwise ops), constant folding, fast numeric ops / 字节码编译器 + 栈式 VM（操作码清单见 `src/vm/opcode.h`），常量折叠、快速数值指令 |
+| `runtime/` | ~2,380 | `Value` (8-byte NaN-boxing), `Environment` (lexical scope chain), `Callable` hierarchy, `builtins` module, `Upvalue` (index-based) |
+| `gc/` | ~280 | Generational garbage collector (minor/major + write barrier), `GcPtr<T>`, `GcHeap` / 分代 GC（minor/major + 写屏障） |
 | `formatter/` | ~1,000 | AST-based source code formatter (`vora fmt`) / AST 驱动的代码格式化器 |
 
 **Design highlights / 设计亮点:**
