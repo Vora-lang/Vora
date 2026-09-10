@@ -1,0 +1,206 @@
+// runtime/test_loop_closure.va — Closures capturing loop-body locals
+// Run: vora tests/runtime/test_loop_closure.va
+//
+// Regression tests for a silent wrong-value bug: break/continue used to pop
+// the loop body's locals with OP_POPN without emitting OP_CLOSE_UPVALUE (which
+// endScope() does on the normal path). A closure that captured such a local
+// therefore kept pointing at the raw stack slot, and a later iteration — or a
+// later statement — overwrote it. The closure then returned the wrong value
+// with no error at all.
+
+print("=== Runtime: Loop Closure Capture Tests ===")
+
+// ---------------------------------------------------------------------------
+// continue: the slot of `v` is reused by the next iteration
+// ---------------------------------------------------------------------------
+func continueCapture() {
+    let fns = []
+    for i in [1, 2] {
+        let v = i * 10
+        fns.add(func() { return v })
+        if (i == 1) { continue }
+    }
+    return fns
+}
+let cc = continueCapture()
+assert(cc[0]() == 10, "continue: first closure keeps value from iteration 1")
+assert(cc[1]() == 20, "continue: second closure keeps value from iteration 2")
+
+// ---------------------------------------------------------------------------
+// break out of an inner loop while the outer loop keeps running
+// ---------------------------------------------------------------------------
+func breakInnerCapture() {
+    let fns = []
+    for i in [1, 2] {
+        for j in [1, 2] {
+            let v = i * 10 + j
+            fns.add(func() { return v })
+            if (j == 1) { break }
+        }
+    }
+    return fns
+}
+let bc = breakInnerCapture()
+assert(bc[0]() == 11, "break: first closure keeps value from i=1,j=1")
+assert(bc[1]() == 21, "break: second closure keeps value from i=2,j=1")
+
+// ---------------------------------------------------------------------------
+// break in a while loop; a later statement may reuse the freed stack slot
+// ---------------------------------------------------------------------------
+func whileBreakCapture() {
+    let fns = []
+    let i = 0
+    while (i < 5) {
+        let v = i * 100
+        fns.add(func() { return v })
+        break
+    }
+    let probeA = 777
+    let probeB = 888
+    return fns
+}
+let wb = whileBreakCapture()
+assert(wb[0]() == 0, "while+break: closure unaffected by later locals")
+
+// ---------------------------------------------------------------------------
+// break in a C-style for: the initializer local is loop infrastructure, and
+// the break must close it too (it is not covered by the body-local scan)
+// ---------------------------------------------------------------------------
+func cForBreakCapture() {
+    let fns = []
+    for (let k = 0; k < 3; k = k + 1) {
+        fns.add(func() { return k })
+        break
+    }
+    let probeA = 777
+    let probeB = 888
+    return fns
+}
+let cf = cForBreakCapture()
+assert(cf[0]() == 0, "c-for+break: captured initializer local is closed")
+
+// ---------------------------------------------------------------------------
+// continue in a C-style for: init local persists across iterations, body
+// locals do not
+// ---------------------------------------------------------------------------
+func cForContinueCapture() {
+    let fns = []
+    for (let k = 0; k < 2; k = k + 1) {
+        let doubled = k * 2
+        fns.add(func() { return doubled })
+        if (k == 0) { continue }
+    }
+    return fns
+}
+let cfc = cForContinueCapture()
+assert(cfc[0]() == 0, "c-for+continue: first body local closed")
+assert(cfc[1]() == 2, "c-for+continue: second body local closed")
+
+// ---------------------------------------------------------------------------
+// break after a for-in: the loop variable itself is captured
+// ---------------------------------------------------------------------------
+func forInVarCapture() {
+    let fns = []
+    for x in [5, 6] {
+        fns.add(func() { return x })
+        break
+    }
+    let probeA = 777
+    let probeB = 888
+    return fns
+}
+let fv = forInVarCapture()
+assert(fv[0]() == 5, "for-in+break: captured loop variable is closed")
+
+// ---------------------------------------------------------------------------
+// Multiple captured locals per iteration must stay independent
+// ---------------------------------------------------------------------------
+func multiCapture() {
+    let fns = []
+    for i in [1, 2, 3] {
+        let a = i * 10
+        let b = i * 100
+        fns.add(func() { return a })
+        fns.add(func() { return b })
+        if (i < 3) { continue }
+    }
+    return fns
+}
+let mc = multiCapture()
+assert(mc[0]() == 10, "multi: a from iteration 1")
+assert(mc[1]() == 100, "multi: b from iteration 1")
+assert(mc[2]() == 20, "multi: a from iteration 2")
+assert(mc[3]() == 200, "multi: b from iteration 2")
+assert(mc[4]() == 30, "multi: a from iteration 3")
+assert(mc[5]() == 300, "multi: b from iteration 3")
+
+// ---------------------------------------------------------------------------
+// Captured locals must remain mutable cells, not frozen snapshots
+// ---------------------------------------------------------------------------
+func mutableCaptureAcrossContinue() {
+    let fns = []
+    for i in [1, 2] {
+        let n = 0
+        fns.add(func() { n = n + 1; return n })
+        if (i == 1) { continue }
+    }
+    return fns
+}
+let mut = mutableCaptureAcrossContinue()
+assert(mut[0]() == 1, "mutable: first cell starts at 0")
+assert(mut[0]() == 2, "mutable: first cell accumulates")
+assert(mut[1]() == 1, "mutable: second cell is independent")
+assert(mut[0]() == 3, "mutable: first cell unaffected by second")
+
+// ---------------------------------------------------------------------------
+// Control group: no break/continue in the loop (always worked)
+// ---------------------------------------------------------------------------
+func noJumpCapture() {
+    let fns = []
+    for i in [1, 2] {
+        let v = i * 10
+        fns.add(func() { return v })
+    }
+    return fns
+}
+let nc = noJumpCapture()
+assert(nc[0]() == 10, "control: no-jump first closure")
+assert(nc[1]() == 20, "control: no-jump second closure")
+
+// ---------------------------------------------------------------------------
+// Control group: locals that are never captured must not be affected
+// ---------------------------------------------------------------------------
+func noCaptureAtAll() {
+    let sum = 0
+    for i in [1, 2, 3] {
+        let v = i * 10
+        sum = sum + v
+        if (i == 1) { continue }
+        if (i == 3) { break }
+    }
+    return sum
+}
+assert(noCaptureAtAll() == 60, "control: uncaptured locals still sum 10+20+30")
+
+// ---------------------------------------------------------------------------
+// Nested break through two levels, then capture in the outer loop
+// ---------------------------------------------------------------------------
+func nestedBreakCapture() {
+    let fns = []
+    for i in [1, 2, 3] {
+        for j in [1, 2] {
+            let v = i * 10 + j
+            if (j == 1) {
+                fns.add(func() { return v })
+                break
+            }
+        }
+    }
+    return fns
+}
+let nb = nestedBreakCapture()
+assert(nb[0]() == 11, "nested break: iteration i=1")
+assert(nb[1]() == 21, "nested break: iteration i=2")
+assert(nb[2]() == 31, "nested break: iteration i=3")
+
+print("Runtime loop closure tests: PASS")

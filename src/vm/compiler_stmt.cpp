@@ -1601,6 +1601,41 @@ void Compiler::visitObjStmt(const ObjStmt& stmt) {
     }
 }
 
+int Compiler::emitLoopExitCleanup(size_t loopIdx, bool isBreak) {
+    const LoopContext& lc = loopStack[loopIdx];
+    const int targetDepth = lc.enclosingScopeDepth;
+    const int extraLocals = isBreak ? lc.extraLocalsToPopOnBreak
+                                    : lc.extraLocalsToPopOnContinue;
+
+    int idx = static_cast<int>(locals.size()) - 1;
+    int popped = 0;
+
+    // Locals declared inside the loop body. Because locals[] is ordered by
+    // declaration, these occupy the top slots; stop at the first one that
+    // belongs to the target loop's enclosing scope or further out.
+    while (idx >= 0 && locals[static_cast<size_t>(idx)].depth > targetDepth) {
+        if (locals[static_cast<size_t>(idx)].captured) {
+            emitBytes(static_cast<uint8_t>(OpCode::OP_CLOSE_UPVALUE),
+                      static_cast<uint8_t>(idx));
+        }
+        idx--;
+        popped++;
+    }
+
+    // The target loop's own infrastructure locals (_iter for for-in, the
+    // initializer locals of a C-style for) sit directly below those, at
+    // exactly targetDepth — so the scan above cannot see them.
+    for (int e = 0; e < extraLocals && idx >= 0; e++, idx--) {
+        if (locals[static_cast<size_t>(idx)].captured) {
+            emitBytes(static_cast<uint8_t>(OpCode::OP_CLOSE_UPVALUE),
+                      static_cast<uint8_t>(idx));
+        }
+        popped++;
+    }
+
+    return popped;
+}
+
 void Compiler::visitBreakStmt(const BreakStmt& stmt) {
     currentLine = stmt.keyword.line;
     currentColumn = stmt.keyword.column;
@@ -1615,18 +1650,11 @@ void Compiler::visitBreakStmt(const BreakStmt& stmt) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
     }
 
-    // Pop locals from current scope down to the loop's enclosing scope
-    int localsToPop = 0;
-    for (int i = static_cast<int>(locals.size()) - 1; i >= 0; i--) {
-        if (locals[i].depth > loopStack.back().enclosingScopeDepth) {
-            localsToPop++;
-        } else {
-            break;
-        }
-    }
-    // For-in loops generate _iter, _i, _len at enclosingScopeDepth which
-    // must also be cleaned up on break (they persist through continue).
-    localsToPop += loopStack.back().extraLocalsToPopOnBreak;
+    // Discard every local the break abandons, closing captured ones so that
+    // closures keep the value captured at declaration time. Without the
+    // OP_CLOSE_UPVALUE the closure would read the stack slot after a later
+    // iteration reused it — a silent wrong-value bug.
+    int localsToPop = emitLoopExitCleanup(loopStack.size() - 1, /*isBreak=*/true);
 
     if (localsToPop > 0) {
         emitBytes(static_cast<uint8_t>(OpCode::OP_POPN),
@@ -1651,19 +1679,11 @@ void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
     }
 
-    // Pop locals from current scope down to the loop's enclosing scope
-    int localsToPop = 0;
-    for (int i = static_cast<int>(locals.size()) - 1; i >= 0; i--) {
-        if (locals[i].depth > loopStack.back().enclosingScopeDepth) {
-            localsToPop++;
-        } else {
-            break;
-        }
-    }
-    // Pop any loop-infrastructure locals that should not persist through
-    // continue (currently 0 for both for-in and C-for; this is explicit so
-    // future loop constructs can use it).
-    localsToPop += loopStack.back().extraLocalsToPopOnContinue;
+    // Discard every local the continue abandons (same reasoning as break).
+    // The target loop's own infrastructure locals must survive (e.g. the
+    // for-in iterator has to persist across iterations), which is why this
+    // uses extraLocalsToPopOnContinue rather than ...OnBreak.
+    int localsToPop = emitLoopExitCleanup(loopStack.size() - 1, /*isBreak=*/false);
 
     if (localsToPop > 0) {
         emitBytes(static_cast<uint8_t>(OpCode::OP_POPN),

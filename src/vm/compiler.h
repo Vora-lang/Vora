@@ -546,6 +546,28 @@ private:
 
     std::vector<LoopContext> loopStack;      ///< Stack of active loop contexts (innermost at back).
 
+    /// @brief Close upvalues and count slots for a jump out of loop level @p loopIdx.
+    ///
+    /// A break/continue leaves the loop by jumping, so it skips the endScope()
+    /// calls that would normally close upvalues and pop the locals of every
+    /// scope it abandons. This helper performs that bookkeeping for the slots
+    /// being discarded:
+    ///   - every local declared deeper than the target loop's enclosing scope
+    ///     (covers nested blocks, nested loops, and nested loops' own
+    ///     infrastructure locals), and
+    ///   - the target loop's own infrastructure locals, which sit at its
+    ///     enclosing scope depth and are counted by extraLocalsToPop*.
+    ///
+    /// Emits OP_CLOSE_UPVALUE for each captured local among them, before the
+    /// caller's OP_POPN, so a closure keeps the value it captured instead of
+    /// reading the stack slot after a later iteration has reused it.
+    ///
+    /// @param loopIdx Index into loopStack of the loop being exited.
+    /// @param isBreak True for break (uses extraLocalsToPopOnBreak), false for
+    ///                continue (uses extraLocalsToPopOnContinue).
+    /// @return Number of stack slots to pop, i.e. the OP_POPN operand.
+    int emitLoopExitCleanup(size_t loopIdx, bool isBreak);
+
     // =========================================================================
     // Try context
     // =========================================================================
