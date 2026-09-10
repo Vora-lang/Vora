@@ -1651,6 +1651,36 @@ int Compiler::emitLoopExitCleanup(size_t loopIdx, bool isBreak) {
     return popped;
 }
 
+void Compiler::emitLoopExit(size_t loopIdx, bool isBreak) {
+    if (finallyNesting > 0) {
+        // A finally still has to run before these locals may be discarded.
+        // Pre-jump patched to zero: falls through to the pad below when no
+        // enclosing finally claims it, and is redirected into the finally chain
+        // by visitTryStmt when one does.
+        size_t preJump = emitJump(OpCode::OP_JUMP);
+        chunk.writeAt(preJump, 0);
+        chunk.writeAt(preJump + 1, 0);
+        size_t cleanupPad = chunk.code.size();
+        loopStack[loopIdx].preJumps.push_back({preJump, cleanupPad});
+    }
+
+    // Discard every local the exit abandons, closing captured ones so that
+    // closures keep the value captured at declaration time. On the finally path
+    // this is the cleanup landing pad the replay chain returns to.
+    int localsToPop = emitLoopExitCleanup(loopIdx, isBreak);
+    if (localsToPop > 0) {
+        emitBytes(static_cast<uint8_t>(OpCode::OP_POPN),
+                  static_cast<uint8_t>(localsToPop));
+    }
+
+    size_t jumpOffset = emitJump(OpCode::OP_JUMP);
+    if (isBreak) {
+        loopStack[loopIdx].breakJumps.push_back(jumpOffset);
+    } else {
+        loopStack[loopIdx].continueJumps.push_back(jumpOffset);
+    }
+}
+
 void Compiler::visitBreakStmt(const BreakStmt& stmt) {
     currentLine = stmt.keyword.line;
     currentColumn = stmt.keyword.column;
@@ -1668,20 +1698,7 @@ void Compiler::visitBreakStmt(const BreakStmt& stmt) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
     }
 
-    // Discard every local the break abandons, closing captured ones so that
-    // closures keep the value captured at declaration time. Without the
-    // OP_CLOSE_UPVALUE the closure would read the stack slot after a later
-    // iteration reused it — a silent wrong-value bug.
-    int localsToPop = emitLoopExitCleanup(loopStack.size() - 1, /*isBreak=*/true);
-
-    if (localsToPop > 0) {
-        emitBytes(static_cast<uint8_t>(OpCode::OP_POPN),
-                  static_cast<uint8_t>(localsToPop));
-    }
-
-    // Emit jump to after the loop. Patch later.
-    size_t jumpOffset = emitJump(OpCode::OP_JUMP);
-    loopStack.back().breakJumps.push_back(jumpOffset);
+    emitLoopExit(loopStack.size() - 1, /*isBreak=*/true);
 }
 
 void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
@@ -1699,24 +1716,10 @@ void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
     }
 
-    // Discard every local the continue abandons (same reasoning as break).
-    // The target loop's own infrastructure locals must survive (e.g. the
-    // for-in iterator has to persist across iterations), which is why this
-    // uses extraLocalsToPopOnContinue rather than ...OnBreak.
-    int localsToPop = emitLoopExitCleanup(loopStack.size() - 1, /*isBreak=*/false);
-
-    if (localsToPop > 0) {
-        emitBytes(static_cast<uint8_t>(OpCode::OP_POPN),
-                  static_cast<uint8_t>(localsToPop));
-    }
-
-    // Always a forward jump to the loop's continue target. Keeping continue
-    // forward for every loop kind (not a direct backward OP_LOOP to the
-    // condition) is what lets visitTryStmt re-route it through an enclosing
-    // finally block: a backward jump would leave the continue site entirely
-    // and silently skip the finally.
-    size_t jumpOffset = emitJump(OpCode::OP_JUMP);
-    loopStack.back().continueJumps.push_back(jumpOffset);
+    // The target loop's own infrastructure locals must survive a continue (e.g.
+    // the for-in iterator persists across iterations), which emitLoopExit
+    // handles by using extraLocalsToPopOnContinue for this direction.
+    emitLoopExit(loopStack.size() - 1, /*isBreak=*/false);
 }
 
 void Compiler::visitTryStmt(const TryStmt& stmt) {
@@ -1734,13 +1737,11 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
     tryNesting++;
 
     // =========================================================================
-    // Snapshot loop break/continue counts and return jump count BEFORE try body
+    // Snapshot loop pre-jump counts and return jump count BEFORE try body
     // =========================================================================
-    std::vector<size_t> savedBreakCounts;
-    std::vector<size_t> savedContinueCounts;
+    std::vector<size_t> savedPreJumpCounts;
     for (const auto& lc : loopStack) {
-        savedBreakCounts.push_back(lc.breakJumps.size());
-        savedContinueCounts.push_back(lc.continueJumps.size());
+        savedPreJumpCounts.push_back(lc.preJumps.size());
     }
     size_t savedReturnCount = pendingReturnJumps.size();
 
@@ -1754,28 +1755,31 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
     tryNesting--;
 
     // =========================================================================
-    // Capture new break/continue jumps emitted inside the try body.
-    // They will be re-routed through the finally block (if present).
+    // Capture the non-local exits emitted inside the try body that still owe a
+    // finally. They are re-routed through the finally block (if present).
     // =========================================================================
-    struct CapturedJump { size_t offset; int loopIdx; };
-    std::vector<CapturedJump> capturedBreaks;
-    std::vector<CapturedJump> capturedContinues;
-    for (size_t li = 0; li < loopStack.size(); li++) {
+    struct CapturedPreJump { size_t offset; size_t cleanupPad; int loopIdx; };
+    std::vector<CapturedPreJump> capturedPreJumps;
+    for (size_t li = 0; li < loopStack.size() && li < savedPreJumpCounts.size(); li++) {
         auto& lc = loopStack[li];
-        while (lc.breakJumps.size() > savedBreakCounts[li]) {
-            capturedBreaks.push_back({lc.breakJumps.back(), static_cast<int>(li)});
-            lc.breakJumps.pop_back();
-        }
-        while (lc.continueJumps.size() > savedContinueCounts[li]) {
-            capturedContinues.push_back({lc.continueJumps.back(), static_cast<int>(li)});
-            lc.continueJumps.pop_back();
+        while (lc.preJumps.size() > savedPreJumpCounts[li]) {
+            capturedPreJumps.push_back({lc.preJumps.back().jumpOffset,
+                                        lc.preJumps.back().cleanupPad,
+                                        static_cast<int>(li)});
+            lc.preJumps.pop_back();
         }
     }
-    // Capture return jumps emitted inside try body
+    // Capture return jumps emitted inside try body. Only a try that actually
+    // has a finally block has anything to replay them through; leaving them in
+    // pendingReturnJumps otherwise is what lets an *enclosing* finally claim
+    // them. (Removing them and then dropping them made `return` inside a try
+    // with no finally of its own jump into an unrelated instruction.)
     std::vector<size_t> capturedReturns;
-    while (pendingReturnJumps.size() > savedReturnCount) {
-        capturedReturns.push_back(pendingReturnJumps.back());
-        pendingReturnJumps.pop_back();
+    if (stmt.finallyBlock) {
+        while (pendingReturnJumps.size() > savedReturnCount) {
+            capturedReturns.push_back(pendingReturnJumps.back());
+            pendingReturnJumps.pop_back();
+        }
     }
 
     // =========================================================================
@@ -1838,30 +1842,32 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
         // normal path has just run the finally inline, so it must jump over
         // them: falling through would run the finally a second time and then
         // take a break/continue/return the normal path never asked for.
-        const bool hasReplays = !capturedBreaks.empty() ||
-                                !capturedContinues.empty() ||
+        const bool hasReplays = !capturedPreJumps.empty() ||
                                 !capturedReturns.empty();
         size_t skipReplaysJump = hasReplays ? emitJump(OpCode::OP_JUMP) : 0;
 
-        // --- Route captured break jumps through finally ---
-        for (const auto& cj : capturedBreaks) {
-            // Patch the break's OP_JUMP placeholder to point to current position
+        // --- Route captured break/continue exits through finally ---
+        for (const auto& cj : capturedPreJumps) {
+            // Patch the pre-jump placeholder to point at this position
             patchJump(cj.offset);
-            // Replay finally bytecode
+            // Replay finally bytecode (the abandoned locals are still live here)
             for (uint8_t b : finallyBytecodeStack.back()) emitByte(b);
             emitByte(static_cast<uint8_t>(OpCode::OP_FINALLY_END));
-            // New jump — re-added to the loop's breakJumps for normal patching
-            size_t newJump = emitJump(OpCode::OP_JUMP);
-            loopStack[static_cast<size_t>(cj.loopIdx)].breakJumps.push_back(newJump);
-        }
-
-        // --- Route captured continue jumps through finally ---
-        for (const auto& cj : capturedContinues) {
-            patchJump(cj.offset);
-            for (uint8_t b : finallyBytecodeStack.back()) emitByte(b);
-            emitByte(static_cast<uint8_t>(OpCode::OP_FINALLY_END));
-            size_t newJump = emitJump(OpCode::OP_JUMP);
-            loopStack[static_cast<size_t>(cj.loopIdx)].continueJumps.push_back(newJump);
+            if (finallyNesting > 0) {
+                // An outer finally still has to run, so hand the exit on: a new
+                // pre-jump that the next finally layer will claim. Its default
+                // target stays the pad, which is still the right place if that
+                // outer layer turns out not to intercept it.
+                size_t next = emitJump(OpCode::OP_JUMP);
+                chunk.writeAt(next, 0);
+                chunk.writeAt(next + 1, 0);
+                loopStack[static_cast<size_t>(cj.loopIdx)].preJumps.push_back(
+                    {next, cj.cleanupPad});
+            } else {
+                // Innermost finally is done: return to the cleanup pad, which
+                // sits before these replay blocks, hence the backward jump.
+                emitLoop(cj.cleanupPad);
+            }
         }
 
         // --- Route captured return jumps through finally ---
@@ -1881,20 +1887,6 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
 
         // Pop the finally bytecode stack entry
         finallyBytecodeStack.pop_back();
-    } else {
-        // No finally block, so the captured jumps are never re-routed through
-        // anything — put them back where they came from. They are ordinary
-        // forward jumps to the loop exit / continue target and only need the
-        // normal patching performed when their loop finishes compiling.
-        // Dropping them left the OP_JUMP operand bytes at their 0xFF
-        // placeholder, so a `break` inside a try (with no finally) jumped into
-        // the middle of an unrelated instruction ("Unknown opcode").
-        for (const auto& cj : capturedBreaks) {
-            loopStack[static_cast<size_t>(cj.loopIdx)].breakJumps.push_back(cj.offset);
-        }
-        for (const auto& cj : capturedContinues) {
-            loopStack[static_cast<size_t>(cj.loopIdx)].continueJumps.push_back(cj.offset);
-        }
     }
 }
 

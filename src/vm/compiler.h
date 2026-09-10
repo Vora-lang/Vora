@@ -547,9 +547,41 @@ private:
         /// exits; handlers enclosing the target loop must survive, because
         /// control flow stays within their try block.
         int tryDepthAtEntry = 0;
+        /// @brief A non-local exit jump that still owes an enclosing finally.
+        ///
+        /// Only produced when the exit site sits inside a try that has a
+        /// finally clause. The abandoned locals must stay live until the
+        /// finally has run, so the exit is split into a pre-jump, a cleanup
+        /// landing pad, and the real exit jump; this record carries the two
+        /// addresses the finally layer needs.
+        struct PreJump {
+            size_t jumpOffset;  ///< OP_JUMP placeholder, redirected into the finally chain.
+            size_t cleanupPad;  ///< Pad to run after the chain (sits before these replays).
+        };
+        std::vector<PreJump> preJumps;       ///< Exit jumps still waiting for a finally replay.
     };
 
     std::vector<LoopContext> loopStack;      ///< Stack of active loop contexts (innermost at back).
+
+    /// @brief Emit the jumps that leave loop level @p loopIdx for break/continue.
+    ///
+    /// Outside any finally this is a single forward jump to the loop exit (or
+    /// continue target), registered for the loop to patch when it finishes, and
+    /// the abandoned locals are popped right before it.
+    ///
+    /// Inside a try that has a finally that order is wrong: the finally has to
+    /// run while those locals are still live, or a finally that reads one of
+    /// them evaluates its own expressions into recycled slots and sees garbage.
+    /// So the exit becomes
+    ///     pre-jump -> (finally chain) -> cleanup pad -> exit jump
+    /// where the pre-jump is patched to a zero offset, i.e. it falls straight
+    /// through to the pad, which is what happens whenever no enclosing finally
+    /// claims it.
+    ///
+    /// @param loopIdx Index into loopStack of the loop being left.
+    /// @param isBreak True for break (exit jump goes to the loop exit), false
+    ///                for continue (it goes to the continue target).
+    void emitLoopExit(size_t loopIdx, bool isBreak);
 
     /// @brief Close upvalues and count slots for a jump out of loop level @p loopIdx.
     ///

@@ -1,0 +1,345 @@
+// runtime/test_finally_locals_visibility.va — a finally must see live locals
+// Run: vora tests/runtime/test_finally_locals_visibility.va
+//
+// Regression tests for Bug F: break/continue popped the abandoned locals
+// *before* jumping to the finally replay, so a finally that read one of them
+// evaluated its own expressions into recycled slots and saw garbage. The loop
+// variable of a for-in made it obvious:
+//
+//     let trace = ""
+//     for i in [1, 2, 3] {
+//         try { trace = trace + "b" + toString(i); if (i == 2) { break } }
+//         finally { trace = trace + "f" + toString(i) }
+//     }
+//     print(trace)   // was b1f1b2f<native fn toString>, expected b1f1b2f2
+//
+// The exit is now split: a pre-jump enters the finally chain while the locals
+// are still live, the chain falls back to a cleanup pad, and only then does the
+// real exit jump run.
+//
+// Which cases actually failed before the fix: the finally's own evaluation
+// pushes onto the stack starting at the abandoned region's base, so it clobbers
+// the *lowest* abandoned local first. Deeper ones survive by luck (their slots
+// are above the pushes). So the manifesting cases are a finally that reads
+//   - the for-in loop variable,
+//   - the C-style for's initializer local, or
+//   - the first local declared in a while / do-while body,
+// and those are the ones below that were verified failing against the
+// pre-fix build. The rest pin down the new exit shape: execution counts,
+// ordering, and that the cleanup pad is not reachable from the normal path.
+
+print("=== Runtime: finally locals visibility Tests ===")
+
+// ---------------------------------------------------------------------------
+// The original repro: a finally reading the for-in loop variable
+// ---------------------------------------------------------------------------
+func finallySeesLoopVariable() {
+    let trace = ""
+    for i in [1, 2, 3] {
+        try {
+            trace = trace + "b" + toString(i)
+            if (i == 2) { break }
+        } finally {
+            trace = trace + "f" + toString(i)
+        }
+    }
+    return trace
+}
+assert(finallySeesLoopVariable() == "b1f1b2f2", "finally reads the for-in loop variable")
+
+// ---------------------------------------------------------------------------
+// Same for continue, and for the other loop kinds
+// ---------------------------------------------------------------------------
+func finallySeesLoopVariableContinue() {
+    let trace = ""
+    for i in [1, 2, 3] {
+        try {
+            trace = trace + "b" + toString(i)
+            if (i < 3) { continue }
+        } finally {
+            trace = trace + "f" + toString(i)
+        }
+        trace = trace + "z"
+    }
+    return trace
+}
+assert(finallySeesLoopVariableContinue() == "b1f1b2f2b3f3z",
+       "finally reads the loop variable on continue")
+
+func finallySeesWhileCounter() {
+    let trace = ""
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        try {
+            trace = trace + "b" + toString(i)
+            if (i == 2) { break }
+        } finally {
+            trace = trace + "f" + toString(i)
+        }
+    }
+    return trace
+}
+assert(finallySeesWhileCounter() == "b1f1b2f2", "finally reads the while counter")
+
+// The *first* local declared in a while body is the lowest abandoned one, so it
+// is the first slot the finally's own evaluation overwrites — this is the
+// while-loop form of the bug.
+func finallySeesWhileBodyLocal() {
+    let trace = ""
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        let v = i
+        try {
+            trace = trace + "b" + toString(v)
+            if (i == 2) { break }
+        } finally {
+            trace = trace + "f" + toString(v)
+        }
+    }
+    return trace
+}
+assert(finallySeesWhileBodyLocal() == "b1f1b2f2", "finally reads a while body's first local")
+
+func finallySeesDoWhileBodyLocal() {
+    let trace = ""
+    let i = 0
+    do {
+        i = i + 1
+        let v = i
+        try {
+            trace = trace + "b" + toString(v)
+            if (i == 2) { break }
+        } finally {
+            trace = trace + "f" + toString(v)
+        }
+    } while (i < 3)
+    return trace
+}
+assert(finallySeesDoWhileBodyLocal() == "b1f1b2f2", "finally reads a do-while body's first local")
+
+func finallySeesCForCounter() {
+    let trace = ""
+    for (let i = 0; i < 3; i = i + 1) {
+        try {
+            trace = trace + "b" + toString(i)
+            if (i == 1) { break }
+        } finally {
+            trace = trace + "f" + toString(i)
+        }
+    }
+    return trace
+}
+assert(finallySeesCForCounter() == "b0f0b1f1", "finally reads the C-for counter")
+
+func finallySeesDoWhileCounter() {
+    let trace = ""
+    let i = 0
+    do {
+        i = i + 1
+        try {
+            trace = trace + "b" + toString(i)
+            if (i == 2) { break }
+        } finally {
+            trace = trace + "f" + toString(i)
+        }
+    } while (i < 3)
+    return trace
+}
+assert(finallySeesDoWhileCounter() == "b1f1b2f2", "finally reads the do-while counter")
+
+// ---------------------------------------------------------------------------
+// A loop-body local declared with let, on every exit path
+// ---------------------------------------------------------------------------
+func finallySeesBodyLocal() {
+    let trace = ""
+    for i in [1, 2, 3] {
+        let v = i
+        try {
+            trace = trace + "b" + toString(v)
+            if (i == 2) { break }
+        } finally {
+            trace = trace + "f" + toString(v)
+        }
+    }
+    return trace
+}
+assert(finallySeesBodyLocal() == "b1f1b2f2", "finally reads a body local")
+
+// ---------------------------------------------------------------------------
+// A local that a closure captured: the finally must see it, and the closure
+// must still hold the value from its own iteration afterwards
+// ---------------------------------------------------------------------------
+func finallySeesCapturedLocal() {
+    let trace = ""
+    let fns = []
+    for i in [1, 2] {
+        let v = i
+        fns.add(func() { return v })
+        try {
+            trace = trace + "b" + toString(v)
+            if (i == 1) { continue }
+        } finally {
+            trace = trace + "f" + toString(v)
+        }
+    }
+    return [trace, fns[0](), fns[1]()]
+}
+let captured = finallySeesCapturedLocal()
+assert(captured[0] == "b1f1b2f2", "finally reads a captured local")
+assert(captured[1] == 1, "closure keeps the first iteration's value")
+assert(captured[2] == 2, "closure keeps the second iteration's value")
+
+// ---------------------------------------------------------------------------
+// Execution counts: exactly once per exit, and the loop runs the right number
+// of iterations (the cleanup pad must not be reachable from the normal path)
+// ---------------------------------------------------------------------------
+func finallyRunsOncePerIteration() {
+    let runs = 0
+    let iterations = 0
+    for i in [1, 2, 3] {
+        iterations = iterations + 1
+        try {
+            if (i == 3) { break }
+        } finally {
+            runs = runs + 1
+        }
+    }
+    return runs * 100 + iterations
+}
+assert(finallyRunsOncePerIteration() == 303, "finally runs once per iteration (3 runs, 3 iterations)")
+
+func breakAfterSeveralIterations() {
+    let runs = 0
+    let iterations = 0
+    let i = 0
+    while (i < 10) {
+        i = i + 1
+        iterations = iterations + 1
+        try {
+            if (i == 4) { break }
+        } finally {
+            runs = runs + 1
+        }
+    }
+    return runs * 100 + iterations
+}
+assert(breakAfterSeveralIterations() == 404, "finally runs once per iteration up to the break")
+
+func finallyRunsOnReturn() {
+    let runs = 0
+    let iterations = 0
+    for i in [1, 2, 3] {
+        iterations = iterations + 1
+        try {
+            if (i == 2) { return runs * 100 + iterations }
+        } finally {
+            runs = runs + 1
+        }
+    }
+    return -1
+}
+assert(finallyRunsOnReturn() == 102, "finally runs once before the returning iteration's return")
+
+// ---------------------------------------------------------------------------
+// Nested finallys: both run, innermost first, and both see the live local
+// ---------------------------------------------------------------------------
+func nestedFinallyOrder() {
+    let trace = ""
+    for i in [1, 2, 3] {
+        let v = i
+        try {
+            try {
+                trace = trace + "b" + toString(v)
+                if (i == 2) { break }
+            } finally {
+                trace = trace + "i" + toString(v)
+            }
+        } finally {
+            trace = trace + "o" + toString(v)
+        }
+        trace = trace + "z"
+    }
+    return trace
+}
+assert(nestedFinallyOrder() == "b1i1o1zb2i2o2",
+       "nested finallys run innermost first, both seeing the live local")
+
+// ---------------------------------------------------------------------------
+// Three levels deep on a continue
+// ---------------------------------------------------------------------------
+func tripleNestedFinally() {
+    let trace = ""
+    for i in [1, 2] {
+        let v = i
+        try {
+            try {
+                try {
+                    trace = trace + "b" + toString(v)
+                    continue
+                } finally {
+                    trace = trace + "1"
+                }
+            } finally {
+                trace = trace + "2"
+            }
+        } finally {
+            trace = trace + "3"
+        }
+    }
+    return trace
+}
+assert(tripleNestedFinally() == "b1123b2123", "three nested finallys run on continue, innermost first")
+
+// ---------------------------------------------------------------------------
+// A finally that reads a local of an *outer* loop, from inside an inner loop
+// ---------------------------------------------------------------------------
+func finallySeesOuterLocal() {
+    let trace = ""
+    for i in [1, 2] {
+        let outer = i
+        for j in [1, 2] {
+            let inner = j
+            try {
+                trace = trace + "b" + toString(outer) + toString(inner)
+                if (j == 1) { continue }
+            } finally {
+                trace = trace + "f" + toString(outer) + toString(inner)
+            }
+        }
+    }
+    return trace
+}
+assert(finallySeesOuterLocal() == "b11f11b12f12b21f21b22f22",
+       "finally reads both outer and inner locals")
+
+// ---------------------------------------------------------------------------
+// Control: a loop whose try has no finally keeps the old shape
+// ---------------------------------------------------------------------------
+func noFinallyUnchanged() {
+    let n = 0
+    for i in [1, 2, 3, 4] {
+        if (i == 3) { break }
+        n = n + i
+    }
+    return n
+}
+assert(noFinallyUnchanged() == 3, "control: loop without finally")
+
+func finallyWithoutJump() {
+    let runs = 0
+    let n = 0
+    for i in [1, 2, 3] {
+        n = n + i
+        try {
+            n = n + 1
+        } finally {
+            runs = runs + 1
+        }
+    }
+    return n * 100 + runs
+}
+assert(finallyWithoutJump() == 903, "control: finally with no non-local exit")
+
+print("Runtime finally locals visibility tests: PASS")
