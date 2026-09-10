@@ -1018,7 +1018,9 @@ void Compiler::visitWhileStmt(const WhileStmt& stmt) {
     // Push loop context for break/continue.
     // continueTarget is the back edge at the end of the body, which is not
     // known yet; continue jumps forward to it (see visitContinueStmt).
+    noteLoopLabel(stmt.label);
     loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 0, 0, tryNesting, finallyNesting});
+    loopStack.back().label = stmt.label;
 
     // Condition
     stmt.condition->accept(*this);
@@ -1065,7 +1067,9 @@ void Compiler::visitDoWhileStmt(const DoWhileStmt& stmt) {
     // Unlike while (where continueTarget == loopStart for backward jump),
     // do-while has continue jump forward to the condition, which hasn't
     // been compiled yet. This matches the for-in/C-for pattern.
+    noteLoopLabel(stmt.label);
     loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 0, 0, tryNesting, finallyNesting});
+    loopStack.back().label = stmt.label;
 
     // --- Body (always executes at least once, unconditionally) ---
     stmt.body->accept(*this);
@@ -1138,7 +1142,9 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
     // continueTarget is the back edge at the end of the body, not known yet;
     // continue jumps forward to it (see visitContinueStmt).
     // extraLocalsToPopOnBreak = 1 (_iter), extraLocalsToPopOnContinue = 0.
+    noteLoopLabel(stmt.label);
     loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 1, 0, tryNesting, finallyNesting});
+    loopStack.back().label = stmt.label;
 
     // --- OP_PUSH_CATCH: try { let x = next(_iter); body } ---
     emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
@@ -1274,7 +1280,9 @@ void Compiler::visitCForStmt(const CForStmt& stmt) {
 
     size_t loopStart = chunk.code.size();
     // continueTarget = SIZE_MAX signals "target will be set later"
+    noteLoopLabel(stmt.label);
     loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, extraLocals, 0, tryNesting, finallyNesting});
+    loopStack.back().label = stmt.label;
 
     // --- Condition ---
     if (stmt.condition) {
@@ -1685,6 +1693,27 @@ void Compiler::emitLoopExit(size_t loopIdx, bool isBreak) {
     }
 }
 
+void Compiler::noteLoopLabel(const std::string& label) {
+    if (label.empty()) return;
+    for (const auto& lc : loopStack) {
+        if (lc.label == label) {
+            error("duplicate loop label '" + label + "'");
+            return;
+        }
+    }
+}
+
+int Compiler::resolveLoopLabel(const std::string& label, const Token& at) {
+    for (int i = static_cast<int>(loopStack.size()) - 1; i >= 0; i--) {
+        if (loopStack[static_cast<size_t>(i)].label == label) {
+            return i;
+        }
+    }
+    errorAt(at.line, at.column, 0,
+            "no enclosing loop labeled '" + label + "'");
+    return -1;
+}
+
 void Compiler::visitBreakStmt(const BreakStmt& stmt) {
     currentLine = stmt.keyword.line;
     currentColumn = stmt.keyword.column;
@@ -1693,16 +1722,25 @@ void Compiler::visitBreakStmt(const BreakStmt& stmt) {
         return;
     }
 
+    // Unlabeled: the innermost loop. Labeled: the nearest enclosing loop with
+    // that name, which may be several levels out.
+    size_t targetIdx = loopStack.size() - 1;
+    if (!stmt.targetLabel.empty()) {
+        int resolved = resolveLoopLabel(stmt.targetLabel, stmt.keyword);
+        if (resolved < 0) return;
+        targetIdx = static_cast<size_t>(resolved);
+    }
+
     // Pop the catch handlers registered inside the loops being exited. Only
     // those are skipped by the break jump; a try block that *encloses* the
     // target loop stays active, so its handler must survive. Using tryNesting
     // here would over-pop and silently disable an enclosing try/catch.
-    const int handlersToPop = tryNesting - loopStack.back().tryDepthAtEntry;
+    const int handlersToPop = tryNesting - loopStack[targetIdx].tryDepthAtEntry;
     for (int t = 0; t < handlersToPop; t++) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
     }
 
-    emitLoopExit(loopStack.size() - 1, /*isBreak=*/true);
+    emitLoopExit(targetIdx, /*isBreak=*/true);
 }
 
 void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
@@ -1713,9 +1751,16 @@ void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
         return;
     }
 
+    size_t targetIdx = loopStack.size() - 1;
+    if (!stmt.targetLabel.empty()) {
+        int resolved = resolveLoopLabel(stmt.targetLabel, stmt.keyword);
+        if (resolved < 0) return;
+        targetIdx = static_cast<size_t>(resolved);
+    }
+
     // Same reasoning as break: only handlers registered inside the loops being
     // exited are skipped by the continue jump.
-    const int handlersToPop = tryNesting - loopStack.back().tryDepthAtEntry;
+    const int handlersToPop = tryNesting - loopStack[targetIdx].tryDepthAtEntry;
     for (int t = 0; t < handlersToPop; t++) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
     }
@@ -1723,7 +1768,7 @@ void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
     // The target loop's own infrastructure locals must survive a continue (e.g.
     // the for-in iterator persists across iterations), which emitLoopExit
     // handles by using extraLocalsToPopOnContinue for this direction.
-    emitLoopExit(loopStack.size() - 1, /*isBreak=*/false);
+    emitLoopExit(targetIdx, /*isBreak=*/false);
 }
 
 void Compiler::visitTryStmt(const TryStmt& stmt) {

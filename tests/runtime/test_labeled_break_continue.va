@@ -1,0 +1,395 @@
+// runtime/test_labeled_break_continue.va — labeled break / continue
+// Run: vora tests/runtime/test_labeled_break_continue.va
+//
+// Covers syntax-review #2.8. `name: <loop>` names a loop and `break name` /
+// `continue name` target it from any nesting depth. Unlabeled break/continue
+// must keep targeting the innermost loop.
+//
+// The try/finally cases here are the ones that could not pass before the exit
+// rework: a labeled exit owes the finallys between it and its target loop, and
+// a finally must see the abandoned locals while they are still live.
+
+print("=== Runtime: labeled break / continue Tests ===")
+
+// ---------------------------------------------------------------------------
+// break out of two levels
+// ---------------------------------------------------------------------------
+func breakOuter() {
+    let log = ""
+    outer: for i in [1, 2, 3] {
+        for j in [1, 2, 3] {
+            log = log + toString(i) + toString(j)
+            if (j == 2) { break outer }
+        }
+    }
+    return log
+}
+assert(breakOuter() == "1112", "break outer leaves both loops on j == 2")
+
+// ---------------------------------------------------------------------------
+// continue the outer loop: the inner loop restarts
+// ---------------------------------------------------------------------------
+func continueOuter() {
+    let log = ""
+    for i in [1, 2] {
+        inner: for j in [1, 2] {
+            if (j == 2) { continue }
+            log = log + toString(i) + toString(j)
+        }
+    }
+    return log
+}
+assert(continueOuter() == "1121", "unlabeled continue in a named loop still inner")
+
+func continueOuterLabeled() {
+    let log = ""
+    outer: for i in [1, 2] {
+        for j in [1, 2] {
+            if (j == 2) { continue outer }
+            log = log + toString(i) + toString(j)
+        }
+    }
+    return log
+}
+assert(continueOuterLabeled() == "1121", "continue outer skips to the next outer round")
+
+// ---------------------------------------------------------------------------
+// three levels down
+// ---------------------------------------------------------------------------
+func breakOutermost() {
+    let log = ""
+    a: for i in [1, 2] {
+        for j in [1, 2] {
+            for k in [1, 2] {
+                log = log + toString(i) + toString(j) + toString(k)
+                if (k == 1) { break a }
+            }
+        }
+    }
+    return log
+}
+assert(breakOutermost() == "111", "break reaches the outermost of three loops")
+
+// ---------------------------------------------------------------------------
+// Unlabeled break/continue still act on the innermost loop
+// ---------------------------------------------------------------------------
+func unlabeledStillInnermost() {
+    let log = ""
+    for i in [1, 2] {
+        for j in [1, 2] {
+            log = log + toString(i) + toString(j)
+            if (j == 1) { continue }
+            break
+        }
+    }
+    return log
+}
+assert(unlabeledStillInnermost() == "11122122", "unlabeled jumps stay innermost")
+
+// ---------------------------------------------------------------------------
+// A labeled exit crossing an inner for-in: its _iter must be cleaned up
+// ---------------------------------------------------------------------------
+func labeledAcrossForIn() {
+    let log = ""
+    outer: for i in [1, 2, 3] {
+        for x in [10, 20] {
+            log = log + toString(i) + "/" + toString(x)
+            if (i == 2) { break outer }
+        }
+    }
+    return log
+}
+assert(labeledAcrossForIn() == "1/101/202/10", "labeled break crosses an inner for-in")
+
+// The ti < back case: the target loop is several levels out and an intermediate
+// level is a for-in, so that level's infrastructure locals are part of the pop.
+func labeledContinueAcrossForIn() {
+    let log = ""
+    a: for i in [1, 2] {
+        for x in [10, 20] {
+            for y in [1, 2] {
+                log = log + toString(y)
+                if (y == 1) { continue a }
+            }
+        }
+    }
+    return log
+}
+assert(labeledContinueAcrossForIn() == "11",
+       "labeled continue crosses a for-in intermediate level")
+
+// ---------------------------------------------------------------------------
+// Labeled exit + closures capturing loop-body locals
+// ---------------------------------------------------------------------------
+func labeledWithClosure() {
+    let log = ""
+    let fns = []
+    a: for i in [1, 2] {
+        for j in [1, 2] {
+            let v = i
+            fns.add(func() { return v })
+            log = log + toString(v)
+            if (j == 1) { continue a }
+            break a
+        }
+    }
+    return [log, fns[0](), fns[1]()]
+}
+let lc = labeledWithClosure()
+assert(lc[0] == "12", "labeled continue still captured each iteration's value")
+assert(lc[1] == 1, "first closure keeps its own value")
+assert(lc[2] == 2, "second closure keeps its own value")
+
+// ---------------------------------------------------------------------------
+// Labeled exit from inside a try whose catch does not fire
+// ---------------------------------------------------------------------------
+func labeledInTry() {
+    let log = ""
+    outer: for i in [1, 2, 3] {
+        for j in [1, 2] {
+            try {
+                log = log + toString(i) + toString(j)
+                if (i == 2) { break outer }
+            } catch (e) {
+                log = log + "X"
+            }
+        }
+    }
+    return log
+}
+assert(labeledInTry() == "111221", "labeled break from inside a try body")
+
+func labeledAcrossNoFinallyTry() {
+    let log = ""
+    outer: for i in [1, 2, 3] {
+        for j in [1, 2] {
+            try {
+                log = log + toString(i) + toString(j)
+                if (i == 2) { break outer }
+            } catch (e) {
+            }
+        }
+    }
+    return log
+}
+assert(labeledAcrossNoFinallyTry() == "111221", "labeled break across a finally-less try")
+
+// ---------------------------------------------------------------------------
+// A labeled break whose target loop is inside the try must not disturb it
+// ---------------------------------------------------------------------------
+func labeledInsideTryKeepsCatch() {
+    let log = ""
+    try {
+        outer: for i in [1, 2, 3] {
+            for j in [1, 2] {
+                log = log + toString(i) + toString(j)
+                if (i == 1) { break outer }
+            }
+        }
+        throw "boom"
+    } catch (e) {
+        log = log + "CAUGHT"
+    }
+    return log
+}
+assert(labeledInsideTryKeepsCatch() == "11CAUGHT",
+       "break out of a loop inside a try leaves that try's catch working")
+
+// ---------------------------------------------------------------------------
+// Labeled exit across a try/finally: the finally runs exactly once, and it
+// sees the loop variables that the exit abandons
+// ---------------------------------------------------------------------------
+func labeledAcrossFinally() {
+    let log = ""
+    outer: for i in [1, 2, 3] {
+        for j in [1, 2] {
+            try {
+                log = log + "b" + toString(i) + toString(j)
+                if (i == 2) { break outer }
+            } finally {
+                log = log + "f" + toString(i) + toString(j)
+            }
+        }
+    }
+    return log
+}
+assert(labeledAcrossFinally() == "b11f11b12f12b21f21",
+       "finally runs once per iteration and sees i and j on the labeled break")
+
+func labeledContinueAcrossFinally() {
+    let log = ""
+    a: for i in [1, 2] {
+        for j in [1, 2, 3] {
+            try {
+                log = log + "b" + toString(i) + toString(j)
+                if (j == 1) { continue a }
+            } finally {
+                log = log + "f" + toString(i) + toString(j)
+            }
+        }
+    }
+    return log
+}
+assert(labeledContinueAcrossFinally() == "b11f11b21f21",
+       "finally runs on a labeled continue and sees i and j")
+
+// Labeled break across two finallys, both inside the target loop
+func labeledAcrossTwoFinallys() {
+    let log = ""
+    outer: for i in [1, 2] {
+        try {
+            try {
+                for j in [1, 2] {
+                    log = log + "b" + toString(i) + toString(j)
+                    break outer
+                }
+            } finally {
+                log = log + "1"
+            }
+        } finally {
+            log = log + "2"
+        }
+    }
+    return log
+}
+assert(labeledAcrossTwoFinallys() == "b1112",
+       "labeled break runs both finallys inside the target loop, innermost first")
+
+// ---------------------------------------------------------------------------
+// Labeled exit from inside a catch block
+// ---------------------------------------------------------------------------
+func labeledFromCatch() {
+    let log = ""
+    outer: for i in [1, 2, 3] {
+        for j in [1, 2] {
+            try {
+                throw "x"
+            } catch (e) {
+                log = log + "c" + toString(i)
+                if (i == 2) { break outer }
+            } finally {
+                log = log + "f" + toString(i)
+            }
+        }
+    }
+    return log
+}
+assert(labeledFromCatch() == "c1f1c1f1c2f2", "labeled break from inside a catch block")
+
+// ---------------------------------------------------------------------------
+// The other loop kinds carry labels too
+// ---------------------------------------------------------------------------
+func labeledWhile() {
+    let log = ""
+    let n = 0
+    w: while (n < 3) {
+        n = n + 1
+        for j in [1, 2] {
+            log = log + toString(n) + toString(j)
+            if (j == 1) { continue w }
+        }
+    }
+    return log
+}
+assert(labeledWhile() == "112131", "labeled continue on a while loop")
+
+func labeledCFor() {
+    let log = ""
+    c: for (let i = 0; i < 3; i = i + 1) {
+        for j in [1, 2] {
+            log = log + toString(i) + toString(j)
+            if (j == 1) { continue c }
+        }
+    }
+    return log
+}
+assert(labeledCFor() == "011121", "labeled continue on a C-style for")
+
+func labeledDoWhile() {
+    let log = ""
+    let n = 0
+    d: do {
+        n = n + 1
+        for j in [1, 2] {
+            log = log + toString(n) + toString(j)
+            if (n == 2) { break d }
+        }
+    } while (n < 3)
+    return log
+}
+assert(labeledDoWhile() == "111221", "labeled break on a do-while")
+
+// ---------------------------------------------------------------------------
+// Nested labels, and reusing a name for a loop that is not nested
+// ---------------------------------------------------------------------------
+func nestedLabels() {
+    let log = ""
+    a: for i in [1, 2] {
+        b: for j in [1, 2] {
+            for k in [1, 2] {
+                log = log + toString(k)
+                if (k == 1) { continue b }
+                break a
+            }
+        }
+    }
+    return log
+}
+assert(nestedLabels() == "1111", "inner label targets the middle loop")
+
+func labelReuseAcrossStatements() {
+    let log = ""
+    a: for i in [1, 2] {
+        log = log + toString(i)
+        break a
+    }
+    a: for i in [3, 4] {
+        log = log + toString(i)
+        break a
+    }
+    return log
+}
+assert(labelReuseAcrossStatements() == "13", "a name may be reused by a later, separate loop")
+
+// ---------------------------------------------------------------------------
+// Stack discipline of a labeled exit: any mis-pop either underflows (the VM
+// reports "Stack underflow in OP_POPN") or shifts the locals that are still
+// live. Both are visible in the values below.
+// ---------------------------------------------------------------------------
+func balanceWithManyLocals() {
+    let a = 1
+    let b = 2
+    let c = 3
+    let d = 4
+    let log = ""
+    outer: for i in [1, 2] {
+        let e = 5
+        let f = 6
+        for j in [1, 2] {
+            let g = 7
+            let h = 8
+            log = log + toString(a + b + c + d + e + f + g + h) + ","
+            if (j == 1) { continue outer }
+            break outer
+        }
+    }
+    return log
+}
+assert(balanceWithManyLocals() == "36,36,",
+       "locals outside the target loop survive a labeled exit unchanged")
+
+func repeatedLabeledExits() {
+    let n = 0
+    for round in [1, 2, 3, 4, 5] {
+        a: for i in [1, 2, 3] {
+            for j in [1, 2, 3] {
+                n = n + 1
+                if (j == 2) { break a }
+            }
+        }
+    }
+    return n
+}
+assert(repeatedLabeledExits() == 10, "five rounds of labeled exits leave no drift")
+
+print("Runtime labeled break/continue tests: PASS")

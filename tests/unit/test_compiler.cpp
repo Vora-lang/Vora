@@ -384,3 +384,66 @@ TEST_CASE("compiler_compound_assignment_complex_rhs") {
     // Multiple OP_ADD: one for the RHS, one for the compound (+=)
     CHECK(countOpcodes(chunk, OpCode::OP_ADD) >= 2);
 }
+
+// ============================================================================
+// Labeled break / continue (syntax-review #2.8)
+// ============================================================================
+
+// Helper: lex + parse + compile source that is expected NOT to compile.
+static void compileExpectingError(const std::string& src) {
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    Compiler compiler(reporter);
+    compiler.compile(prog.get());
+    CHECK(compiler.hadError);
+}
+
+TEST_CASE("compiler_break_to_unknown_label_is_an_error") {
+    // Silently ignoring an unresolvable label would change control flow.
+    compileExpectingError("for i in [1] { break nope }");
+}
+
+TEST_CASE("compiler_continue_to_unknown_label_is_an_error") {
+    compileExpectingError("for i in [1] { continue nope }");
+}
+
+TEST_CASE("compiler_duplicate_loop_label_is_an_error") {
+    // Two loops on the same nesting chain must not share a name, or the
+    // target of `break a` would be ambiguous.
+    compileExpectingError("a: for i in [1] { a: for j in [1] { break a } }");
+}
+
+TEST_CASE("compiler_label_reuse_in_separate_loops_is_allowed") {
+    // Sequential loops are not nested, so reusing a name is unambiguous.
+    auto chunk = compile("a: for i in [1] { break a } a: for j in [1] { break a }");
+    CHECK(chunk.code.size() > 0);
+}
+
+TEST_CASE("compiler_labeled_break_and_continue_compile") {
+    auto br = compile("a: for i in [1] { for j in [1] { break a } }");
+    CHECK(countOpcodes(br, OpCode::OP_POPN) > 0);
+    auto co = compile("a: for i in [1] { for j in [1] { continue a } }");
+    CHECK(countOpcodes(co, OpCode::OP_POPN) > 0);
+}
+
+TEST_CASE("compiler_labeled_exit_pops_more_than_an_unlabeled_one") {
+    // `break a` leaves the outer loop too, so it must discard the outer loop's
+    // locals as well: strictly more slots than the unlabeled break.
+    auto inner = compile("for i in [1] { for j in [1] { break } }");
+    auto outer = compile("a: for i in [1] { for j in [1] { break a } }");
+    auto maxPop = [](const Chunk& c) {
+        int m = 0;
+        for (size_t i = 0; i + 1 < c.code.size(); i++) {
+            if (c.code[i] == static_cast<uint8_t>(OpCode::OP_POPN)) {
+                m = std::max(m, static_cast<int>(c.code[i + 1]));
+            }
+        }
+        return m;
+    };
+    CHECK(maxPop(outer) > maxPop(inner));
+}
+

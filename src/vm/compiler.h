@@ -566,6 +566,9 @@ private:
             int remainingFinallys; ///< Finally blocks still owed, innermost first.
         };
         std::vector<PreJump> preJumps;       ///< Exit jumps still waiting for a finally replay.
+        /// User-supplied loop label (`name: for ...`), empty when unnamed. Used
+        /// to resolve `break <label>` / `continue <label>`.
+        std::string label;
     };
 
     std::vector<LoopContext> loopStack;      ///< Stack of active loop contexts (innermost at back).
@@ -589,6 +592,23 @@ private:
     /// @param isBreak True for break (exit jump goes to the loop exit), false
     ///                for continue (it goes to the continue target).
     void emitLoopExit(size_t loopIdx, bool isBreak);
+
+    /// @brief Enter a loop that may carry a label, rejecting a duplicate.
+    ///
+    /// Called just before pushing a loop onto loopStack, so the scan sees only
+    /// *enclosing* loops: two loops on the same chain must not share a name, or
+    /// `break <label>` would be ambiguous. Parser-level duplication is not
+    /// detectable because the parser cannot see the loop nesting at that point.
+    ///
+    /// @param label The loop's label (empty = unnamed, nothing to check).
+    void noteLoopLabel(const std::string& label);
+
+    /// @brief Resolve a `break <label>` / `continue <label>` target to a level.
+    /// @param label The label to find among the enclosing loops.
+    /// @param at    The label token, for the diagnostic position.
+    /// @return The loopStack index of the innermost loop with that label,
+    ///         or -1 after reporting an error if no enclosing loop has it.
+    int resolveLoopLabel(const std::string& label, const Token& at);
 
     /// @brief Close upvalues and count slots for a jump out of loop level @p loopIdx.
     ///

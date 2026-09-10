@@ -147,3 +147,45 @@ assert("\${escVar} = ${escVar}" == escLit + " = 5", "mixed escape and interpolat
 assert(("[E]" + "${escVar}") == "[E]5", "folded interpolation survives fmt")
 
 print("All formatter round-trip tests passed!")
+
+// Labeled loops and labeled break/continue: the label has to survive formatting
+// or these would change meaning (or stop compiling).
+let lblContinue = ""
+outer: for i in [1, 2, 3] {
+    for j in [1, 2, 3] {
+        if (j == 2) { continue outer }
+        lblContinue = lblContinue + toString(i) + toString(j)
+    }
+}
+assert(lblContinue == "112131", "labeled continue survives fmt")
+
+let lblBreak = ""
+outer2: for i in [1, 2, 3] {
+    for j in [1, 2] {
+        lblBreak = lblBreak + toString(i) + toString(j)
+        if (i == 2) { break outer2 }
+    }
+}
+assert(lblBreak == "111221", "labeled break survives fmt")
+
+let lblWhile = ""
+w: while (true) {
+    lblWhile = lblWhile + "x"
+    break w
+}
+assert(lblWhile == "x", "labeled while break survives fmt")
+
+let lblDo = ""
+d: do {
+    lblDo = lblDo + "y"
+    break d
+} while (true)
+assert(lblDo == "y", "labeled do-while break survives fmt")
+
+let lblCFor = ""
+c: for (let k = 0; k < 3; k = k + 1) {
+    lblCFor = lblCFor + toString(k)
+    if (k == 1) { continue c }
+}
+assert(lblCFor == "012", "labeled C-for continue survives fmt")
+

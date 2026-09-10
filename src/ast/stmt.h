@@ -219,15 +219,20 @@ public:
  *
  * Repeatedly evaluates `condition`; if truthy, executes `body`, then
  * re-evaluates the condition. Supports `break` and `continue` within the body.
+ *
+ * `label` names the loop for `break <label>` / `continue <label>`; empty means
+ * the loop is unnamed.
  */
 class WhileStmt : public Stmt {
 public:
     WhileStmt(
         std::unique_ptr<Expr> condition,
-        std::unique_ptr<Stmt> body
+        std::unique_ptr<Stmt> body,
+        std::string label = ""
     )
         : condition(std::move(condition)),
-          body(std::move(body)) {
+          body(std::move(body)),
+          label(std::move(label)) {
     }
 
     void        accept(StmtVisitor<void>& visitor)        const override;
@@ -236,6 +241,8 @@ public:
     std::unique_ptr<Expr> condition;  ///< Loop condition expression (checked before each iteration).
 
     std::unique_ptr<Stmt> body;       ///< Loop body executed while condition is truthy.
+
+    std::string label;                ///< Loop label for break/continue (empty = unnamed).
 };
 
 /**
@@ -244,15 +251,20 @@ public:
  * Executes `body` once unconditionally, then repeatedly evaluates `condition`;
  * if truthy, loops back to execute `body` again. Guarantees at least one
  * iteration of the body. Supports `break` and `continue` within the body.
+ *
+ * `label` names the loop for `break <label>` / `continue <label>`; empty means
+ * the loop is unnamed.
  */
 class DoWhileStmt : public Stmt {
 public:
     DoWhileStmt(
         std::unique_ptr<Expr> condition,
-        std::unique_ptr<Stmt> body
+        std::unique_ptr<Stmt> body,
+        std::string label = ""
     )
         : condition(std::move(condition)),
-          body(std::move(body)) {
+          body(std::move(body)),
+          label(std::move(label)) {
     }
 
     void        accept(StmtVisitor<void>& visitor)        const override;
@@ -261,6 +273,8 @@ public:
     std::unique_ptr<Expr> condition;  ///< Loop condition (checked after each iteration).
 
     std::unique_ptr<Stmt> body;       ///< Loop body executed at least once.
+
+    std::string label;                ///< Loop label for break/continue (empty = unnamed).
 };
 
 /**
@@ -270,6 +284,9 @@ public:
  * The loop variable `variable` is bound to each element in sequence.
  * Desugared by the compiler into a while loop using internal iterator locals.
  * Supports `break` and `continue` within the body.
+ *
+ * `label` names the loop for `break <label>` / `continue <label>`; empty means
+ * the loop is unnamed.
  */
 class ForStmt : public Stmt {
 public:
@@ -277,12 +294,14 @@ public:
         std::unique_ptr<BindingPattern> variablePattern,
         std::unique_ptr<Expr> iterable,
         std::unique_ptr<Stmt> body,
-        Token forToken
+        Token forToken,
+        std::string label = ""
     )
         : variablePattern(std::move(variablePattern)),
           iterable(std::move(iterable)),
           body(std::move(body)),
-          forToken(std::move(forToken)) {
+          forToken(std::move(forToken)),
+          label(std::move(label)) {
     }
 
     void        accept(StmtVisitor<void>& visitor)        const override;
@@ -295,6 +314,8 @@ public:
     std::unique_ptr<Stmt> body;          ///< Loop body executed for each element.
 
     Token forToken;                      ///< 'for' keyword token for error location.
+
+    std::string label;                   ///< Loop label for break/continue (empty = unnamed).
 };
 
 /**
@@ -314,12 +335,14 @@ public:
         std::unique_ptr<Stmt> initializer,
         std::unique_ptr<Expr> condition,
         std::unique_ptr<Expr> increment,
-        std::unique_ptr<Stmt> body
+        std::unique_ptr<Stmt> body,
+        std::string label = ""
     )
         : initializer(std::move(initializer)),
           condition(std::move(condition)),
           increment(std::move(increment)),
-          body(std::move(body)) {
+          body(std::move(body)),
+          label(std::move(label)) {
     }
 
     void        accept(StmtVisitor<void>& visitor)        const override;
@@ -329,6 +352,7 @@ public:
     std::unique_ptr<Expr> condition;    ///< Loop condition (nullptr = always true).
     std::unique_ptr<Expr> increment;    ///< Increment expression (nullptr = no increment).
     std::unique_ptr<Stmt> body;         ///< Loop body.
+    std::string label;                  ///< Loop label for break/continue (empty = unnamed).
 };
 
 /**
@@ -440,19 +464,25 @@ public:
  * Only valid inside while, do-while, for-in, C-style for loops, and
  * match expressions. The compiler resolves the break target by walking
  * the loop stack and back-patching jump offsets.
+ *
+ * `targetLabel` names which enclosing loop to exit (`break outer`); empty means
+ * the innermost one.
  */
 class BreakStmt : public Stmt {
 public:
     /// @brief Construct a BreakStmt.
-    /// @param keyword  The 'break' token for source position.
-    explicit BreakStmt(Token keyword)
-        : keyword(std::move(keyword)) {
+    /// @param keyword      The 'break' token for source position.
+    /// @param targetLabel  Label of the loop to exit (empty = innermost).
+    explicit BreakStmt(Token keyword, std::string targetLabel = "")
+        : keyword(std::move(keyword)), targetLabel(std::move(targetLabel)) {
     }
 
     void        accept(StmtVisitor<void>& visitor)        const override;
     std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     Token keyword;  ///< The 'break' token for diagnostics.
+
+    std::string targetLabel;  ///< Label of the loop to exit (empty = innermost).
 };
 
 /**
@@ -461,19 +491,25 @@ public:
  * Only valid inside loops. Jumps to the loop's condition check (while/do-while/
  * for) or increment clause (C-style for). The compiler resolves the continue
  * target via the loop stack.
+ *
+ * `targetLabel` names which enclosing loop to continue (`continue outer`); empty
+ * means the innermost one.
  */
 class ContinueStmt : public Stmt {
 public:
     /// @brief Construct a ContinueStmt.
-    /// @param keyword  The 'continue' token for source position.
-    explicit ContinueStmt(Token keyword)
-        : keyword(std::move(keyword)) {
+    /// @param keyword      The 'continue' token for source position.
+    /// @param targetLabel  Label of the loop to continue (empty = innermost).
+    explicit ContinueStmt(Token keyword, std::string targetLabel = "")
+        : keyword(std::move(keyword)), targetLabel(std::move(targetLabel)) {
     }
 
     void        accept(StmtVisitor<void>& visitor)        const override;
     std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     Token keyword;  ///< The 'continue' token for diagnostics.
+
+    std::string targetLabel;  ///< Label of the loop to continue (empty = innermost).
 };
 
 /**

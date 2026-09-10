@@ -157,6 +157,39 @@ std::unique_ptr<Expr> Parser::expression() {
 
 std::unique_ptr<Stmt> Parser::statement() {
 
+    // Labeled loop: `name: for (...) { ... }` / `while` / `do`.
+    //
+    // `IDENT COLON` is not valid at the start of a statement otherwise (it
+    // fails as "Unexpected token: :"), so two-token lookahead is unambiguous.
+    // Labels only attach to loops: with no `goto`, a label on anything else
+    // could never be the target of a jump, so it is rejected rather than
+    // accepted-and-ignored.
+    if (check(TokenType::IDENTIFIER) && peekNext().type == TokenType::COLON) {
+        Token labelTok = advance();   // the label identifier
+        advance();                    // ':'
+
+        if (!(check(TokenType::WHILE) || check(TokenType::DO) ||
+              check(TokenType::FOR))) {
+            error("labeled statement must be a loop (while / do-while / for)");
+        }
+
+        auto inner = statement();
+        if (inner) {
+            // Attach the label to whichever loop kind was parsed.
+            if (auto* w = dynamic_cast<WhileStmt*>(inner.get())) {
+                w->label = labelTok.lexeme;
+            } else if (auto* d = dynamic_cast<DoWhileStmt*>(inner.get())) {
+                d->label = labelTok.lexeme;
+            } else if (auto* f = dynamic_cast<ForStmt*>(inner.get())) {
+                f->label = labelTok.lexeme;
+            } else if (auto* c = dynamic_cast<CForStmt*>(inner.get())) {
+                c->label = labelTok.lexeme;
+            }
+            return inner;
+        }
+        return errorStmt("Expected a loop after label");
+    }
+
     if (match(TokenType::LET)) {
         return letStatement();
     }
@@ -2601,14 +2634,32 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
 // BREAK / CONTINUE
 // =========================
 
+// `break` / `continue` may name their target loop. The identifier counts as a
+// label only when it is on the *same line* as the keyword — matching the
+// Go-style ASI rule used elsewhere (see the newline test in parsePrecedence), so
+//
+//     break
+//     foo()
+//
+// stays two statements rather than becoming `break foo`.
 std::unique_ptr<Stmt> Parser::breakStatement() {
-    auto stmt = std::make_unique<BreakStmt>(previous());
+    Token keyword = previous();
+    std::string targetLabel;
+    if (check(TokenType::IDENTIFIER) && peek().line == keyword.line) {
+        targetLabel = advance().lexeme;
+    }
+    auto stmt = std::make_unique<BreakStmt>(keyword, targetLabel);
     match(TokenType::SEMICOLON);  // optional — `break` and `break;` are both valid
     return stmt;
 }
 
 std::unique_ptr<Stmt> Parser::continueStatement() {
-    auto stmt = std::make_unique<ContinueStmt>(previous());
+    Token keyword = previous();
+    std::string targetLabel;
+    if (check(TokenType::IDENTIFIER) && peek().line == keyword.line) {
+        targetLabel = advance().lexeme;
+    }
+    auto stmt = std::make_unique<ContinueStmt>(keyword, targetLabel);
     match(TokenType::SEMICOLON);  // optional — `continue` and `continue;` are both valid
     return stmt;
 }

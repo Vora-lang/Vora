@@ -1512,4 +1512,106 @@ TEST_CASE("parser_match_or_pattern_still_works_after_bitwise") {
     CHECK(me->cases[0].patterns.size() == 3);
 }
 
+// ============================================================================
+// Labeled loops and labeled break / continue (syntax-review #2.8)
+// ============================================================================
+
+// Helper: lex + parse, exposing the parser so hasError() can be checked.
+static bool parseHasError(const std::string& src) {
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.parse();
+    return parser.hasError();
+}
+
+TEST_CASE("parser_labeled_loop_attaches_label_to_each_loop_kind") {
+    auto* w = dynamic_cast<WhileStmt*>(
+        parse("outer: while (true) { break outer }")->statements[0].get());
+    REQUIRE(w != nullptr);
+    CHECK(w->label == "outer");
+
+    auto* d = dynamic_cast<DoWhileStmt*>(
+        parse("outer: do { break outer } while (true)")->statements[0].get());
+    REQUIRE(d != nullptr);
+    CHECK(d->label == "outer");
+
+    auto* f = dynamic_cast<ForStmt*>(
+        parse("outer: for i in [1] { break outer }")->statements[0].get());
+    REQUIRE(f != nullptr);
+    CHECK(f->label == "outer");
+
+    auto* c = dynamic_cast<CForStmt*>(
+        parse("outer: for (let i = 0; i < 1; i = i + 1) { break outer }")
+            ->statements[0].get());
+    REQUIRE(c != nullptr);
+    CHECK(c->label == "outer");
+}
+
+TEST_CASE("parser_unlabeled_loop_has_empty_label") {
+    auto* w = dynamic_cast<WhileStmt*>(
+        parse("while (true) { break }")->statements[0].get());
+    REQUIRE(w != nullptr);
+    CHECK(w->label.empty());
+}
+
+TEST_CASE("parser_break_and_continue_carry_target_label") {
+    auto prog = parse(
+        "a: while (true) { while (true) { break a; continue a } }");
+    REQUIRE(prog != nullptr);
+    auto* outer = dynamic_cast<WhileStmt*>(prog->statements[0].get());
+    REQUIRE(outer != nullptr);
+    auto* outerBody = dynamic_cast<BlockStmt*>(outer->body.get());
+    REQUIRE(outerBody != nullptr);
+    auto* inner = dynamic_cast<WhileStmt*>(outerBody->statements[0].get());
+    REQUIRE(inner != nullptr);
+    auto* innerBody = dynamic_cast<BlockStmt*>(inner->body.get());
+    REQUIRE(innerBody != nullptr);
+    REQUIRE(innerBody->statements.size() == 2);
+
+    auto* br = dynamic_cast<BreakStmt*>(innerBody->statements[0].get());
+    REQUIRE(br != nullptr);
+    CHECK(br->targetLabel == "a");
+
+    auto* co = dynamic_cast<ContinueStmt*>(innerBody->statements[1].get());
+    REQUIRE(co != nullptr);
+    CHECK(co->targetLabel == "a");
+}
+
+TEST_CASE("parser_unlabeled_break_has_empty_target_label") {
+    auto prog = parse("while (true) { break }");
+    auto* w = dynamic_cast<WhileStmt*>(prog->statements[0].get());
+    auto* body = dynamic_cast<BlockStmt*>(w->body.get());
+    auto* br = dynamic_cast<BreakStmt*>(body->statements[0].get());
+    REQUIRE(br != nullptr);
+    CHECK(br->targetLabel.empty());
+}
+
+TEST_CASE("parser_break_identifier_on_the_next_line_is_a_separate_statement") {
+    // Go-style ASI: only an identifier on the *same* line is a label, so
+    // `break` followed by `foo()` on the next line stays two statements.
+    auto prog = parse("for i in [1] {\n    break\n    foo()\n}");
+    REQUIRE(prog != nullptr);
+    auto* f = dynamic_cast<ForStmt*>(prog->statements[0].get());
+    REQUIRE(f != nullptr);
+    auto* body = dynamic_cast<BlockStmt*>(f->body.get());
+    REQUIRE(body != nullptr);
+    REQUIRE(body->statements.size() == 2);
+
+    auto* br = dynamic_cast<BreakStmt*>(body->statements[0].get());
+    REQUIRE(br != nullptr);
+    CHECK(br->targetLabel.empty());
+    CHECK(dynamic_cast<ExprStmt*>(body->statements[1].get()) != nullptr);
+}
+
+TEST_CASE("parser_label_on_a_non_loop_is_rejected") {
+    // A label with no `goto` in the language can only ever be dead weight, so
+    // the parser rejects it rather than accepting and ignoring it.
+    CHECK(parseHasError("x: if (true) { }"));
+    CHECK(parseHasError("x: print(1)"));
+    CHECK(parseHasError("x: { }"));
+    // ... but a label on a loop is fine.
+    CHECK_FALSE(parseHasError("x: while (true) { break x }"));
+}
 

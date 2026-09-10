@@ -765,6 +765,7 @@ std::string SourceFormatter::visitIfStmt(const IfStmt& stmt) {
 
 std::string SourceFormatter::visitWhileStmt(const WhileStmt& stmt) {
     std::stringstream ss;
+    if (!stmt.label.empty()) ss << stmt.label << ": ";
     ss << "while (";
     ss << formatExpr(*stmt.condition, 0);
     ss << ")";
@@ -774,6 +775,7 @@ std::string SourceFormatter::visitWhileStmt(const WhileStmt& stmt) {
 
 std::string SourceFormatter::visitDoWhileStmt(const DoWhileStmt& stmt) {
     std::stringstream ss;
+    if (!stmt.label.empty()) ss << stmt.label << ": ";
     ss << "do";
     ss << formatBlockBody(*stmt.body);
     ss << " while (";
@@ -785,6 +787,7 @@ std::string SourceFormatter::visitDoWhileStmt(const DoWhileStmt& stmt) {
 std::string SourceFormatter::visitForStmt(const ForStmt& stmt) {
     // Vora syntax: for var in expr { ... }  (no parentheses)
     std::stringstream ss;
+    if (!stmt.label.empty()) ss << stmt.label << ": ";
     ss << "for ";
     if (stmt.variablePattern) {
         ss << formatBindingPattern(*stmt.variablePattern);
@@ -800,6 +803,7 @@ std::string SourceFormatter::visitForStmt(const ForStmt& stmt) {
 std::string SourceFormatter::visitCForStmt(const CForStmt& stmt) {
     // Vora syntax: for (init; cond; incr) { ... }
     std::stringstream ss;
+    if (!stmt.label.empty()) ss << stmt.label << ": ";
     ss << "for (";
 
     // initializer
@@ -885,12 +889,16 @@ std::string SourceFormatter::visitObjStmt(const ObjStmt& stmt) {
     return ss.str();
 }
 
-std::string SourceFormatter::visitBreakStmt(const BreakStmt& /*stmt*/) {
-    return "break";
+std::string SourceFormatter::visitBreakStmt(const BreakStmt& stmt) {
+    // `break outer` — the label has to survive formatting, or the round-trip
+    // would silently change which loop is exited.
+    if (stmt.targetLabel.empty()) return "break";
+    return "break " + stmt.targetLabel;
 }
 
-std::string SourceFormatter::visitContinueStmt(const ContinueStmt& /*stmt*/) {
-    return "continue";
+std::string SourceFormatter::visitContinueStmt(const ContinueStmt& stmt) {
+    if (stmt.targetLabel.empty()) return "continue";
+    return "continue " + stmt.targetLabel;
 }
 
 std::string SourceFormatter::visitTryStmt(const TryStmt& stmt) {
