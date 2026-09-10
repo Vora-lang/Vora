@@ -1614,6 +1614,7 @@ int Parser::getPrecedence(TokenType type) const {
         case TokenType::MULTIPLY_EQUAL:
         case TokenType::DIVIDE_EQUAL:
         case TokenType::MODULO_EQUAL:
+        case TokenType::POWER_EQUAL:
             return 1; // lowest, right-associative handled in Pratt
 
         case TokenType::OR:
@@ -2436,7 +2437,8 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
              op.type == TokenType::MINUS_EQUAL ||
              op.type == TokenType::MULTIPLY_EQUAL ||
              op.type == TokenType::DIVIDE_EQUAL ||
-             op.type == TokenType::MODULO_EQUAL);
+             op.type == TokenType::MODULO_EQUAL ||
+             op.type == TokenType::POWER_EQUAL);
 
         int nextPrec = opPrec - (rightAssociative ? 1 : 0);
 
@@ -2516,14 +2518,15 @@ std::unique_ptr<Expr> Parser::parsePrecedence(int precedence) {
         }
 
         // =========================
-        // COMPOUND ASSIGNMENT (+=, -=, *=, /=, %=)
+        // COMPOUND ASSIGNMENT (+=, -=, *=, /=, %=, **=)
         // Preserved as first-class AST node (not desugared).
         // =========================
         if (op.type == TokenType::PLUS_EQUAL ||
             op.type == TokenType::MINUS_EQUAL ||
             op.type == TokenType::MULTIPLY_EQUAL ||
             op.type == TokenType::DIVIDE_EQUAL ||
-            op.type == TokenType::MODULO_EQUAL) {
+            op.type == TokenType::MODULO_EQUAL ||
+            op.type == TokenType::POWER_EQUAL) {
 
             // Validate target: VariableExpr, PropertyExpr, or IndexExpr
             if (dynamic_cast<VariableExpr*>(left.get()) ||

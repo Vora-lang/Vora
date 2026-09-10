@@ -16,6 +16,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::PLUS_PLUS: return "PLUS_PLUS";
         case TokenType::MINUS_MINUS: return "MINUS_MINUS";
         case TokenType::POWER: return "POWER";
+        case TokenType::POWER_EQUAL: return "POWER_EQUAL";
         case TokenType::AMPERSAND: return "AMPERSAND";
         case TokenType::CARET: return "CARET";
         case TokenType::TILDE: return "TILDE";

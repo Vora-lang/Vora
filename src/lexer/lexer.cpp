@@ -323,7 +323,12 @@ namespace vora {
 
         case '*':
             if (match('*')) {
-                addToken(TokenType::POWER);
+                if (match('=')) {
+                    addToken(TokenType::POWER_EQUAL);
+                }
+                else {
+                    addToken(TokenType::POWER);
+                }
             }
             else if (match('=')) {
                 addToken(TokenType::MULTIPLY_EQUAL);

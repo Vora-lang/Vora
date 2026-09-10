@@ -433,6 +433,7 @@ void Compiler::visitCompoundAssignmentExpr(const CompoundAssignmentExpr& expr) {
         case TokenType::MULTIPLY_EQUAL: binOp = static_cast<uint8_t>(OpCode::OP_MUL_NN);  break;
         case TokenType::DIVIDE_EQUAL:   binOp = static_cast<uint8_t>(OpCode::OP_DIV_NN);  break;
         case TokenType::MODULO_EQUAL:   binOp = static_cast<uint8_t>(OpCode::OP_MOD_NN);  break;
+        case TokenType::POWER_EQUAL:    binOp = static_cast<uint8_t>(OpCode::OP_POWER);   break;
         default: return;
     }
 

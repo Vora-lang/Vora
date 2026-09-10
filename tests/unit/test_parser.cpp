@@ -1345,6 +1345,14 @@ TEST_CASE("parser_bitwise_and") {
     CHECK(bin->op.type == TokenType::AMPERSAND);
 }
 
+TEST_CASE("parser_power_equal") {
+    auto expr = parseExpr("x **= 3");
+    REQUIRE(expr != nullptr);
+    auto* compound = dynamic_cast<CompoundAssignmentExpr*>(expr.get());
+    REQUIRE(compound != nullptr);
+    CHECK(compound->op.type == TokenType::POWER_EQUAL);
+}
+
 TEST_CASE("parser_bitwise_or") {
     auto expr = parseExpr("5 | 2");
     REQUIRE(expr != nullptr);

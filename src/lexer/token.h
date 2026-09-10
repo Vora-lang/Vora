@@ -64,6 +64,7 @@ namespace vora {
         MULTIPLY_EQUAL, ///< '*='  Multiply-assign
         DIVIDE_EQUAL,   ///< '/='  Divide-assign
         MODULO_EQUAL,   ///< '%='  Modulo-assign
+        POWER_EQUAL,    ///< '**=' Power-assign
 
         // ---- Comparison / logical operators ----
 

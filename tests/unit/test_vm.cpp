@@ -460,6 +460,37 @@ TEST_CASE("vm_bitwise_and_or_xor") {
     CHECK(vm.getGlobal("f").asInt() == 6);
 }
 
+TEST_CASE("vm_power_equal") {
+    // NOTE: `**` always yields float in Vora (same as the bare `**`
+    // operator), so `**=` results are floats too — assert via asDouble.
+    auto [result, vm] = run(
+        "let x = 2;"
+        "x **= 3;"   // 2^3 = 8
+        "x;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(vm.getGlobal("x").asDouble() == doctest::Approx(8.0));
+
+    auto [r2, vm2] = run(
+        "let y = 9;"
+        "y **= 0.5;" // 9^0.5 = 3.0
+        "y;"
+    );
+    REQUIRE(r2 == InterpretResult::OK);
+    CHECK(vm2.getGlobal("y").asDouble() == doctest::Approx(3.0));
+
+    // right-associativity chains like other compound assignments
+    auto [r3, vm3] = run(
+        "let a = 2;"
+        "let b = 3;"
+        "a **= b **= 2;"  // b = 3^2 = 9, a = 2^9 = 512
+        "a + b;"
+    );
+    REQUIRE(r3 == InterpretResult::OK);
+    CHECK(vm3.getGlobal("a").asDouble() == doctest::Approx(512.0));
+    CHECK(vm3.getGlobal("b").asDouble() == doctest::Approx(9.0));
+}
+
 TEST_CASE("vm_bitwise_not") {
     auto [result, vm] = run(
         "let a = ~5;"   // ~0b0101 = -6

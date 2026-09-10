@@ -96,6 +96,22 @@ TEST_CASE("lexer_compound_assignment") {
     CHECK(t[4].type == TokenType::MODULO_EQUAL);
 }
 
+TEST_CASE("lexer_power_equal") {
+    // '**=' is one token, not POWER + EQUAL
+    auto t = scan("**=");
+    REQUIRE(t.size() >= 2);
+    CHECK(t[0].type == TokenType::POWER_EQUAL);
+
+    // '**' and '*=' still lex correctly around the new token
+    auto u = scan("2 ** 3");
+    CHECK(u[0].type == TokenType::NUMBER);
+    CHECK(u[1].type == TokenType::POWER);
+    CHECK(u[2].type == TokenType::NUMBER);
+
+    auto v = scan("2 *=");
+    CHECK(v[1].type == TokenType::MULTIPLY_EQUAL);
+}
+
 TEST_CASE("lexer_two_equals_vs_equal_equal") {
     // "= =" — two separate EQUAL tokens (space-separated)
     auto t = scan("= =");

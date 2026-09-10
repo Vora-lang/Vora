@@ -23,6 +23,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 > longer resolvable on `main`. This section is the authoritative record.
 
 ### Added
+- **`**=` power-assignment** (Phase 1, syntax-review #2.6): `POWER_EQUAL`
+  token (lexed as one token, distinct from `**` and `*=`); parser accepts it
+  as a right-associative compound assignment; compiler maps it to `OP_POWER`.
+  Works on variables, properties, and indices; result is **float** since the
+  bare `**` operator is float (`2 ** 3` → `8.0`).
+  Tests: `tests/runtime/test_compound_assign.va` + lexer/parser/VM units.
 - **Bitwise operators `&` `|` `^` `~` `<<` `>>`** (Phase 1 P1-F):
   - Lexer: 5 new tokens (`AMPERSAND`, `CARET`, `TILDE`, `LESS_LESS`,
     `GREATER_GREATER`); `PIPE` reused from P1-B (bitwise OR in expressions,
@@ -183,7 +189,7 @@ from `git log --oneline` on `main` and from `docs/08-已实现功能总结.md`
 > named-argument handling (lock-in decision), silent `import` binding
 > derivation, bitwise operators (`&` `|` `^` `~` `<<` `>>`), and
 > list/dict comprehensions (verified working at Phase 1 P1-A).
-> Still open at time of writing: `**=`, `\$` interpolation escape, `not`
+> Still open at time of writing: `\$` interpolation escape, `not`
 > keyword, labeled break/continue, `let` without initializer, object-literal
 > shorthand, stdlib expansion, DAP server (verify against Vora-LSP repo).
 
@@ -200,7 +206,7 @@ of `ed722dd`.
 | `import "foo-bar.V"` | BROKEN → silent subtraction | Binding name derived from path string; `-` is operator, not part of identifier. |
 | `?:` precedence vs `\|\|` | WRONG ORDERING | `a \|\| b ? c : d` parses as `(a \|\| b) ? c : d`, opposite of C/JS/Python. |
 | `^`, `\|`, `&`, `~` (bitwise) | NOT IMPLEMENTED | Token list comment in `parser.h` retains dead BITWISE_OR/XOR/AND levels. |
-| `**`, `**=` | NOT IMPLEMENTED |  |
+| `**`, `**=` | `**` works; `**=` added Phase 1 | Assignment form (`**=`) shipped 2026-09; `**` yields float. |
 | Walrus `:=` | NOT IMPLEMENTED | (Listed as "non-goal" in roadmap.) |
 | Char type | NOT IMPLEMENTED | (Listed as "non-goal".) |
 | `std/http`, `std/net`, `std/path`, `std/process` | NOT IMPLEMENTED | Modules do not exist in `std/`. |

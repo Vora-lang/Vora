@@ -1,6 +1,6 @@
 // =========================================================================
 // test_compound_assign.va — Compound assignment runtime tests
-// Tests: +=, -=, *=, /=, %= on variables, properties, and indices
+// Tests: +=, -=, *=, /=, %=, **= on variables, properties, and indices
 // =========================================================================
 
 // --- Variable compound assignment ---
@@ -81,6 +81,41 @@ assert(a == 5, "a += (b += 5) should give a = 5")
 let y = 1
 y += 2 * 3 + 4
 assert(y == 11, "y += 2 * 3 + 4 should be 1 + 6 + 4 = 11")
+
+// --- Power assignment (**=) ---
+// Note: `**` always yields float in Vora, so `**=` results are floats.
+let p = 2
+p **= 3
+assert(p == 8, "p **= 3 should be 2^3 = 8")
+
+let q = 9
+q **= 0.5
+assert(q > 2.99 and q < 3.01, "q **= 0.5 should be sqrt(9) = 3")
+
+let r = 5
+r **= 2
+r **= 2
+assert(r == 625, "5^2=25 then 25^2=625")
+
+// **= on a property
+Obj Acc() {
+    this.v = 3
+}
+let acc = Acc()
+acc.v **= 2
+assert(acc.v == 9, "acc.v **= 2 should be 9")
+
+// **= on an index
+let nums2 = [2, 3]
+nums2[0] **= 10
+assert(nums2[0] == 1024, "nums2[0] **= 10 should be 2^10 = 1024")
+
+// **= right-associative chaining
+let ca = 2
+let cb = 3
+ca **= cb **= 2
+assert(cb == 9, "cb **= 2 should be 3^2 = 9")
+assert(ca == 512, "ca **= (cb **= 2) should be 2^9 = 512")
 
 // --- Division and modulo ---
 let d = 100
