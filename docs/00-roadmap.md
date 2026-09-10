@@ -122,11 +122,12 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
     precedence 低于等值高于关系，见 EBNF §6；移位计数夹取；tests/runtime/test_bitwise.va + 三层单测锁定）
 [X] `**=` 幂赋值（2.6；POWER_EQUAL token + compiler 映射 OP_POWER；右侧 float 语义与裸 `**` 一致；
     tests/runtime/test_compound_assign.va + 三层单测）
+[X] `let x` 免初始化声明（2.7；无初值绑定 null，`let a:int` 等价 `let a:int = null` 得零值；
+    const 仍强制初始化；tests/runtime/test_declarations.va + parser 单测）
 
 Phase 1 剩余（语法评审第 5 节"第三批"项，尚未纳入本清单，实测确认仍未解决）：
   [ ] 插值转义 `\$`（实测 `\${x}` → `\5`，反斜杠保留且插值照常；EBNF §2.3 已改正声明）
   [ ] `not` 关键字（2.9：与 `and`/`or` 配齐）
-  [ ] `let x` 免初始化声明（2.7）
   [ ] 标签 break/continue（2.8）
   [ ] 对象字面量简写 `{x}`（2.11）
 ```

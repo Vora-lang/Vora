@@ -1,0 +1,86 @@
+// =========================================================================
+// test_declarations.va — Variable declaration semantics
+// Tests: `let x` without initializer (defaults to null, syntax-review #2.7),
+//        post-declaration assignment, type annotations, const rules
+// =========================================================================
+
+// --- let without initializer defaults to null ---
+let a
+assert(a == null, "let a (no initializer) should be null")
+
+// --- assign later (the pattern that motivated the change) ---
+let x
+if (1 > 0) {
+    x = 1
+} else {
+    x = 2
+}
+assert(x == 1, "x assigned in if-branch should be 1")
+
+// --- declare then conditionally set, without an else ---
+let flag
+if (false) {
+    flag = "set"
+}
+assert(flag == null, "flag stays null when branch not taken")
+
+// --- multiple uninitialized declarations ---
+let p
+let q
+let r
+assert(p == null and q == null and r == null, "three uninit lets are null")
+
+// --- assignment via compound ops on a declared-null variable ---
+let counter
+counter = 0
+counter += 5
+assert(counter == 5, "counter should reach 5 after = 0 then += 5")
+
+// --- uninitialized with type annotation ---
+// `let x:T` is exactly equivalent to `let x:T = null` — the annotation's
+// coercion applies, so numeric types get their zero value.
+let typed: int
+assert(typed == 0, "let typed:int without value coerces null to int 0")
+assert(type(typed) == "int", "typed should be an int")
+
+let typedF: float
+assert(typedF == 0, "let typedF:float without value coerces to 0.0")
+
+let untyped
+assert(untyped == null, "let untyped without value stays null")
+
+// --- type annotation with a value still coerces ---
+let coerced: str = 42
+assert(type(coerced) == "string", "let s:str = 42 should coerce to string")
+
+// --- null is a real value, not "undefined" ---
+let n
+assert(type(n) == "null", "uninitialized let has type null")
+assert(n != 0, "null should not equal 0")
+assert(n != false, "null should not equal false")
+
+// --- later assignment replaces null ---
+let later
+later = "now set"
+assert(later == "now set", "later should hold the assigned value")
+
+// --- inside a function body ---
+func compute() {
+    let result
+    result = 10
+    result *= 2
+    return result
+}
+assert(compute() == 20, "compute() should be 20")
+
+// --- in a loop ---
+let total
+total = 0
+let i = 0
+while (i < 4) {
+    total += i
+    i += 1
+}
+assert(total == 6, "total should be 0+1+2+3 = 6")
+
+print("All declaration tests passed!")

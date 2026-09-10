@@ -23,6 +23,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 > longer resolvable on `main`. This section is the authoritative record.
 
 ### Added
+- **`let x` without an initializer** (Phase 1, syntax-review #2.7): the
+  binding defaults to `null`, enabling declare-then-assign in branches
+  (`let x; if (c) { x = 1 }`). With a type annotation the declaration is
+  equivalent to `let x:T = null`, so the annotation's coercion still applies
+  (`let a:int` → `0`). `const` still requires an initializer. Previously a
+  parse error ("Expected '=' after variable name").
+  Tests: `tests/runtime/test_declarations.va` + parser units (positive and
+  the `const` negative case).
 - **`**=` power-assignment** (Phase 1, syntax-review #2.6): `POWER_EQUAL`
   token (lexed as one token, distinct from `**` and `*=`); parser accepts it
   as a right-associative compound assignment; compiler maps it to `OP_POWER`.
@@ -190,8 +198,8 @@ from `git log --oneline` on `main` and from `docs/08-已实现功能总结.md`
 > derivation, bitwise operators (`&` `|` `^` `~` `<<` `>>`), and
 > list/dict comprehensions (verified working at Phase 1 P1-A).
 > Still open at time of writing: `\$` interpolation escape, `not`
-> keyword, labeled break/continue, `let` without initializer, object-literal
-> shorthand, stdlib expansion, DAP server (verify against Vora-LSP repo).
+> keyword, labeled break/continue, object-literal shorthand, stdlib
+> expansion, DAP server (verify against Vora-LSP repo).
 
 These are real and verifiable in current code; do not write code that
 depends on them. Confirmed via syntax review (2026-09) and inspection

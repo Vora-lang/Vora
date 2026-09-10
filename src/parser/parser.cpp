@@ -279,14 +279,14 @@ std::unique_ptr<Stmt> Parser::letStatement() {
         }
     }
 
+    // `let x` without an initializer is allowed — the binding defaults to
+    // null, so `let x; if (c) { x = 1 }` works (syntax-review #2.7).
     if (!match(TokenType::EQUAL)) {
-        error("Expected '=' after variable name");
-        // Return partial LetStmt — the variable name is still useful for LSP.
         match(TokenType::SEMICOLON);
         return std::make_unique<LetStmt>(
             name,
             nameToken,
-            std::make_unique<ErrorExpr>("Missing initializer", previous()),
+            std::make_unique<LiteralExpr>(nullptr),
             typeAnnotation
         );
     }

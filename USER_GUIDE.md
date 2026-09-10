@@ -104,8 +104,22 @@ if ([1])   { print("yes") }  // ✅ 输出 yes — 非空数组是 truthy
 
 ```vora
 let x = 10          // 可变绑定
-const y = 42        // 不可变绑定，声明时必须初始化
+let y               // 声明但未初始化 —— 默认 null
+const z = 42        // 不可变绑定，声明时必须初始化
 ```
+
+`let y` 不写初始化表达式时绑定 `null`，因此可以"先声明、后按分支赋值"：
+
+```vora
+let result
+if (score > 60) {
+    result = "pass"
+} else {
+    result = "fail"
+}
+```
+
+> 带类型标注时 `let y:int` 等价于 `let y:int = null`，标注的转换照常生效——数值类型得到零值（`0`）。`const` 必须初始化。
 
 ### 类型标注
 

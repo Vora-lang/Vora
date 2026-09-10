@@ -29,8 +29,8 @@ for [k, v] in [["x", obj.x], ["y", obj.y]] {
 assert(total == 20, "manual key/value pair destructuring")
 
 // Destructuring default values in let declarations
-let arr = [1]
-let [a, b = 0] = arr
+let arr2 = [1]
+let [a, b = 0] = arr2
 assert(a == 1, "default array destructure first element")
 assert(b == 0, "default array destructure missing second element")
 

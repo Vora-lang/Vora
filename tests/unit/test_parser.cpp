@@ -99,9 +99,30 @@ TEST_CASE("parser_let_statement") {
     CHECK(let->name == "x");
 }
 
-TEST_CASE("parser_let_without_initializer_error") {
+TEST_CASE("parser_let_without_initializer_defaults_to_null") {
+    // Syntax-review #2.7: `let x` is legal and binds null, so
+    // `let x; if (c) { x = 1 }` works (previously a parse error).
     StderrErrorReporter reporter("let x;");
     Lexer lexer("let x;", reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    auto prog = parser.parse();
+    CHECK_FALSE(parser.hasError());
+    REQUIRE(prog != nullptr);
+    REQUIRE(prog->statements.size() == 1);
+    auto* let = dynamic_cast<LetStmt*>(prog->statements[0].get());
+    REQUIRE(let != nullptr);
+    CHECK(let->name == "x");
+    REQUIRE(let->initializer != nullptr);
+    auto* lit = dynamic_cast<LiteralExpr*>(let->initializer.get());
+    REQUIRE(lit != nullptr);
+    CHECK(lit->value.isNull());
+}
+
+TEST_CASE("parser_const_without_initializer_still_errors") {
+    // `const` genuinely needs a value; only `let` gained the default.
+    StderrErrorReporter reporter("const x;");
+    Lexer lexer("const x;", reporter);
     auto tokens = lexer.scanTokens();
     Parser parser(std::move(tokens), reporter);
     auto prog = parser.parse();
