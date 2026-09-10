@@ -100,6 +100,121 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   brace-aware scan; previously a syntax dead-end.
 
 ### Fixed
+- **`break` / `continue` did not close upvalues** (`8696cb5`, pre-existing):
+  both statements discard the loop body's locals with `OP_POPN` but, unlike
+  `endScope()` (`src/vm/compiler.cpp:310`), never emitted `OP_CLOSE_UPVALUE`. A
+  closure that captured a loop-body local therefore kept pointing at the raw
+  stack slot, and the next iteration — or any later statement in the same frame
+  — overwrote it. The closure silently returned the wrong value: with
+  `for i in [1, 2] { let v = i * 10; fns += [func() { return v }]; if (i == 1) { continue } }`,
+  `fns[0]()` returned `20` instead of `10`. `break` was affected the same way
+  (breaking out of an inner loop while the outer loop keeps running returned
+  `21` for both closures instead of `11` and `21`), and so were two cases the
+  design doc had not predicted: the initializer local of a C-style `for`
+  (`for (let k = ...)` → `777` instead of `0`) and the loop variable of a
+  `for ... in` (`888` instead of `5`) — both are loop infrastructure that sits at
+  the loop's own scope depth, invisible to the body-local scan. Fixed by the new
+  `emitLoopExitCleanup()`, which emits `OP_CLOSE_UPVALUE` for every captured
+  local a jumping loop exit discards — body locals and the target loop's
+  infrastructure locals alike — before the `OP_POPN`.
+  Tests: `tests/runtime/test_loop_closure.va` (every case confirmed failing
+  before the fix).
+- **`break` / `continue` popped an enclosing `try`'s catch handler**
+  (`ad57950`, pre-existing, **syntactically valid but semantically invisible**):
+  both emitted one `OP_POP_CATCH` per lexically enclosing `try` block, but a jump
+  out of a loop only leaves the `try` blocks registered *inside* that loop.
+  Every `try` enclosing the loop had its handler popped, so a later `throw` in
+  the same `try` block escaped uncaught — or was silently caught by an outer
+  handler instead of the intended one. This was not a corner case: a
+  `for x in [...]` loop's synthetic `StopIteration` break runs on **every normal
+  loop exit**, so *any* `for-in` inside a `try` destroyed that `try`'s handler;
+  list and dict comprehensions desugar the same way, and with two nested `try`
+  blocks around one loop the outer `catch` swallowed exceptions meant for the
+  inner one. Observed:
+
+      func f() {
+          let n = 0
+          try {
+              let i = 0
+              while (i < 5) { n = n + 1; break }
+              throw "boom"          // uncaught: the try's handler was already gone
+          } catch (e) { n = n + 1000 }
+          return n
+      }
+      print(f())    // expected 1001, got an uncaught exception
+
+  Fixed by snapshotting `tryNesting` into `LoopContext::tryDepthAtEntry` at loop
+  entry and popping `tryNesting - tryDepthAtEntry` handlers, i.e. exactly the
+  handlers registered inside the loops being exited.
+  Tests: `tests/runtime/test_loop_try_interaction.va`.
+- **`break` / `continue` jumps dropped by a `try` with no `finally`**
+  (`2a4668e`, pre-existing): `visitTryStmt` collects the break/continue jumps
+  emitted inside its try block so it can re-route them through the `finally`.
+  With no `finally` there was nothing to re-route, and the collected jumps were
+  simply discarded — left in the chunk with their `0xFF` placeholder operands
+  and never back-patched. A `break` inside a `try` (no `finally`) therefore
+  jumped into the middle of an unrelated instruction and the VM aborted with
+  `Unknown opcode`. Affected every `break` written inside such a `try`, for all
+  loop kinds, plus `continue` in the loops whose continue target is a forward
+  jump (do-while, C-style `for`). Fixed by putting the captured jumps back into
+  their loop context when there is no `finally`.
+  Tests: `tests/runtime/test_try_loop_jump_routing.va`.
+- **`continue` silently skipped an enclosing `finally`** (`77aa5ad`,
+  pre-existing): for the loop kinds whose continue target was the loop start
+  (`while`, `for ... in`), `continue` was compiled as a direct **backward**
+  `OP_LOOP` to the condition. That jump leaves the continue site entirely, so
+  `visitTryStmt` never saw it and the `finally` was skipped for that iteration:
+
+      let n = 0
+      let i = 0
+      while (i < 3) {
+          i = i + 1
+          try { n = n + 1; continue } finally { n = n + 10 }
+      }
+      print(n)   // 3, expected 33
+
+  `continue` is now a forward jump for every loop kind, with `while` and
+  `for ... in` given a real continue target at their back edge (do-while and the
+  C-style `for` already worked this way). This also makes it possible to
+  intercept and re-route a `continue` at all, which labeled `continue` across a
+  `finally` will need.
+  Tests: `tests/runtime/test_continue_finally.va`.
+- **`finally` replay blocks were reachable from the normal path** (`59dd146`,
+  pre-existing, **syntactically valid but semantically invisible**): when a `try`
+  block contained a `break`, `continue` or `return`, `visitTryStmt` emitted a
+  replay of the `finally` bytecode for each such exit — inline, immediately after
+  the `finally` compiled for the normal path, with nothing jumping over them. A
+  try body that completed normally therefore fell straight into the replay
+  blocks. The `finally` ran twice on iterations that did not exit non-locally,
+  and on iterations that did, the fall-through reached the `break` replay and
+  jumped out of the loop early:
+
+      let n = 0
+      let i = 0
+      while (i < 3) {
+          i = i + 1
+          try { n = n + 1; if (i == 2) { break } }
+          finally { n = n + 10 }
+      }
+      print(n)   // 21, expected 22 — and only one iteration ran
+
+  The normal path now jumps over the replay blocks, so the `finally` runs exactly
+  once per exit route.
+  Tests: `tests/runtime/test_finally_replay_isolation.va`.
+
+> **Note on the five fixes above.** All five are pre-existing defects found while
+> preparing the labeled `break`/`continue` work (`VORA_SYNTAX_REVIEW.md` §2.8),
+> and all five silently changed program meaning rather than failing loudly — the
+> class the project principles call unacceptable. They were fixed before any
+> label work, one commit each. Notably, the existing
+> `tests/interpreter/test_edge_cases.va` "break in try-finally" and "continue in
+> try-finally" cases passed *both before and after* these fixes: they only assert
+> that the `finally` ran, never that it ran exactly once or that the loop exited
+> on the right iteration, which is why nothing caught them. The remaining known
+> defect in the same area — a `finally` that reads a loop-body local sees a
+> recycled slot, because the locals are popped before the replay runs — is
+> recorded in `docs/17-labeled-break-continue-design.md` §2.6 / §4.3-F and is not
+> fixed yet.
 - **Compile-time string folding swallowed interpolation** (pre-existing,
   found while implementing `\$`): `"a" + "${x}"` folded both string operands
   by concatenating their raw values, bypassing the `${...}` handling in
