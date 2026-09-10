@@ -1854,8 +1854,21 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
 
         // Pop the finally bytecode stack entry
         finallyBytecodeStack.pop_back();
+    } else {
+        // No finally block, so the captured jumps are never re-routed through
+        // anything — put them back where they came from. They are ordinary
+        // forward jumps to the loop exit / continue target and only need the
+        // normal patching performed when their loop finishes compiling.
+        // Dropping them left the OP_JUMP operand bytes at their 0xFF
+        // placeholder, so a `break` inside a try (with no finally) jumped into
+        // the middle of an unrelated instruction ("Unknown opcode").
+        for (const auto& cj : capturedBreaks) {
+            loopStack[static_cast<size_t>(cj.loopIdx)].breakJumps.push_back(cj.offset);
+        }
+        for (const auto& cj : capturedContinues) {
+            loopStack[static_cast<size_t>(cj.loopIdx)].continueJumps.push_back(cj.offset);
+        }
     }
-    // TEMP-REVERT-BUGC
 }
 
 void Compiler::visitThrowStmt(const ThrowStmt& stmt) {

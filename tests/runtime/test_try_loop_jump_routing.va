@@ -1,0 +1,198 @@
+// runtime/test_try_loop_jump_routing.va — break/continue out of a try block
+// Run: vora tests/runtime/test_try_loop_jump_routing.va
+//
+// Regression tests for a bytecode routing bug: visitTryStmt collects the
+// break/continue jumps emitted inside its try block so it can re-route them
+// through the finally block. When the try had no finally there was nothing to
+// re-route, and the collected jumps were simply dropped — left in the chunk
+// with their 0xFF placeholder operands, never back-patched. A `break` inside a
+// try (no finally) therefore jumped into the middle of an unrelated
+// instruction and the VM reported "Unknown opcode".
+//
+// Affected: `break` for every loop kind, and `continue` in the loops whose
+// continue target is a forward jump (do-while, C-style for). The captured
+// jumps are now put back into their loop context when there is no finally.
+
+print("=== Runtime: try / loop jump routing Tests ===")
+
+// ---------------------------------------------------------------------------
+// break inside a try, inside a while loop
+// ---------------------------------------------------------------------------
+func breakInTryWhile() {
+    let n = 0
+    let i = 0
+    while (i < 3) {
+        try {
+            n = n + 1
+            break
+        } catch (e) { }
+        i = i + 1
+    }
+    return n
+}
+assert(breakInTryWhile() == 1, "break in try inside while")
+
+// ---------------------------------------------------------------------------
+// break inside a try, inside a for-in loop
+// ---------------------------------------------------------------------------
+func breakInTryForIn() {
+    let n = 0
+    for i in [1, 2, 3] {
+        try {
+            n = n + 1
+            break
+        } catch (e) { }
+    }
+    return n
+}
+assert(breakInTryForIn() == 1, "break in try inside for-in")
+
+// ---------------------------------------------------------------------------
+// continue inside a try, inside a do-while loop (forward continue target)
+// ---------------------------------------------------------------------------
+func continueInTryDoWhile() {
+    let n = 0
+    let i = 0
+    do {
+        i = i + 1
+        try {
+            n = n + 1
+            continue
+        } catch (e) { }
+        n = n + 100
+    } while (i < 3)
+    return n
+}
+assert(continueInTryDoWhile() == 3, "continue in try inside do-while")
+
+// ---------------------------------------------------------------------------
+// continue inside a try, inside a C-style for loop (forward continue target)
+// ---------------------------------------------------------------------------
+func continueInTryCFor() {
+    let n = 0
+    for (let i = 0; i < 3; i = i + 1) {
+        try {
+            n = n + 1
+            continue
+        } catch (e) { }
+        n = n + 100
+    }
+    return n
+}
+assert(continueInTryCFor() == 3, "continue in try inside C-style for")
+
+// ---------------------------------------------------------------------------
+// break out of a try nested inside another try, targeting a loop further out
+// ---------------------------------------------------------------------------
+func breakOutOfNestedTry() {
+    let n = 0
+    for i in [1, 2, 3] {
+        try {
+            try {
+                n = n + 1
+                break
+            } catch (e) { }
+        } catch (e) { }
+    }
+    return n
+}
+assert(breakOutOfNestedTry() == 1, "break out of nested try inside for-in")
+
+// ---------------------------------------------------------------------------
+// The enclosing try must still be functional after the jump was routed
+// ---------------------------------------------------------------------------
+func enclosingTryStillCatches() {
+    let n = 0
+    try {
+        for i in [1, 2, 3] {
+            try {
+                n = n + 1
+                break
+            } catch (e) { }
+        }
+        throw "boom"
+    } catch (e) {
+        n = n + 1000
+    }
+    return n
+}
+assert(enclosingTryStillCatches() == 1001, "enclosing try still catches after break")
+
+// ---------------------------------------------------------------------------
+// A try inside the loop whose catch actually fires, then a break out of the
+// loop from inside the try body
+// ---------------------------------------------------------------------------
+func catchFiresThenBreak() {
+    let n = 0
+    let i = 0
+    while (i < 3) {
+        try {
+            throw "inner"
+        } catch (e) {
+            n = n + 1
+        }
+        try {
+            n = n + 10
+            break
+        } catch (e) { }
+        i = i + 1
+    }
+    return n
+}
+assert(catchFiresThenBreak() == 11, "catch fires then break out of loop")
+
+// ---------------------------------------------------------------------------
+// continue inside a try with a finally (see test_continue_finally.va for the
+// loops whose continue target had to be reworked first)
+// ---------------------------------------------------------------------------
+func continueInTryWithFinallyCFor() {
+    let n = 0
+    for (let i = 0; i < 3; i = i + 1) {
+        try {
+            n = n + 1
+            continue
+        } finally {
+            n = n + 10
+        }
+    }
+    return n
+}
+assert(continueInTryWithFinallyCFor() == 33, "continue in C-for try/finally runs it each time")
+
+// ---------------------------------------------------------------------------
+// break inside a try with a finally block must still run the finally exactly
+// once (the re-routing path, which already worked)
+// ---------------------------------------------------------------------------
+func breakInTryWithFinally() {
+    let n = 0
+    let i = 0
+    while (i < 3) {
+        try {
+            n = n + 1
+            break
+        } finally {
+            n = n + 10
+        }
+        i = i + 1
+    }
+    return n
+}
+assert(breakInTryWithFinally() == 11, "break in try with finally runs it once")
+
+// ---------------------------------------------------------------------------
+// Control: break inside a try in a loop that never reaches it
+// ---------------------------------------------------------------------------
+func noJumpTaken() {
+    let n = 0
+    let i = 0
+    while (i < 2) {
+        try {
+            n = n + 1
+        } catch (e) { }
+        i = i + 1
+    }
+    return n
+}
+assert(noJumpTaken() == 2, "control: no jump taken")
+
+print("Runtime try/loop jump routing tests: PASS")
