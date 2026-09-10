@@ -18,7 +18,7 @@
 > 回归测试：`test_loop_closure` / `test_loop_try_interaction` / `test_try_loop_jump_routing` /
 > `test_continue_finally` / `test_finally_replay_isolation` / `test_finally_locals_visibility` /
 > `test_finally_from_catch` / `test_finally_handoff` / `test_labeled_break_continue`（均在 `tests/runtime/`）。
-> 目标项：`VORA_SYNTAX_REVIEW.md` §2.8（P1，能力断头路）
+> 目标项：`docs/VORA_SYNTAX_REVIEW.md` §2.8（P1，能力断头路）
 > 覆盖面：AST / parser / compiler / 编辑器语法 / 文档
 > 前置：Phase 1 其余 5 项语法缺口已完成（见 `CHANGELOG.md [Unreleased]`）
 > 基线：`main@59dd146`（2026-09-10）。**行号以该提交为准**。行号会随改动漂移，因此本版
@@ -630,7 +630,7 @@ cleanup 落点:                          ← 固定地址；位于这些重放�
 - `CHANGELOG.md`：`[Unreleased] → Added` 登记标签语法（含 §4.2-B 的兼容性变化：
   同一行的 `break <标识符>` 由「死代码」变为引用标签，原本能编过的写法将变为编译错误）；
   5 个前置修复已单独登记在 `Fixed`（**本版已补齐**，见 CHANGELOG）
-- `VORA_SYNTAX_REVIEW.md`：顶部状态横幅把 2.8 从"仍未修复"移到"已修复"
+- `docs/VORA_SYNTAX_REVIEW.md`：顶部状态横幅把 2.8 从"仍未修复"移到"已修复"
 
 ---
 
@@ -726,7 +726,7 @@ cleanup 落点:                          ← 固定地址；位于这些重放�
       缺陷 C 的教训）、**cleanup 落点不可被正常路径或其他落点穿透**
 6. **在步骤 5 未通过前，不要推进到 7–9。**
 7. 编辑器语法（§4.5）
-8. 文档四件套 + `VORA_SYNTAX_REVIEW.md` 横幅（§4.6）
+8. 文档四件套 + `docs/VORA_SYNTAX_REVIEW.md` 横幅（§4.6）
 9. 全量测试 + 提交推送
 
 每步一个提交，便于二分定位。

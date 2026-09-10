@@ -311,7 +311,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   Tests: `tests/runtime/test_finally_replay_isolation.va`.
 
 > **Note on the five fixes above.** All five are pre-existing defects found while
-> preparing the labeled `break`/`continue` work (`VORA_SYNTAX_REVIEW.md` §2.8),
+> preparing the labeled `break`/`continue` work (`docs/VORA_SYNTAX_REVIEW.md` §2.8),
 > and all five silently changed program meaning rather than failing loudly — the
 > class the project principles call unacceptable. They were fixed before any
 > label work, one commit each. Notably, the existing
@@ -414,7 +414,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - **List / Dict comprehensions** at parser level (`f550cce`).
   ⚠ **Known broken in v0.27**: parsing accepts the syntax, runtime
   iterator protocol throws `next() requires an iterator or generator`.
-  Tracked as P0/P1 in `VORA_SYNTAX_REVIEW.md`.
+  Tracked as P0/P1 in `docs/VORA_SYNTAX_REVIEW.md`.
 - `defer` propagation across nested function throws (`f550cce`).
 - `OP_CALL_KW` opcode deduplication (`f550cce`).
 

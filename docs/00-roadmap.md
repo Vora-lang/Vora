@@ -76,7 +76,7 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
 
 ### 已知 P0 设计缺陷 —— ✅ 全部修复（Phase 1，2026-09）
 
-与 `VORA_SYNTAX_REVIEW.md` §1 对应，修复详情见 `CHANGELOG.md [Unreleased]`：
+与 `docs/VORA_SYNTAX_REVIEW.md` §1 对应，修复详情见 `CHANGELOG.md [Unreleased]`：
 
 1. ~~跨行吞并~~ → Go 式词法 ASI（statement-level 换行终止语句；括号/调用内不触发）。
 2. ~~`?:` 优先级反转~~ → 三元降到 `\|\|`/`??` 同级（1），左结合先吃完 `\|\|`，与 C/JS/Go/Python 一致。
