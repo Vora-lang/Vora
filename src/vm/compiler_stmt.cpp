@@ -1446,7 +1446,7 @@ void Compiler::visitFuncStmt(const FuncStmt& stmt) {
     // OP_SET_LOCAL or OP_POP needed.
 }
 
-void Compiler::visitObjStmt(const ObjStmt& stmt) {
+void Compiler::visitObjStmt(const ClassStmt& stmt) {
     // Phase 3: Object compilation.
     // Strategy: emit OP_CLASS with all methods pre-compiled, then call
     // the class constructor. The class object stores method prototypes
@@ -2074,7 +2074,7 @@ void Compiler::visitExportStmt(const ExportStmt& stmt) {
             auto names = ls->binding->getBoundNames();
             exportNames.insert(exportNames.end(), names.begin(), names.end());
         }
-    } else if (auto* os = dynamic_cast<ObjStmt*>(stmt.declaration.get())) {
+    } else if (auto* os = dynamic_cast<ClassStmt*>(stmt.declaration.get())) {
         exportNames.push_back(os->name);
     }
 }

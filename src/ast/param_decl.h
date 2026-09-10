@@ -4,7 +4,7 @@
  * @brief Parameter declaration struct shared across function and method AST nodes.
  *
  * ParamDecl represents a single formal parameter in a function signature.
- * It is used by FuncStmt (named function declarations), ObjStmt (class
+ * It is used by FuncStmt (named function declarations), ClassStmt (class
  * constructor and method declarations), and FuncExpr (anonymous function
  * expressions). It supports optional default values, rest parameters (`...`),
  * and destructuring patterns.
@@ -13,7 +13,7 @@
  * ExprVisitor/StmtVisitor system. It is a structural data member embedded
  * directly in its owning node.
  *
- * @see BindingPattern, FuncStmt, ObjStmt, FuncExpr
+ * @see BindingPattern, FuncStmt, ClassStmt, FuncExpr
  */
 
 #include <memory>

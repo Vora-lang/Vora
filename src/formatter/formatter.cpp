@@ -852,11 +852,11 @@ std::string SourceFormatter::visitFuncStmt(const FuncStmt& stmt) {
     return ss.str();
 }
 
-std::string SourceFormatter::visitObjStmt(const ObjStmt& stmt) {
+std::string SourceFormatter::visitObjStmt(const ClassStmt& stmt) {
     std::stringstream ss;
     ss << "class " << stmt.name;
 
-    // Parent class names (syntax: Obj Child : Parent1, Parent2 (params) { ... })
+    // Parent class names (syntax: class Child : Parent1, Parent2 (params) { ... })
     if (!stmt.parentNames.empty()) {
         ss << " : ";
         for (size_t i = 0; i < stmt.parentNames.size(); ++i) {

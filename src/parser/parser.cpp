@@ -243,7 +243,7 @@ std::unique_ptr<Stmt> Parser::statement() {
     }
 
     if (match(TokenType::CLASS)) {
-        return objStatement();
+        return classStatement();
     }
 
     if (match(TokenType::BREAK)) {
@@ -1313,7 +1313,7 @@ std::unique_ptr<Expr> Parser::funcExpression(bool isAsync) {
     );
 }
 
-std::unique_ptr<Stmt> Parser::objStatement() {
+std::unique_ptr<Stmt> Parser::classStatement() {
 
     std::string name;
     Token nameToken;  // saved for LSP position info
@@ -1326,7 +1326,7 @@ std::unique_ptr<Stmt> Parser::objStatement() {
         nameToken = previous();
     }
 
-    // Optional inheritance: Obj Child : Parent1, Parent2, ... (params) { ... }
+    // Optional inheritance: class Child : Parent1, Parent2, ... (params) { ... }
     std::vector<std::string> parentNames;
     if (match(TokenType::COLON)) {
         do {
@@ -1481,10 +1481,10 @@ std::unique_ptr<Stmt> Parser::objStatement() {
         body = std::make_shared<BlockStmt>(std::move(bodyStmts));
 
         // We already built the methods vector inside the brace block.
-        // Need to restructure: ObjStmt takes methods as a separate vector.
+        // Need to restructure: ClassStmt takes methods as a separate vector.
         // We can't easily return both body and methods from inside this scope,
         // so let's restructure the return.
-        return std::make_unique<ObjStmt>(
+        return std::make_unique<ClassStmt>(
             name,
             nameToken,
             std::move(parentNames),
@@ -1495,7 +1495,7 @@ std::unique_ptr<Stmt> Parser::objStatement() {
     }
 
     // This path is taken when '{' was missing — no methods, empty body.
-    return std::make_unique<ObjStmt>(
+    return std::make_unique<ClassStmt>(
         name,
         nameToken,
         std::move(parentNames),
@@ -2885,7 +2885,7 @@ std::unique_ptr<Stmt> Parser::exportStatement() {
     }
 
     if (match(TokenType::CLASS)) {
-        auto stmt = objStatement();
+        auto stmt = classStatement();
         if (!stmt) return errorStmt("Failed to parse exported object");
         return std::make_unique<ExportStmt>(std::move(stmt), keyword);
     }

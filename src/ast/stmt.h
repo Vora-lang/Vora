@@ -19,7 +19,7 @@
  *   +-- ForStmt        — for-in loop over iterables
  *   +-- CForStmt       — C-style for (init; cond; incr)
  *   +-- FuncStmt       — function declaration
- *   +-- ObjStmt        — object/class definition
+ *   +-- ClassStmt        — object/class definition
  *   +-- BreakStmt      — break out of loop
  *   +-- ContinueStmt   — continue to next loop iteration
  *   +-- ThrowStmt      — throw an exception
@@ -364,7 +364,7 @@ public:
  * OP_CLOSURE creates a VoraFunction at runtime.
  *
  * When isStatic is true, the function was declared with `this.func` syntax
- * inside an Obj and is treated as a static method.
+ * inside an class and is treated as a static method.
  */
 class FuncStmt : public Stmt {
 public:
@@ -373,7 +373,7 @@ public:
     /// @param nameToken  Source position of the function name.
     /// @param params     The parameter declarations.
     /// @param body       The function body block (shared ownership for closure capture).
-    /// @param isStatic   True if declared with 'this.func' syntax inside Obj.
+    /// @param isStatic   True if declared with 'this.func' syntax inside class.
     FuncStmt(
         std::string name,
         Token nameToken,
@@ -401,7 +401,7 @@ public:
 
     std::shared_ptr<BlockStmt> body;     ///< The function body block.
 
-    bool isStatic = false;               ///< true if declared with 'this.func' inside Obj
+    bool isStatic = false;               ///< true if declared with 'this.func' inside class
     bool isAsync = false;                ///< true if declared with 'async' keyword
 };
 
@@ -417,16 +417,16 @@ public:
  * the constant pool. OP_CLASS resolves parent references and computes the
  * MRO at runtime.
  */
-class ObjStmt : public Stmt {
+class ClassStmt : public Stmt {
 public:
-    /// @brief Construct an ObjStmt.
+    /// @brief Construct an ClassStmt.
     /// @param name         The class name.
     /// @param nameToken    Source position of the class name.
     /// @param parentNames  Parent class names (empty = no inheritance).
     /// @param params       Constructor parameter declarations.
     /// @param methods      Method statements (FuncStmt nodes extracted during parsing).
     /// @param body         Constructor body block (shared ownership).
-    ObjStmt(
+    ClassStmt(
         std::string name,
         Token nameToken,
         std::vector<std::string> parentNames,
@@ -626,16 +626,16 @@ public:
 /**
  * @brief Export declaration — marks a declaration as publicly visible.
  *
- * Wraps a FuncStmt, LetStmt, or ObjStmt. Exported declarations are
+ * Wraps a FuncStmt, LetStmt, or ClassStmt. Exported declarations are
  * accessible to other modules via import. Const declarations use
  * LetStmt with isConst=true.
  */
 // export <declaration> — marks a declaration as publicly visible.
-// Wraps a FuncStmt, LetStmt, ConstStmt, or ObjStmt.
+// Wraps a FuncStmt, LetStmt, ConstStmt, or ClassStmt.
 class ExportStmt : public Stmt {
 public:
     /// @brief Construct an ExportStmt.
-    /// @param declaration  The declaration to export (FuncStmt / LetStmt / ObjStmt).
+    /// @param declaration  The declaration to export (FuncStmt / LetStmt / ClassStmt).
     /// @param keyword      The 'export' token for source position.
     ExportStmt(std::unique_ptr<Stmt> declaration, Token keyword)
         : declaration(std::move(declaration)), keyword(std::move(keyword)) {}
@@ -643,7 +643,7 @@ public:
     void        accept(StmtVisitor<void>& visitor)        const override;
     std::string accept(StmtVisitor<std::string>& visitor) const override;
 
-    std::unique_ptr<Stmt> declaration;  ///< FuncStmt / LetStmt / ObjStmt (const uses LetStmt.isConst)
+    std::unique_ptr<Stmt> declaration;  ///< FuncStmt / LetStmt / ClassStmt (const uses LetStmt.isConst)
 
     Token keyword;                       ///< 'export' token
 };

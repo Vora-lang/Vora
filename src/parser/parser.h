@@ -385,7 +385,7 @@ private:
      *   - do           → doWhileStatement()
      *   - for          → forStatement()
      *   - func         → funcStatement()
-     *   - obj          → objStatement()
+     *   - obj          → classStatement()
      *   - return       → returnStatement()
      *   - break        → breakStatement()
      *   - continue     → continueStatement()
@@ -578,9 +578,9 @@ private:
      * Method bodies are FunctionExpressions; the constructor body is a
      * block of statements collected directly.
      *
-     * @return An ObjStmt AST node, or ErrorStmt on parse failure.
+     * @return An ClassStmt AST node, or ErrorStmt on parse failure.
      */
-    std::unique_ptr<Stmt> objStatement();
+    std::unique_ptr<Stmt> classStatement();
 
     /**
      * @brief Parse a break statement.

@@ -225,10 +225,10 @@ void SemanticAnalyzer::visitStatements(const std::vector<std::unique_ptr<Stmt>>&
     for (auto& stmt : statements) {
         if (!stmt) continue;
         if (!reachable_ && !dynamic_cast<const FuncStmt*>(stmt.get())
-                        && !dynamic_cast<const ObjStmt*>(stmt.get())
+                        && !dynamic_cast<const ClassStmt*>(stmt.get())
                         && !dynamic_cast<const ImportStmt*>(stmt.get())
                         && !dynamic_cast<const ExportStmt*>(stmt.get())) {
-            // Mark unreachable code. We still visit FuncStmt/ObjStmt/ImportStmt/
+            // Mark unreachable code. We still visit FuncStmt/ClassStmt/ImportStmt/
             // ExportStmt because they're declarations that may be referenced.
             if (auto* let = dynamic_cast<const LetStmt*>(stmt.get())) {
                 markUnreachable(let->nameToken);
@@ -498,18 +498,18 @@ void SemanticAnalyzer::visitFuncStmt(const FuncStmt& stmt) {
     reachable_ = true;  // function declaration doesn't affect reachability
 }
 
-void SemanticAnalyzer::visitObjStmt(const ObjStmt& stmt) {
+void SemanticAnalyzer::visitObjStmt(const ClassStmt& stmt) {
     // Declare the object in the current scope.
-    SymbolInfo objSym;
-    objSym.name = stmt.name;
-    objSym.kind = SymbolKind::Object;
-    objSym.declToken = stmt.nameToken;
-    objSym.parentNames = stmt.parentNames;
+    SymbolInfo classSym;
+    classSym.name = stmt.name;
+    classSym.kind = SymbolKind::Object;
+    classSym.declToken = stmt.nameToken;
+    classSym.parentNames = stmt.parentNames;
     for (auto& p : stmt.params) {
-        objSym.paramNames.push_back(p.name);
+        classSym.paramNames.push_back(p.name);
     }
-    objSym.hasRestParam = stmt.params.empty() ? false : stmt.params.back().isRest;
-    addDecl(objSym);
+    classSym.hasRestParam = stmt.params.empty() ? false : stmt.params.back().isRest;
+    addDecl(classSym);
 
     // Enter constructor body scope.
     pushScope();
@@ -672,7 +672,7 @@ void SemanticAnalyzer::visitExportStmt(const ExportStmt& stmt) {
                 } else {
                     exportedNames.push_back(let->name);
                 }
-            } else if (auto* obj = dynamic_cast<const ObjStmt*>(stmt.declaration.get())) {
+            } else if (auto* obj = dynamic_cast<const ClassStmt*>(stmt.declaration.get())) {
                 exportedNames.push_back(obj->name);
             }
 

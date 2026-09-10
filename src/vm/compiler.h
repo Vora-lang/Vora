@@ -128,7 +128,7 @@ struct ClassDefinition : GcObject {
 ///          arrays, indexing, native function calls.
 /// Phase 2: local variables, break/continue, for-in, functions/closures,
 ///          try/catch/throw.
-/// Phase 3: objects (Obj), property access, inheritance.
+/// Phase 3: objects (class), property access, inheritance.
 class Compiler : public ExprVisitor<void>,
                  public StmtVisitor<void>,
                  public ProgramVisitor<void> {
@@ -343,7 +343,7 @@ public:
 
     /// @brief Compile an object/class definition statement.
     /// @param stmt The object statement node.
-    void visitObjStmt(const ObjStmt& stmt) override;
+    void visitObjStmt(const ClassStmt& stmt) override;
 
     /// @brief Compile a break statement, routing through finally blocks and
     /// cleaning up try handlers at each nesting level.

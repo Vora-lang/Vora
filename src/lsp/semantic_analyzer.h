@@ -61,8 +61,8 @@ enum class SymbolKind : uint8_t {
     Constant,   ///< `const` declaration.
     Function,   ///< Named `func` declaration.
     Parameter,  ///< Function or object constructor parameter.
-    Object,     ///< `Obj` name (class-like).
-    Method,     ///< Method declared inside an Obj.
+    Object,     ///< `class` name (class-like).
+    Method,     ///< Method declared inside an class.
     Import,     ///< Import binding (module namespace or from-import name).
     ForVar,     ///< For-in loop iteration variable.
     CatchVar,   ///< catch(e) exception variable.
@@ -111,10 +111,10 @@ struct SymbolInfo {
 
     // ── Object details ────────────────────────────────────────────────
 
-    /// @brief Superclass names for Obj declarations (may be empty).
+    /// @brief Superclass names for class declarations (may be empty).
     std::vector<std::string> parentNames;
 
-    /// @brief Method names declared inside an Obj body.
+    /// @brief Method names declared inside an class body.
     std::vector<std::string> methodNames;
 
     // ── Import details ────────────────────────────────────────────────
@@ -414,8 +414,8 @@ public:
     void visitCForStmt(const CForStmt& stmt) override;
     /// @brief Register a named function declaration with parameters.
     void visitFuncStmt(const FuncStmt& stmt) override;
-    /// @brief Register an Obj (class) declaration with parents and methods.
-    void visitObjStmt(const ObjStmt& stmt) override;
+    /// @brief Register an class (class) declaration with parents and methods.
+    void visitObjStmt(const ClassStmt& stmt) override;
     /// @brief Mark code after break unreachable within the current loop.
     void visitBreakStmt(const BreakStmt& stmt) override;
     /// @brief Mark code after continue unreachable within the current loop.
@@ -464,9 +464,9 @@ public:
     void visitPropertyAssignmentExpr(const PropertyAssignmentExpr& expr) override;
     /// @brief Visit an index assignment (e.g., `arr[i] = val`).
     void visitIndexAssignmentExpr(const IndexAssignmentExpr& expr) override;
-    /// @brief Visit a `this` expression: valid only inside an Obj method.
+    /// @brief Visit a `this` expression: valid only inside an class method.
     void visitThisExpr(const ThisExpr& expr) override;
-    /// @brief Visit a `super` expression: valid only inside an Obj method with parent.
+    /// @brief Visit a `super` expression: valid only inside an class method with parent.
     void visitSuperExpr(const SuperExpr& expr) override;
     /// @brief Visit an increment/decrement expression (prefix or postfix).
     void visitIncDecExpr(const IncDecExpr& expr) override;

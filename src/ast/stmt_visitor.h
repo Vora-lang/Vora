@@ -89,7 +89,7 @@ public:
     /** @brief Visit a named function declaration statement. */
     virtual R visitFuncStmt(const FuncStmt& stmt) = 0;
     /** @brief Visit an object/class declaration statement. */
-    virtual R visitObjStmt(const ObjStmt& stmt) = 0;
+    virtual R visitObjStmt(const ClassStmt& stmt) = 0;
     ///@}
 
     /** @name Break & Continue */

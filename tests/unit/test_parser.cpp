@@ -183,7 +183,7 @@ TEST_CASE("parser_func_no_params") {
 TEST_CASE("parser_obj_statement") {
     auto prog = parse("class Point(x, y) { this.x = x; this.y = y; }");
     REQUIRE(prog != nullptr);
-    auto* obj = dynamic_cast<ObjStmt*>(prog->statements[0].get());
+    auto* obj = dynamic_cast<ClassStmt*>(prog->statements[0].get());
     REQUIRE(obj != nullptr);
     CHECK(obj->name == "Point");
     REQUIRE(obj->params.size() == 2);
@@ -194,7 +194,7 @@ TEST_CASE("parser_obj_statement") {
 TEST_CASE("parser_obj_inheritance") {
     auto prog = parse("class Child : Parent(x) { }");
     REQUIRE(prog != nullptr);
-    auto* obj = dynamic_cast<ObjStmt*>(prog->statements[0].get());
+    auto* obj = dynamic_cast<ClassStmt*>(prog->statements[0].get());
     REQUIRE(obj != nullptr);
     CHECK(obj->name == "Child");
     REQUIRE(obj->parentNames.size() == 1);
@@ -667,8 +667,8 @@ TEST_CASE("parser_error_partial_obj_missing_name") {
     auto prog = parser.parse();
     REQUIRE(prog != nullptr);
     REQUIRE(!prog->statements.empty());
-    auto* objStmt = dynamic_cast<ObjStmt*>(prog->statements[0].get());
-    CHECK(objStmt != nullptr);
+    auto* classStmt = dynamic_cast<ClassStmt*>(prog->statements[0].get());
+    CHECK(classStmt != nullptr);
 }
 
 TEST_CASE("parser_error_partial_obj_missing_body") {
@@ -680,8 +680,8 @@ TEST_CASE("parser_error_partial_obj_missing_body") {
     auto prog = parser.parse();
     REQUIRE(prog != nullptr);
     REQUIRE(!prog->statements.empty());
-    auto* objStmt = dynamic_cast<ObjStmt*>(prog->statements[0].get());
-    CHECK(objStmt != nullptr);
+    auto* classStmt = dynamic_cast<ClassStmt*>(prog->statements[0].get());
+    CHECK(classStmt != nullptr);
 }
 
 TEST_CASE("parser_error_partial_try_missing_block") {
@@ -1177,8 +1177,8 @@ TEST_CASE("parser_error_lsp_incomplete_object") {
     auto prog = parser.parse();
     REQUIRE(prog != nullptr);
     REQUIRE(!prog->statements.empty());
-    auto* objStmt = dynamic_cast<ObjStmt*>(prog->statements[0].get());
-    CHECK(objStmt != nullptr);
+    auto* classStmt = dynamic_cast<ClassStmt*>(prog->statements[0].get());
+    CHECK(classStmt != nullptr);
 }
 
 // ============================================================================

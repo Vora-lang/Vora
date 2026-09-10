@@ -127,7 +127,7 @@ private:
     std::string visitFuncStmt(const FuncStmt& stmt) override;
 
     std::string printBindingPattern(const BindingPattern* pattern);
-    std::string visitObjStmt(const ObjStmt& stmt) override;
+    std::string visitObjStmt(const ClassStmt& stmt) override;
     std::string visitBreakStmt(const BreakStmt& stmt) override;
     std::string visitContinueStmt(const ContinueStmt& stmt) override;
     std::string visitTryStmt(const TryStmt& stmt) override;

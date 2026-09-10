@@ -714,7 +714,7 @@ private:
      * @param stmt The object/class statement node.
      * @return The formatted class declaration string.
      */
-    std::string visitObjStmt(const ObjStmt& stmt) override;
+    std::string visitObjStmt(const ClassStmt& stmt) override;
 
     /**
      * @brief Format a `break` statement.

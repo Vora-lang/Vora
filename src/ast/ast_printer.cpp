@@ -546,7 +546,7 @@ std::string ASTPrinter::visitCForStmt(const CForStmt& stmt) {
     return ss.str();
 }
 
-std::string ASTPrinter::visitObjStmt(const ObjStmt& stmt) {
+std::string ASTPrinter::visitObjStmt(const ClassStmt& stmt) {
     std::stringstream ss;
 
     ss << "(obj " << stmt.name;

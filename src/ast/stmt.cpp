@@ -124,14 +124,14 @@ std::string FuncStmt::accept(StmtVisitor<std::string>& visitor) const {
 }
 
 // =========================================================================
-// ObjStmt
+// ClassStmt
 // =========================================================================
 
-void ObjStmt::accept(StmtVisitor<void>& visitor) const {
+void ClassStmt::accept(StmtVisitor<void>& visitor) const {
     visitor.visitObjStmt(*this);
 }
 
-std::string ObjStmt::accept(StmtVisitor<std::string>& visitor) const {
+std::string ClassStmt::accept(StmtVisitor<std::string>& visitor) const {
     return visitor.visitObjStmt(*this);
 }
 
