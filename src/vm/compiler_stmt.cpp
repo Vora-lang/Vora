@@ -1842,7 +1842,6 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
                                 !capturedContinues.empty() ||
                                 !capturedReturns.empty();
         size_t skipReplaysJump = hasReplays ? emitJump(OpCode::OP_JUMP) : 0;
-        (void)skipReplaysJump;
 
         // --- Route captured break jumps through finally ---
         for (const auto& cj : capturedBreaks) {
@@ -1875,6 +1874,10 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
             emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
         }
 
+        // Normal path resumes here, past every replay block.
+        if (hasReplays) {
+            patchJump(skipReplaysJump);
+        }
 
         // Pop the finally bytecode stack entry
         finallyBytecodeStack.pop_back();

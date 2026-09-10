@@ -1,0 +1,235 @@
+// runtime/test_finally_replay_isolation.va — finally replay blocks must not be
+// reachable from the normal path
+// Run: vora tests/runtime/test_finally_replay_isolation.va
+//
+// Regression tests for a mis-compiled try/finally: when a try block contained a
+// break, continue or return, visitTryStmt emitted a *replay* of the finally
+// bytecode for each such exit, inline, right after the finally block compiled
+// for the normal path. Nothing jumped over those replay blocks, so a normal
+// completion of the try body fell straight into them.
+//
+// The consequences were severe and silent:
+//   - the finally ran twice on iterations that did not exit non-locally, and
+//   - an iteration that completed normally ran the *break* replay and jumped
+//     out of the loop immediately.
+//
+// Observed before this fix:
+//
+//     let n = 0
+//     let i = 0
+//     while (i < 3) {
+//         i = i + 1
+//         try { n = n + 1; if (i == 2) { break } }
+//         finally { n = n + 10 }
+//     }
+//     print(n)   // 21, expected 22 — and only one iteration ran
+//
+// The normal path now jumps over the replay blocks, so the finally runs exactly
+// once per exit route.
+//
+// Known remaining defect (not covered by a passing assertion here): a
+// break/continue pops the abandoned locals *before* the finally replay runs, so
+// a finally that reads a local of the loop body — most visibly the loop
+// variable of a for-in — sees a recycled slot instead of the value:
+//
+//     let trace = ""
+//     for i in [1, 2, 3] {
+//         try { trace = trace + "b" + toString(i); if (i == 2) { break } }
+//         finally { trace = trace + "f" + toString(i) }
+//     }
+//     print(trace)   // b1f1b2f<native fn toString>; expected b1f1b2f2
+//
+// Fixing it means running the cleanup after the finally replay rather than
+// before the jump that reaches it.
+
+print("=== Runtime: finally replay isolation Tests ===")
+
+// ---------------------------------------------------------------------------
+// Normal path must not fall into a break replay (loop must not exit early)
+// ---------------------------------------------------------------------------
+func breakReplayNotFallenInto() {
+    let n = 0
+    let iterations = 0
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        iterations = iterations + 1
+        try {
+            n = n + 1
+            if (i == 2) { break }
+        } finally {
+            n = n + 10
+        }
+    }
+    return n * 1000 + iterations
+}
+assert(breakReplayNotFallenInto() == 22002, "break replay not reached on the normal path")
+
+// ---------------------------------------------------------------------------
+// Normal path must not fall into a continue replay (finally runs once)
+// ---------------------------------------------------------------------------
+func continueReplayNotFallenInto() {
+    let n = 0
+    let i = 0
+    while (i < 2) {
+        i = i + 1
+        try {
+            n = n + 1
+            if (i == 1) { continue }
+        } finally {
+            n = n + 10
+        }
+    }
+    return n
+}
+assert(continueReplayNotFallenInto() == 22, "continue replay not reached on the normal path")
+
+// ---------------------------------------------------------------------------
+// Normal path must not fall into a return replay. The return value is taken
+// before the finally runs, so the observation is the finally's side effect: a
+// fall-through would return on the first iteration and record only one visit.
+// ---------------------------------------------------------------------------
+let returnPathTrace = ""
+
+func returnReplayNotFallenInto() {
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        try {
+            if (i == 2) { return 7 }
+        } finally {
+            returnPathTrace = returnPathTrace + toString(i)
+        }
+    }
+    return 0
+}
+assert(returnReplayNotFallenInto() == 7, "return value survives the finally")
+assert(returnPathTrace == "12", "return replay not reached on the normal path")
+
+// ---------------------------------------------------------------------------
+// Ordering: finally runs after a continue and before the next condition, and
+// non-continuing iterations run body -> finally in that order
+// ---------------------------------------------------------------------------
+func continueOrdering() {
+    let trace = ""
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        try {
+            trace = trace + "b" + toString(i)
+            if (i == 2) { continue }
+            trace = trace + "a" + toString(i)
+        } finally {
+            trace = trace + "f" + toString(i)
+        }
+    }
+    return trace
+}
+assert(continueOrdering() == "b1a1f1b2f2b3a3f3", "continue/finally ordering in while")
+
+func continueOrderingForIn() {
+    // Uses a counter declared outside the loop: the finally must be able to
+    // read *some* live local here. Reading the loop variable itself is a
+    // separate, still-open defect — break/continue pop the body's locals before
+    // the finally replay runs, so the finally's own expression evaluation
+    // reuses those slots and sees garbage. See the header note below.
+    let trace = ""
+    let n = 0
+    for i in [1, 2, 3] {
+        n = n + 1
+        try {
+            trace = trace + "b" + toString(n)
+            if (n == 2) { continue }
+            trace = trace + "a" + toString(n)
+        } finally {
+            trace = trace + "f" + toString(n)
+        }
+    }
+    return trace
+}
+assert(continueOrderingForIn() == "b1a1f1b2f2b3a3f3", "continue/finally ordering in for-in")
+
+// ---------------------------------------------------------------------------
+// Ordering with break
+// ---------------------------------------------------------------------------
+func breakOrdering() {
+    let trace = ""
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        try {
+            trace = trace + "b" + toString(i)
+            if (i == 2) { break }
+            trace = trace + "a" + toString(i)
+        } finally {
+            trace = trace + "f" + toString(i)
+        }
+    }
+    return trace
+}
+assert(breakOrdering() == "b1a1f1b2f2", "break/finally ordering in while")
+
+// ---------------------------------------------------------------------------
+// Nested finallys where the inner loop exits normally and the inner try has a
+// continue replay
+// ---------------------------------------------------------------------------
+func continueInnerFinallyOuterLoop() {
+    let n = 0
+    for i in [1, 2] {
+        try {
+            for j in [1, 2] {
+                try {
+                    n = n + 1
+                    continue
+                } finally {
+                    n = n + 10
+                }
+            }
+        } finally {
+            n = n + 100
+        }
+    }
+    return n
+}
+assert(continueInnerFinallyOuterLoop() == 244, "inner continue with nested finallys")
+
+// ---------------------------------------------------------------------------
+// Finally with a break replay, then a second try in the same loop after it
+// (the loop continues past the try on intervening iterations)
+// ---------------------------------------------------------------------------
+func finallyThenMoreWork() {
+    let trace = ""
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        try {
+            trace = trace + "t" + toString(i)
+            if (i == 3) { break }
+        } finally {
+            trace = trace + "F" + toString(i)
+        }
+        trace = trace + "z" + toString(i)
+    }
+    return trace
+}
+assert(finallyThenMoreWork() == "t1F1z1t2F2z2t3F3", "work after try still runs")
+
+// ---------------------------------------------------------------------------
+// Control: try/finally with no break/continue/return inside
+// ---------------------------------------------------------------------------
+func noReplaysEmitted() {
+    let n = 0
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        try {
+            n = n + 1
+        } finally {
+            n = n + 10
+        }
+    }
+    return n
+}
+assert(noReplaysEmitted() == 33, "control: try/finally without non-local exits")
+
+print("Runtime finally replay isolation tests: PASS")
