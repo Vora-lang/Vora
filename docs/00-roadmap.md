@@ -108,7 +108,9 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
 
 > 注：P0 各项修复详情记录于 `CHANGELOG.md [Unreleased]`。早期 roadmap 版本
 > 引用的 per-fix 提交哈希（970caa4 / 61366f9 / 830a2f2 / c3bc77a）在 2026-09
-> 历史重写（`3f4f71e` snapshot）后已不可解析，不再作为引用依据。
+> 历史重写（`3f4f71e` snapshot）后已不可从 `main` 解析，不再作为引用依据。
+> 重写前的原始历史保存在 `origin/Bytecode-VM` 与 `origin/AST-interpreter`
+> 两个远端分支（与 `main` 无共同祖先），请勿删除——详见 CHANGELOG 顶部说明。
 [X] 把上述冻结为 v1.0 EBNF               —— docs/16-v1.0-grammar-ebnf.md
 [X] P1 推导式：实测已实现（v0.27 起 compiler_expr.cpp 走 iter()/next 脱糖，
     52/53 examples 全跑通）                  —— 本次 commit

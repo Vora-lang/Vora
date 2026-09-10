@@ -18,9 +18,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 > **Scope note (2026-09):** the P0/P1 fixes below were implemented across the
 > 2026-09 Phase 1 work. Part of that history was later rewritten into a single
-> snapshot commit (`3f4f71e`), so the original per-fix commit hashes cited in
-> older roadmap revisions (`970caa4`, `61366f9`, `830a2f2`, `c3bc77a`) are no
-> longer resolvable on `main`. This section is the authoritative record.
+> snapshot commit (`3f4f71e`, an initial commit with no parent), so the
+> original per-fix commit hashes cited in older roadmap revisions
+> (`970caa4`, `61366f9`, `830a2f2`, `c3bc77a`) are no longer resolvable from
+> `main` — `main` is a fresh 14-commit history unrelated to the original one.
+> This section is the authoritative record.
+>
+> **Pre-rewrite history archive:** the original history survives in two
+> remote branches that share no common ancestor with `main` and must be kept:
+> `origin/Bytecode-VM` (131 commits, tip 2026-06-27) and
+> `origin/AST-interpreter` (24 commits, tip 2026-05-31). Deleting them
+> orphans the last reachable copies of old commits (e.g. `f550cce`, the v0.26
+> commit cited below). All other hashes cited in this file were never pushed
+> to those branches and are unrecoverable.
 
 ### Added
 - **`\$` interpolation escape** (Phase 1, syntax-review #2.10): `"\${x}"`
