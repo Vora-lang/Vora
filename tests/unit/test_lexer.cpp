@@ -275,7 +275,7 @@ TEST_CASE("lexer_keywords_not_identifiers") {
     const char* keywords[] = {
         "let", "func", "return", "if", "else", "while", "for", "in",
         "Obj", "this", "break", "continue", "try", "catch", "finally",
-        "throw", "true", "false", "null", "and", "or"
+        "throw", "true", "false", "null", "and", "or", "not"
     };
     for (const char* kw : keywords) {
         auto t = scan(kw);
@@ -284,6 +284,24 @@ TEST_CASE("lexer_keywords_not_identifiers") {
         CHECK_FALSE(t[0].type == TokenType::IDENTIFIER);
         CHECK(t[0].lexeme == kw);
     }
+}
+
+TEST_CASE("lexer_not_maps_to_not_token") {
+    // `not` is an alias for `!` — same TokenType, so the parser and
+    // compiler need no changes (syntax-review #2.9).
+    auto t = scan("not");
+    REQUIRE(t.size() >= 2);
+    CHECK(t[0].type == TokenType::NOT);
+
+    auto bang = scan("!");
+    REQUIRE(bang.size() >= 2);
+    CHECK(bang[0].type == TokenType::NOT);
+
+    // Still allowed as a prefix of a longer identifier.
+    auto ident = scan("nothing");
+    REQUIRE(ident.size() >= 2);
+    CHECK(ident[0].type == TokenType::IDENTIFIER);
+    CHECK(ident[0].lexeme == "nothing");
 }
 
 // ============================================================================

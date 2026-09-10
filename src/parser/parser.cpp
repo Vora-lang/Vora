@@ -1716,9 +1716,12 @@ std::unique_ptr<Expr> Parser::primary() {
     if (match(TokenType::NOT)) {
         Token op = previous();
         // Same as unary minus: postfix binds tighter than not.
+        // NOTE: `not` is an alias for `!` and therefore binds tighter than
+        // comparison (unlike Python's `not`). `not x > 0` parses as
+        // `(not x) > 0` — write `not (x > 0)`.
         auto right = call();
 
-        if (!right) right = std::make_unique<ErrorExpr>("Expected expression after '!'", op);
+        if (!right) right = std::make_unique<ErrorExpr>("Expected expression after '!' / 'not'", op);
 
         return std::make_unique<UnaryExpr>(op, std::move(right));
     }

@@ -188,6 +188,17 @@ null || "fallback"   // "fallback" — null 是 falsy
 [] || "fallback"     // "fallback" — 空数组是 falsy
 ```
 
+**关键字别名**：`and` ≡ `&&`，`or` ≡ `||`，`not` ≡ `!` —— 同一套语义，任选其一。
+
+```vora
+true and false       // false —— 等价 true && false
+not (x > 0)          // 等价 !(x > 0)
+if (a and not b) { ... }
+```
+
+> ⚠ `not` 与 `!` 一样**绑定紧于比较运算**（与 Python 的 `not` 不同）：
+> `not x > 0` 会解析成 `(not x) > 0` 从而报错。取反比较请写 `not (x > 0)`。
+
 ### 空值合并运算符 `??`
 **v0.21+**
 

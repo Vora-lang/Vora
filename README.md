@@ -581,7 +581,7 @@ match flag { 1 => { doSomething(); }, _ => {} }
 
 | Module / 模块 | Lines / 行数 | Description / 说明 |
 |--------|-------|-------------|
-| `lexer/` | ~770 | Hand-written scanner, 33 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b / 手写扫描器，33 个关键字 |
+| `lexer/` | ~770 | Hand-written scanner, 34 keywords, O(1) lookup, nested block comments, Unicode, 0x/0o/0b / 手写扫描器，34 个关键字 |
 | `parser/` | ~2,200 | Pratt (precedence climbing), Go-style ASI, panic-mode error recovery / Pratt 解析器，Go 式词法 ASI |
 | `ast/` | ~2,630 | 38 node types (22 exprs + 16 stmts), templated Visitor pattern / 38 种节点类型，模板化 Visitor 模式 |
 | `vm/` | ~6,260 | Bytecode compiler + stack-based VM (opcode set in `src/vm/opcode.h`, incl. OP_TAIL_CALL + bitwise ops), constant folding, fast numeric ops / 字节码编译器 + 栈式 VM（操作码清单见 `src/vm/opcode.h`），常量折叠、快速数值指令 |

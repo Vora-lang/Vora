@@ -38,6 +38,7 @@ namespace vora {
         {"null", TokenType::NULL_TOKEN},
         {"and", TokenType::AND},
         {"or", TokenType::OR},
+        {"not", TokenType::NOT},
     };
 
     Lexer::Lexer(std::string source, ErrorReporter& reporter)

@@ -23,6 +23,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 > longer resolvable on `main`. This section is the authoritative record.
 
 ### Added
+- **`not` keyword** (Phase 1, syntax-review #2.9): `not` is an alias for `!`
+  — the same `TokenType::NOT`, so precedence and semantics are identical to
+  the symbol operator, completing the `and`/`or`/`not` keyword set. Like `!`
+  (and unlike Python), it binds tighter than comparison, so `not x > 0`
+  parses as `(not x) > 0` — documented explicitly in EBNF §5.1 and
+  USER_GUIDE. Editor highlighting for `and`/`or`/`not` added to all three
+  front-ends (the Vora-LSP tmLanguage and Zed tree-sitter grammar also
+  gained `and`/`or`, which were previously parsed as plain identifiers —
+  a silent mis-parse in the editor grammar).
+  Tests: `tests/runtime/test_not_operator.va` + lexer units.
 - **Object literal shorthand `{x}`** (Phase 1, syntax-review #2.11): a bare
   identifier entry expands to `{x: x}`, matching the shorthand already
   accepted in destructuring patterns. Recognized only when the identifier is
@@ -205,8 +215,8 @@ from `git log --oneline` on `main` and from `docs/08-已实现功能总结.md`
 > named-argument handling (lock-in decision), silent `import` binding
 > derivation, bitwise operators (`&` `|` `^` `~` `<<` `>>`), and
 > list/dict comprehensions (verified working at Phase 1 P1-A).
-> Still open at time of writing: `\$` interpolation escape, `not`
-> keyword, labeled break/continue, trailing commas, stdlib
+> Still open at time of writing: `\$` interpolation escape,
+> labeled break/continue, trailing commas, stdlib
 > expansion, DAP server (verify against Vora-LSP repo).
 
 These are real and verifiable in current code; do not write code that

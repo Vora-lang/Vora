@@ -1,0 +1,78 @@
+// =========================================================================
+// test_not_operator.va — `not` keyword (syntax-review #2.9)
+// `not` is an alias for `!`: same token, same precedence, same semantics.
+// NOTE: like `!` (and unlike Python's `not`), it binds tighter than
+// comparison, so `not x > 0` parses as `(not x) > 0` — parenthesize when
+// negating a comparison: `not (x > 0)`.
+// =========================================================================
+
+// --- basic negation ---
+assert(not true == false, "not true should be false")
+assert(not false == true, "not false should be true")
+
+// --- equivalence with `!` ---
+assert((not true) == (!true), "not and ! agree on true")
+assert((not false) == (!false), "not and ! agree on false")
+
+// --- falsy values negate to true ---
+assert(not null == true, "not null should be true")
+assert(not 0 == true, "not 0 should be true")
+assert(not "" == true, "not '' should be true")
+assert(not [] == true, "not [] should be true")
+
+// --- truthy values negate to false ---
+assert(not 1 == false, "not 1 should be false")
+assert(not "x" == false, "not 'x' should be false")
+
+// --- result is a bool ---
+assert(type(not true) == "boolean", "not should yield a boolean")
+
+// --- negating a parenthesized comparison (the recommended form) ---
+let x = 5
+assert(not (x > 0) == false, "not (5 > 0) should be false")
+assert(not (x > 10) == true, "not (5 > 10) should be true")
+assert(not (x == 5) == false, "not (5 == 5) should be false")
+
+// --- interacts with and / or like `!` does ---
+// Note `==` binds tighter than `and`/`or`, so parenthesize the
+// logical expression before comparing.
+let t = true
+let f = false
+assert(((not t) and f) == false, "not t and f: (not true) and false = false")
+assert(((not f) and t) == true, "not f and t: (not false) and true = true")
+assert(((not f) or f) == true, "not f or f: (not false) or false = true")
+
+// --- double negation ---
+assert(not not true == true, "double negation of true")
+assert(not not false == false, "double negation of false")
+
+// --- in conditions ---
+let flag = false
+if (not flag) {
+    assert(true, "not flag enters the if-branch")
+} else {
+    assert(false, "should not reach else")
+}
+
+// --- in a loop condition ---
+let i = 0
+while (not (i >= 3)) {
+    i += 1
+}
+assert(i == 3, "loop should run until i = 3")
+
+// --- as a return value ---
+func isEven(n) {
+    return not (n % 2 == 1)
+}
+assert(isEven(4) == true, "4 is even")
+assert(isEven(3) == false, "3 is odd")
+
+// --- `not` is a keyword, but longer identifiers still work ---
+let nothing = 7
+let notable = "yes"
+assert(nothing == 7, "identifier 'nothing' should not be affected")
+assert(notable == "yes", "identifier 'notable' should not be affected")
+assert(nothing != 0, "identifier 'nothing' is a normal variable")
+
+print("All not-operator tests passed!")
