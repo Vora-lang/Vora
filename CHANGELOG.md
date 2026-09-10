@@ -23,6 +23,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 > longer resolvable on `main`. This section is the authoritative record.
 
 ### Added
+- **`\$` interpolation escape** (Phase 1, syntax-review #2.10): `"\${x}"`
+  now yields the literal text `${x}` instead of interpolating. The lexer
+  stores an escaped dollar as an in-band sentinel (`kEscapedDollar`,
+  `src/lexer/token.h`); the compiler treats a real `$` as an interpolation
+  start and resolves the sentinel back to `$` at `emitConstant` — the single
+  choke point, so compile-time constant folding is covered too. The
+  formatter emits `\$` for the sentinel, so `vora fmt` round-trips without
+  changing meaning. `"\\${x}"` (escaped backslash + interpolation → `\5`)
+  remains distinct from `"\${x}"` (literal).
+  Tests: `tests/runtime/test_string_escape.va` + formatter round-trip cases.
 - **`not` keyword** (Phase 1, syntax-review #2.9): `not` is an alias for `!`
   — the same `TokenType::NOT`, so precedence and semantics are identical to
   the symbol operator, completing the `and`/`or`/`not` keyword set. Like `!`
@@ -80,6 +90,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   brace-aware scan; previously a syntax dead-end.
 
 ### Fixed
+- **Compile-time string folding swallowed interpolation** (pre-existing,
+  found while implementing `\$`): `"a" + "${x}"` folded both string operands
+  by concatenating their raw values, bypassing the `${...}` handling in
+  `visitLiteralExpr`, so it produced the literal text `${x}` instead of the
+  interpolated value. Folding now defers when either operand contains `${`.
 - **Cross-line statement swallowing** (P0 #1): Go-style lexical ASI — a
   newline now terminates a statement at statement level (paren/bracket depth
   0). `let b = a` followed by `-1` is two statements, not a subtraction.
@@ -215,9 +230,8 @@ from `git log --oneline` on `main` and from `docs/08-已实现功能总结.md`
 > named-argument handling (lock-in decision), silent `import` binding
 > derivation, bitwise operators (`&` `|` `^` `~` `<<` `>>`), and
 > list/dict comprehensions (verified working at Phase 1 P1-A).
-> Still open at time of writing: `\$` interpolation escape,
-> labeled break/continue, trailing commas, stdlib
-> expansion, DAP server (verify against Vora-LSP repo).
+> Still open at time of writing: labeled break/continue, trailing commas,
+> stdlib expansion, DAP server (verify against Vora-LSP repo).
 
 These are real and verifiable in current code; do not write code that
 depends on them. Confirmed via syntax review (2026-09) and inspection

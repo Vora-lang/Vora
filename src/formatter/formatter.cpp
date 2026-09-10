@@ -241,7 +241,8 @@ std::string SourceFormatter::visitLiteralExpr(const LiteralExpr& expr) {
         // decoded string content (no surrounding quotes), so we add them.
         // Simple escaping: backslash + double-quote.
         std::string out = "\"";
-        for (char c : v.asGcString()->value) {
+        for (size_t i = 0; i < v.asGcString()->value.size(); i++) {
+            char c = v.asGcString()->value[i];
             if (c == '"') {
                 out += "\\\"";
             } else if (c == '\\') {
@@ -252,6 +253,10 @@ std::string SourceFormatter::visitLiteralExpr(const LiteralExpr& expr) {
                 out += "\\r";
             } else if (c == '\t') {
                 out += "\\t";
+            } else if (c == kEscapedDollar) {
+                // Escaped dollar survives as `\$` so the output parses back
+                // to the same value (otherwise `${` would re-interpolate).
+                out += "\\$";
             } else {
                 out += c;
             }

@@ -24,7 +24,9 @@ void Compiler::visitLiteralExpr(const LiteralExpr& expr) {
         emitConstant(v);
     } else if (v.isGcString()) {
         const auto& str = v.asGcString()->value;
-        // Check for ${...} interpolation patterns
+        // `\$` was lexed to kEscapedDollar, so any real `$` here starts an
+        // interpolation. Detection must run on the raw value (emitConstant
+        // resolves the sentinel afterwards).
         if (str.find("${") != std::string::npos) {
             compileInterpolatedString(str);
         } else {
@@ -96,6 +98,16 @@ void Compiler::compileInterpolatedString(const std::string& str) {
         }
         emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
     }
+}
+
+std::string Compiler::resolveEscapedDollar(const std::string& str) {
+    if (str.find(kEscapedDollar) == std::string::npos) return str;
+    std::string out;
+    out.reserve(str.size());
+    for (char c : str) {
+        out += (c == kEscapedDollar) ? '$' : c;
+    }
+    return out;
 }
 
 void Compiler::compileVariableOrPropertyRef(const std::string& name) {
@@ -261,8 +273,16 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
             }
         }
         if (lv.isGcString() && rv.isGcString()) {
-            // String concatenation at compile time
-            if (expr.op.type == TokenType::PLUS) {
+            // String concatenation at compile time.
+            // NOTE: only fold when neither side needs interpolation —
+            // folding concatenates the raw literal values and would
+            // otherwise swallow `${...}` (e.g. `"a" + "${x}"` must still
+            // interpolate). Deferring lets the normal path compile each
+            // operand, where visitLiteralExpr handles interpolation.
+            const bool needsInterp =
+                lv.asGcString()->value.find("${") != std::string::npos ||
+                rv.asGcString()->value.find("${") != std::string::npos;
+            if (expr.op.type == TokenType::PLUS && !needsInterp) {
                 emitConstant(GcHeap::instance().alloc<GcString>(lv.asGcString()->value + rv.asGcString()->value));
                 return;
             }

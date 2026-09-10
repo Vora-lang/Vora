@@ -78,6 +78,16 @@ void Compiler::emitConvert(const std::string& typeAnnotation) {
 }
 
 void Compiler::emitConstant(Value value) {
+    // Single choke point for string constants: resolve the escaped-dollar
+    // sentinel written by the lexer for `\$`. Doing it here (rather than at
+    // each literal site) also covers compile-time constant folding, which
+    // concatenates raw string values directly.
+    if (value.isGcString()) {
+        const std::string& s = value.asGcString()->value;
+        if (s.find(kEscapedDollar) != std::string::npos) {
+            value = GcHeap::instance().alloc<GcString>(resolveEscapedDollar(s));
+        }
+    }
     chunk.writeConstant(value, currentLine, currentColumn);
 }
 

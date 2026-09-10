@@ -129,9 +129,11 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
     tests/runtime/test_dict_shorthand.va + 4 个 parser 单测）
 [X] `not` 关键字（2.9；`TokenType::NOT` 别名 `!`，绑定紧于比较——与 Python 不同，已在 EBNF §5.1 显式标注；
     三端高亮同步）
+[X] 插值转义 `\$`（2.10；词法层 `kEscapedDollar` 带内标记 + 编译器在 `emitConstant` 咽喉点还原；
+    覆盖常量折叠与 formatter 往返；tests/runtime/test_string_escape.va + formatter 往返用例）
+    —— 顺带修复既有缺陷：`"a" + "${x}"` 因常量折叠吞掉插值而**静默不插值**，现已在折叠前检查 `${`。
 
 Phase 1 剩余（语法评审第 5 节"第三批"项，尚未纳入本清单，实测确认仍未解决）：
-  [ ] 插值转义 `\$`（实测 `\${x}` → `\5`，反斜杠保留且插值照常；EBNF §2.3 已改正声明）
   [ ] 标签 break/continue（2.8）
   [ ] 尾随逗号（`[1,2,]` / `{a:1,}` / `f(1,2,)` / 形参表，实测均报错；EBNF §5.4 已改正声明）
 ```

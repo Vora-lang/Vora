@@ -206,6 +206,12 @@ namespace vora {
                     case '\\': value += '\\'; break;
                     case '"':  value += '"';  break;
                     case '\'': value += '\''; break;
+                    case '$':
+                        // Escaped dollar: store the sentinel so the compiler
+                        // does not treat the following `{` as interpolation.
+                        // See kEscapedDollar in token.h.
+                        value += kEscapedDollar;
+                        break;
                     default:
                         // Unrecognized escape: keep both characters
                         value += '\\';

@@ -1,0 +1,74 @@
+// =========================================================================
+// test_string_escape.va — String escapes and interpolation
+// Tests: `\$` escapes interpolation (syntax-review #2.10), interacts
+//        correctly with `\\` and real interpolation, and that compile-time
+//        string folding does not swallow interpolation.
+//
+// NOTE: assertion messages below avoid literal `${...}` because messages
+// are themselves interpolated strings.
+// =========================================================================
+
+let x = 5
+let name = "Vora"
+
+// Expected literal "${x}" (a real dollar sign) built at runtime, so the
+// program under test is not compared against an interpolated literal.
+let dollar = "\$"
+let openBrace = "{"
+let closeBrace = "}"
+let litX = dollar + openBrace + "x" + closeBrace          // "${x}"
+let litName = dollar + openBrace + "name" + closeBrace    // "${name}"
+let litB = dollar + openBrace + "b" + closeBrace          // "${b}"
+
+// --- escaped dollar suppresses interpolation ---
+assert("\${x}" == litX, "escaped dollar yields the literal four-char text")
+assert(len("\${x}") == 4, "escaped form is four characters")
+assert("\${name}" == litName, "escaped name form is literal")
+
+// --- escaped dollar with no interpolation context ---
+assert("\$" == "$", "a lone escaped dollar is a plain dollar")
+assert("price: \$100" == "price: $100", "escaped dollar inside text")
+
+// --- real interpolation still works ---
+assert("${x}" == "5", "unescaped interpolation still works")
+assert(len("${x}") == 1, "interpolated value is one character")
+assert("v=${name}" == "v=Vora", "unescaped interpolation inside text")
+assert("\${x}" != "${x}", "escaped form differs from interpolated form")
+
+// --- escape and interpolation in the same literal ---
+assert("\${x} = ${x}" == litX + " = 5", "escaped and real interpolation coexist")
+assert("a\${b}${x}c" == "a" + litB + "5c", "mixed literal segments")
+
+// --- escaped backslash followed by a real interpolation ---
+assert("\\${x}" == "\\5", "escaped backslash then interpolation gives backslash-5")
+
+// --- compile-time concatenation must not swallow interpolation
+// (regression: folding used to merge raw literals and skip interpolation) ---
+assert(("[A]" + "${x}") == "[A]5", "folded concatenation must interpolate")
+assert(("[B]" + "${x}" + "!") == "[B]5!", "chained folding must interpolate")
+assert(("[C]" + "\${x}") == "[C]" + litX, "folded concatenation keeps escapes")
+assert(("[D]" + "plain") == "[D]plain", "plain folding still works")
+
+// --- escapes work as dict keys ---
+let d = {"\${k}": 1, key2: 2}
+let litK = dollar + openBrace + "k" + closeBrace          // "${k}"
+assert(d[litK] == 1, "escaped dollar dict key is literal")
+assert(len(d) == 2, "dict has two entries")
+
+// --- escaped dollar in single-quoted strings ---
+assert('\${x}' == litX, "escaped dollar works in single-quoted strings")
+
+// --- other escapes unchanged (regression) ---
+assert(len("\n") == 1, "newline escape is one character")
+assert(len("\t") == 1, "tab escape is one character")
+assert(len("\\") == 1, "backslash escape is one character")
+assert("\n" != "n", "newline escape is not the letter n")
+
+// --- property interpolation still works ---
+Obj P() {
+    this.v = 7
+}
+let p = P()
+assert("v=${p.v}" == "v=7", "property interpolation")
+
+print("All string escape tests passed!")

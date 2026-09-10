@@ -14,6 +14,22 @@
 namespace vora {
 
     /**
+     * @brief In-band marker for an escaped dollar sign (`\$`).
+     *
+     * The lexer decodes string escapes, so by the time the compiler sees a
+     * STRING token's value, `\\$` (escaped backslash + interpolation) and
+     * `\$` (escaped dollar, literal) are indistinguishable — both would be
+     * the two characters `\` `$`. To keep the distinction, the lexer stores
+     * an escaped `\$` as this sentinel instead of a plain `$`; the compiler
+     * treats a real `$` as an interpolation start and converts the sentinel
+     * back to `$` in literal output. The formatter maps the sentinel back to
+     * `\$` so `vora fmt` round-trips without changing meaning.
+     *
+     * U+0001 (SOH) never appears in parsed source in practice.
+     */
+    constexpr char kEscapedDollar = '\x01';
+
+    /**
      * @brief Enumeration of all token types produced by the lexer.
      *
      * Each value represents a distinct lexical category: literal values

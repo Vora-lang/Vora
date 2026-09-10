@@ -786,6 +786,11 @@ private:
     /// @brief Compile a reference to a variable or property (used in interpolation).
     /// @param name The variable or property name.
     void compileVariableOrPropertyRef(const std::string& name);
+
+    /// @brief Turn kEscapedDollar sentinels back into literal '$'.
+    /// @param str String possibly containing escaped-dollar sentinels.
+    /// @return String with every sentinel replaced by '$'.
+    static std::string resolveEscapedDollar(const std::string& str);
 };
 
 } // namespace vora
