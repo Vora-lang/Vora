@@ -18,7 +18,7 @@ let i = 5
 let j = i++ + 10
 print(i)
 print(j)
-Obj Count() {
+class Count() {
     this.n = 0
 }
 let ct = Count()

@@ -5,7 +5,7 @@ try {
     print("Caught string:", e)
 }
 print("=== Test 2: custom error object ===")
-Obj ValidationError(msg) {
+class ValidationError(msg) {
     this.message = msg
 }
 try {
@@ -26,7 +26,7 @@ try {
 print("=== Test 4: throw in function ===")
 func divide(a, b) {
     if (b == 0) {
-        Obj DivError(msg) {
+        class DivError(msg) {
             this.message = msg
         }
         throw DivError("Cannot divide by zero")

@@ -284,7 +284,7 @@ TEST_CASE("vm_division_by_zero") {
 
 TEST_CASE("vm_interpret_object_creation") {
     auto [result, vm] = run(
-        "Obj Point(x, y) {"
+        "class Point(x, y) {"
         "  this.x = x;"
         "  this.y = y;"
         "}"
@@ -295,7 +295,7 @@ TEST_CASE("vm_interpret_object_creation") {
 
 TEST_CASE("vm_interpret_object_method") {
     auto [result, vm] = run(
-        "Obj Greeter() {"
+        "class Greeter() {"
         "  func greet() { return \"hi\"; }"
         "}"
         "let g = Greeter();"

@@ -4,7 +4,7 @@
 print("=== For-in Object Property Iteration ===")
 
 // --- Basic: iterate keys ---
-Obj Pt(x, y) { this.x = x; this.y = y }
+class Pt(x, y) { this.x = x; this.y = y }
 let pt = Pt(10, 20)
 
 let keys = []
@@ -14,14 +14,14 @@ assert(len(keys) == 2, "two properties")
 assert(keys[0] == "x" and keys[1] == "y", "sorted keys")
 
 // --- Empty object ---
-Obj Empty() {}
+class Empty() {}
 let e = Empty()
 let emptyKeys = []
 for k in e { emptyKeys.add(k) }
 assert(len(emptyKeys) == 0, "empty object")
 
 // --- Object with many properties ---
-Obj Big() {
+class Big() {
     this.a = 1; this.b = 2; this.c = 3
     this.d = 4; this.e = 5
 }
@@ -42,7 +42,7 @@ for k in big {
 assert(sumVals == 15, "sum of all values")
 
 // --- Object with methods (methods are NOT properties) ---
-Obj Meth() {
+class Meth() {
     this.val = 42
     func getVal() { return this.val }
 }
@@ -52,8 +52,8 @@ for k in m { mKeys.add(k) }
 assert(len(mKeys) == 1 and mKeys[0] == "val", "methods not in properties")
 
 // --- Inherited object ---
-Obj Base() { this.baseVal = 100 }
-Obj Sub : Base () { this.subVal = 200 }
+class Base() { this.baseVal = 100 }
+class Sub : Base () { this.subVal = 200 }
 let s = Sub()
 let sKeys = []
 for k in s { sKeys.add(k) }

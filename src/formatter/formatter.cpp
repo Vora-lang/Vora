@@ -854,7 +854,7 @@ std::string SourceFormatter::visitFuncStmt(const FuncStmt& stmt) {
 
 std::string SourceFormatter::visitObjStmt(const ObjStmt& stmt) {
     std::stringstream ss;
-    ss << "Obj " << stmt.name;
+    ss << "class " << stmt.name;
 
     // Parent class names (syntax: Obj Child : Parent1, Parent2 (params) { ... })
     if (!stmt.parentNames.empty()) {

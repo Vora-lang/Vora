@@ -274,7 +274,7 @@ TEST_CASE("lexer_string_unterminated") {
 TEST_CASE("lexer_keywords_not_identifiers") {
     const char* keywords[] = {
         "let", "func", "return", "if", "else", "while", "for", "in",
-        "Obj", "this", "break", "continue", "try", "catch", "finally",
+        "class", "this", "break", "continue", "try", "catch", "finally",
         "throw", "true", "false", "null", "and", "or", "not"
     };
     for (const char* kw : keywords) {

@@ -82,7 +82,7 @@ let add5 = makeAdder(5)
 assert(add5(10) == 15, "add5(10) should be 15")
 
 // Objects
-Obj Point(x, y) {
+class Point(x, y) {
     this.x = x
     this.y = y
 }

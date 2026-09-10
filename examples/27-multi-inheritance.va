@@ -1,13 +1,13 @@
 print("=== 1. Simple multiple inheritance ===")
-Obj Speaker() {
+class Speaker() {
     func speak() { return "hello from Speaker" }
     func greet() { return "hi from Speaker" }
 }
-Obj Walker() {
+class Walker() {
     func walk() { return "walking from Walker" }
     func greet() { return "hi from Walker" }
 }
-Obj Robot : Speaker, Walker() {
+class Robot : Speaker, Walker() {
     func work() { return "working" }
 }
 let r = Robot()
@@ -17,31 +17,31 @@ print("greet:", r.greet())
 print("work:", r.work())
 
 print("\n=== 2. Diamond inheritance (C3 MRO) ===")
-Obj A() {
+class A() {
     func who() { return "A" }
     func fromA() { return "method from A" }
 }
-Obj B : A() {
+class B : A() {
     func who() { return "B" }
 }
-Obj C : A() {
+class C : A() {
     func who() { return "C" }
 }
-Obj D : B, C() {}
+class D : B, C() {}
 let d = D()
 print("who:", d.who())
 print("fromA:", d.fromA())
 
 print("\n=== 3. Constructor chain (reverse MRO order) ===")
-Obj Base(name) {
+class Base(name) {
     this.name = name
     this.chain = ["Base"]
 }
-Obj Middle : Base(name, value) {
+class Middle : Base(name, value) {
     this.value = value
     this.chain.add("Middle")
 }
-Obj Leaf : Middle(name, value, extra) {
+class Leaf : Middle(name, value, extra) {
     this.extra = extra
     this.chain.add("Leaf")
 }
@@ -52,32 +52,32 @@ print("extra:", leaf.extra)
 print("constructor chain:", leaf.chain)
 
 print("\n=== 4. Three-way diamond ===")
-Obj X() {
+class X() {
     func tag() { return "X" }
 }
-Obj Y : X() {
+class Y : X() {
     func tag() { return "Y" }
 }
-Obj Z : X() {
+class Z : X() {
     func tag() { return "Z" }
 }
-Obj W : Y, Z() {}
+class W : Y, Z() {}
 let w = W()
 print("W tag:", w.tag())
 print("W tag resolves to first parent (Y)")
 
 print("\n=== 5. Method inheritance across MRO ===")
-Obj P() {
+class P() {
     func foo() { return "P.foo" }
     func bar() { return "P.bar" }
 }
-Obj Q : P() {
+class Q : P() {
     func foo() { return "Q.foo" }
 }
-Obj R : P() {
+class R : P() {
     func bar() { return "R.bar" }
 }
-Obj S : Q, R() {}
+class S : Q, R() {}
 let s = S()
 print("S.foo:", s.foo())
 print("S.bar:", s.bar())

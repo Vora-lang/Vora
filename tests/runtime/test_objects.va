@@ -4,7 +4,7 @@
 print("=== Runtime: Object Tests ===")
 
 // Basic object
-Obj Point(x, y) {
+class Point(x, y) {
     this.x = x
     this.y = y
 
@@ -22,7 +22,7 @@ p.x = 10
 assert(p.x == 10, "property write")
 
 // This binding
-Obj Counter(init) {
+class Counter(init) {
     this.val = init
     func get() { return this.val }
     func inc() { this.val += 1; return this.val }
@@ -39,11 +39,11 @@ assert(c1.get() == 100, "instance 1 independent")
 assert(c2.get() == 200, "instance 2 independent")
 
 // Inheritance - basic
-Obj Animal(name) {
+class Animal(name) {
     this.name = name
     func speak() { return "generic" }
 }
-Obj Dog : Animal (name, breed) {
+class Dog : Animal (name, breed) {
     this.breed = breed
     func speak() { return "woof" }
     func getBreed() { return this.breed }
@@ -55,7 +55,7 @@ assert(d.speak() == "woof", "method override")
 assert(d.getBreed() == "Husky", "own method")
 
 // Inheritance - multi-level
-Obj Puppy : Dog (name, breed, toy) {
+class Puppy : Dog (name, breed, toy) {
     this.toy = toy
     func speak() { return "yip" }
 }
@@ -66,7 +66,7 @@ assert(pup.toy == "ball", "leaf prop")
 assert(pup.speak() == "yip", "leaf override")
 
 // Object with only methods (no params)
-Obj Logger() {
+class Logger() {
     func log(msg) {
         return "LOG: " + msg
     }
@@ -75,7 +75,7 @@ let log = Logger()
 assert(log.log("test") == "LOG: test", "method-only object")
 
 // Multiple methods
-Obj Calc() {
+class Calc() {
     func double(x) { return x * 2 }
     func triple(x) { return x * 3 }
 }

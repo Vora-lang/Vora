@@ -330,7 +330,7 @@ TEST_CASE("compiler_compound_assignment_global") {
 
 TEST_CASE("compiler_compound_assignment_property") {
     auto chunk = compile(
-        "Obj T() { this.n = 0 }"
+        "class T() { this.n = 0 }"
         "let t = T();"
         "t.n += 5;");
     CHECK(containsOpcode(chunk, OpCode::OP_GET_PROPERTY));

@@ -220,7 +220,7 @@ assert(type(42) == "int" and type(3.14) == "float", "tT2")
 assert(type("hi") == "string" and type([1]) == "array", "tT3")
 
 func dummy() {}
-Obj DummyType() {}
+class DummyType() {}
 assert(type(dummy) == "function" and type(DummyType()) == "object", "tTF")
 assert(int(3.9) == 3 and int("42") == 42, "tIv")
 assert(float(42) == 42.0 and type(float(42)) == "float", "tFv")
@@ -250,7 +250,7 @@ print("--- 10. String Edge Cases ---")
 let iName = "Vora"
 assert("Hello ${iName}!" == "Hello Vora!", "sIp")
 
-Obj S(n) { this.name = n }
+class S(n) { this.name = n }
 let sp = S("X")
 assert("Hi ${sp.name}!" == "Hi X!", "sIp2")
 
@@ -268,33 +268,33 @@ assert(so, "sOoB")
 // =========================================================================
 print("--- 11. Object + Inheritance ---")
 
-Obj Empty() {}
+class Empty() {}
 assert(type(Empty()) == "object", "oE")
 
 // Deep chain (5 levels)
-Obj L1(x) { this.x = x }
-Obj L2 : L1 (x, y) { this.y = y }
-Obj L3 : L2 (x, y, z) { this.z = z }
-Obj L4 : L3 (x, y, z, w) { this.w = w }
-Obj L5 : L4 (x, y, z, w, v) { this.v = v }
+class L1(x) { this.x = x }
+class L2 : L1 (x, y) { this.y = y }
+class L3 : L2 (x, y, z) { this.z = z }
+class L4 : L3 (x, y, z, w) { this.w = w }
+class L5 : L4 (x, y, z, w, v) { this.v = v }
 let l5 = L5(1, 2, 3, 4, 5)
 assert(l5.x == 1 and l5.v == 5, "oL")
 
 // Method override
-Obj MA() { func tag() { return "A" } }
-Obj MB : MA () { func tag() { return "B" } }
-Obj MC : MB () {}
+class MA() { func tag() { return "A" } }
+class MB : MA () { func tag() { return "B" } }
+class MC : MB () {}
 assert(MC().tag() == "B", "oOv")
 
 // Diamond: first parent wins
-Obj DA() { func n() { return "A" } }
-Obj DB : DA () { func n() { return "B" } }
-Obj DC : DA () { func n() { return "C" } }
-Obj DD : DB, DC () {}
+class DA() { func n() { return "A" } }
+class DB : DA () { func n() { return "B" } }
+class DC : DA () { func n() { return "C" } }
+class DD : DB, DC () {}
 assert(DD().n() == "B", "oDi")
 
 // Independent instances
-Obj Ctr(v) {
+class Ctr(v) {
     this.v = v
     func inc() { this.v = this.v + 1; return this.v }
 }
@@ -303,9 +303,9 @@ let ct2 = Ctr(100)
 assert(ct1.inc() == 1 and ct2.inc() == 101, "oIi")
 
 // Super chain
-Obj SA() { func t() { return "A" } }
-Obj SB : SA () { func t() { return "B" } }
-Obj SC : SB () { func t() { return super.t() + "C" } }
+class SA() { func t() { return "A" } }
+class SB : SA () { func t() { return "B" } }
+class SC : SB () { func t() { return super.t() + "C" } }
 assert(SC().t() == "BC", "oSp")
 
 // =========================================================================

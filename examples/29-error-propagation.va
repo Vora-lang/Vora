@@ -6,7 +6,7 @@ try {
 }
 
 print("\n=== 2. Throw custom object ===")
-Obj AppError(msg, code) {
+class AppError(msg, code) {
     this.message = msg
     this.code = code
 }
@@ -77,7 +77,7 @@ func outer() {
 outer()
 
 print("\n=== 7. Error objects as control flow ===")
-Obj AppValidationError(msg, field) {
+class AppValidationError(msg, field) {
     this.message = msg
     this.field = field
 }

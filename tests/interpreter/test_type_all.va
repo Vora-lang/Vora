@@ -22,7 +22,7 @@ assert(type(foo) == "function", "type(function)")
 assert(type(print) == "function", "type(print)")
 
 // Class instances
-Obj Person(name) {
+class Person(name) {
     this.name = name
 }
 // Class constructor is a Callable → "function"

@@ -59,7 +59,7 @@ TEST_CASE("fmt_idempotent_function") {
 }
 
 TEST_CASE("fmt_idempotent_object") {
-    CHECK(isIdempotent("Obj Person(name, age) { this.name = name\nfunc greet() { print(\"hi\") } }"));
+    CHECK(isIdempotent("class Person(name, age) { this.name = name\nfunc greet() { print(\"hi\") } }"));
 }
 
 TEST_CASE("fmt_idempotent_nested_blocks") {
@@ -114,19 +114,19 @@ TEST_CASE("fmt_function_declaration") {
 }
 
 TEST_CASE("fmt_object_declaration") {
-    std::string out = fmt("Obj MyClass(name) { this.name = name\nfunc speak() { print(this.name) } }");
-    CHECK(out.find("Obj MyClass(name) {") != std::string::npos);
+    std::string out = fmt("class MyClass(name) { this.name = name\nfunc speak() { print(this.name) } }");
+    CHECK(out.find("class MyClass(name) {") != std::string::npos);
     CHECK(out.find("func speak() {") != std::string::npos);
 }
 
 TEST_CASE("fmt_object_with_inheritance") {
-    std::string out = fmt("Obj Dog : Animal(name) { this.name = name }");
-    CHECK(out.find("Obj Dog : Animal(name) {") != std::string::npos);
+    std::string out = fmt("class Dog : Animal(name) { this.name = name }");
+    CHECK(out.find("class Dog : Animal(name) {") != std::string::npos);
 }
 
 TEST_CASE("fmt_multi_inheritance") {
-    std::string out = fmt("Obj Robot : Speaker, Walker() { func work() { return \"working\" } }");
-    CHECK(out.find("Obj Robot : Speaker, Walker() {") != std::string::npos);
+    std::string out = fmt("class Robot : Speaker, Walker() { func work() { return \"working\" } }");
+    CHECK(out.find("class Robot : Speaker, Walker() {") != std::string::npos);
 }
 
 TEST_CASE("fmt_return_statement") {
@@ -183,7 +183,7 @@ TEST_CASE("fmt_compound_assignment_all_ops") {
 }
 
 TEST_CASE("fmt_compound_assignment_property") {
-    std::string out = fmt("Obj T() { this.n = 0 }\nlet t = T()\nt.n += 5\n");
+    std::string out = fmt("class T() { this.n = 0 }\nlet t = T()\nt.n += 5\n");
     CHECK(out.find("t.n += 5") != std::string::npos);
 }
 
@@ -258,8 +258,8 @@ TEST_CASE("fmt_empty_block") {
 }
 
 TEST_CASE("fmt_empty_object") {
-    std::string out = fmt("Obj Empty() {}");
-    CHECK(out.find("Obj Empty() {") != std::string::npos);
+    std::string out = fmt("class Empty() {}");
+    CHECK(out.find("class Empty() {") != std::string::npos);
 }
 
 TEST_CASE("fmt_string_escape") {
@@ -321,12 +321,12 @@ TEST_CASE("fmt_default_param") {
 }
 
 TEST_CASE("fmt_this_expr") {
-    std::string out = fmt("Obj Foo() { this.bar = 42 }");
+    std::string out = fmt("class Foo() { this.bar = 42 }");
     CHECK(out.find("this.bar = 42") != std::string::npos);
 }
 
 TEST_CASE("fmt_super_expr") {
     // super in object constructor — just verify it compiles/round-trips
-    std::string out = fmt("Obj A() { this.x = 1 }");
+    std::string out = fmt("class A() { this.x = 1 }");
     CHECK_FALSE(out.empty());
 }

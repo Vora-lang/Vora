@@ -101,7 +101,7 @@ void Parser::synchronize() {
                 case TokenType::WHILE:
                 case TokenType::FOR:
                 case TokenType::RETURN:
-                case TokenType::OBJ:
+                case TokenType::CLASS:
                 case TokenType::BREAK:
                 case TokenType::CONTINUE:
                 case TokenType::TRY:
@@ -242,7 +242,7 @@ std::unique_ptr<Stmt> Parser::statement() {
         return funcStatement(isAsync);
     }
 
-    if (match(TokenType::OBJ)) {
+    if (match(TokenType::CLASS)) {
         return objStatement();
     }
 
@@ -2884,13 +2884,13 @@ std::unique_ptr<Stmt> Parser::exportStatement() {
         return std::make_unique<ExportStmt>(std::move(stmt), keyword);
     }
 
-    if (match(TokenType::OBJ)) {
+    if (match(TokenType::CLASS)) {
         auto stmt = objStatement();
         if (!stmt) return errorStmt("Failed to parse exported object");
         return std::make_unique<ExportStmt>(std::move(stmt), keyword);
     }
 
-    return errorStmt("Expected func, let, const, or Obj after 'export'");
+    return errorStmt("Expected func, let, const, or class after 'export'");
 }
 
 std::unique_ptr<Stmt> Parser::deferStatement() {

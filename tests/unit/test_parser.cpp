@@ -181,7 +181,7 @@ TEST_CASE("parser_func_no_params") {
 }
 
 TEST_CASE("parser_obj_statement") {
-    auto prog = parse("Obj Point(x, y) { this.x = x; this.y = y; }");
+    auto prog = parse("class Point(x, y) { this.x = x; this.y = y; }");
     REQUIRE(prog != nullptr);
     auto* obj = dynamic_cast<ObjStmt*>(prog->statements[0].get());
     REQUIRE(obj != nullptr);
@@ -192,7 +192,7 @@ TEST_CASE("parser_obj_statement") {
 }
 
 TEST_CASE("parser_obj_inheritance") {
-    auto prog = parse("Obj Child : Parent(x) { }");
+    auto prog = parse("class Child : Parent(x) { }");
     REQUIRE(prog != nullptr);
     auto* obj = dynamic_cast<ObjStmt*>(prog->statements[0].get());
     REQUIRE(obj != nullptr);
@@ -368,7 +368,7 @@ TEST_CASE("parser_index_expression") {
 }
 
 TEST_CASE("parser_property_access") {
-    auto prog = parse("Obj O() { func m() {} } let o = O(); o.m();");
+    auto prog = parse("class O() { func m() {} } let o = O(); o.m();");
     // obj.prop → PropertyExpr
     CHECK(prog != nullptr);
 }
@@ -659,9 +659,9 @@ TEST_CASE("parser_error_partial_func_missing_params") {
 }
 
 TEST_CASE("parser_error_partial_obj_missing_name") {
-    // Obj (x, y) { } — missing name.
-    StderrErrorReporter reporter("Obj (x, y) { }");
-    Lexer lexer("Obj (x, y) { }", reporter);
+    // class (x, y) { } — missing name.
+    StderrErrorReporter reporter("class (x, y) { }");
+    Lexer lexer("class (x, y) { }", reporter);
     auto tokens = lexer.scanTokens();
     Parser parser(std::move(tokens), reporter);
     auto prog = parser.parse();
@@ -672,9 +672,9 @@ TEST_CASE("parser_error_partial_obj_missing_name") {
 }
 
 TEST_CASE("parser_error_partial_obj_missing_body") {
-    // Obj Point(x, y) — missing body.
-    StderrErrorReporter reporter("Obj Point(x, y)");
-    Lexer lexer("Obj Point(x, y)", reporter);
+    // class Point(x, y) — missing body.
+    StderrErrorReporter reporter("class Point(x, y)");
+    Lexer lexer("class Point(x, y)", reporter);
     auto tokens = lexer.scanTokens();
     Parser parser(std::move(tokens), reporter);
     auto prog = parser.parse();
@@ -1169,9 +1169,9 @@ TEST_CASE("parser_error_lsp_incomplete_forin") {
 }
 
 TEST_CASE("parser_error_lsp_incomplete_object") {
-    // User typing: "Obj Point(" — incomplete.
-    StderrErrorReporter reporter("Obj Point(");
-    Lexer lexer("Obj Point(", reporter);
+    // User typing: "class Point(" — incomplete.
+    StderrErrorReporter reporter("class Point(");
+    Lexer lexer("class Point(", reporter);
     auto tokens = lexer.scanTokens();
     Parser parser(std::move(tokens), reporter);
     auto prog = parser.parse();

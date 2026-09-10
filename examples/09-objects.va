@@ -1,4 +1,4 @@
-Obj Person(name, age) {
+class Person(name, age) {
     this.name = name
     this.age = age
     func greet() {

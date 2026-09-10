@@ -1,5 +1,5 @@
 print("=== 1. Basic inheritance ===")
-Obj Animal(name) {
+class Animal(name) {
     this.name = name
     func speak() {
         print("Generic animal sound")
@@ -8,7 +8,7 @@ Obj Animal(name) {
         return this.name
     }
 }
-Obj Dog : Animal(name, breed) {
+class Dog : Animal(name, breed) {
     this.breed = breed
     func speak() {
         print("Woof! I'm " + this.name + " the " + this.breed)
@@ -28,7 +28,7 @@ print("getName: " + name)
 print("\n=== 4. Own method ===")
 print("getBreed: " + d.getBreed())
 print("\n=== 5. Multi-level inheritance ===")
-Obj Puppy : Dog(name, breed, toy) {
+class Puppy : Dog(name, breed, toy) {
     this.toy = toy
     func speak() {
         print("Yip yip! I'm " + this.name + " and I love my " + this.toy)
@@ -44,7 +44,7 @@ print("getName: " + p.getName())
 print("\n=== 7. Method from intermediate class ===")
 print("getBreed: " + p.getBreed())
 print("\n=== 8. Multiple inheritance ===")
-Obj Speaker() {
+class Speaker() {
     func speak() {
         return "hello from Speaker"
     }
@@ -52,7 +52,7 @@ Obj Speaker() {
         return "hi from Speaker"
     }
 }
-Obj Walker() {
+class Walker() {
     func walk() {
         return "walking from Walker"
     }
@@ -60,7 +60,7 @@ Obj Walker() {
         return "hi from Walker"
     }
 }
-Obj Robot : Speaker, Walker() {
+class Robot : Speaker, Walker() {
     func work() {
         return "working"
     }

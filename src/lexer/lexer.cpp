@@ -14,7 +14,7 @@ namespace vora {
         {"while", TokenType::WHILE},
         {"for", TokenType::FOR},
         {"in", TokenType::IN},
-        {"Obj", TokenType::OBJ},
+        {"class", TokenType::CLASS},
         {"this", TokenType::THIS},
         {"super", TokenType::SUPER},
         {"break", TokenType::BREAK},

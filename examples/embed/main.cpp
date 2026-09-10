@@ -296,7 +296,7 @@ static void demo6_objects_and_methods() {
     registerBuiltins(vm);
 
     const char* script = R"(
-        Obj Counter(start) {
+        class Counter(start) {
             this.count = start
             func inc()  { this.count = this.count + 1 }
             func dec()  { this.count = this.count - 1 }

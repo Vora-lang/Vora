@@ -65,7 +65,7 @@ func returnInTry() {
 assert(returnInTry() == "val", "return in try with finally")
 
 // Custom error object
-Obj MyError(msg) {
+class MyError(msg) {
     this.message = msg
 }
 try {

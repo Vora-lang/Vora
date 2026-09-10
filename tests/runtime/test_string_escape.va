@@ -65,7 +65,7 @@ assert(len("\\") == 1, "backslash escape is one character")
 assert("\n" != "n", "newline escape is not the letter n")
 
 // --- property interpolation still works ---
-Obj P() {
+class P() {
     this.v = 7
 }
 let p = P()

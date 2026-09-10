@@ -4,14 +4,14 @@
 print("=== Runtime: super Keyword Tests ===")
 
 // Basic inheritance with super method call
-Obj Animal(name) {
+class Animal(name) {
     this.name = name
     func speak() {
         return "..."
     }
 }
 
-Obj Dog : Animal(name, breed) {
+class Dog : Animal(name, breed) {
     this.breed = breed
     func speak() {
         return super.speak() + " woof!"
@@ -22,7 +22,7 @@ let d = Dog("Rex", "Shepherd")
 assert(d.speak() == "... woof!", "super method call")
 
 // Multi-level inheritance with super
-Obj Puppy : Dog(name, breed, toy) {
+class Puppy : Dog(name, breed, toy) {
     this.toy = toy
     func speak() {
         return super.speak() + " yip!"
@@ -37,7 +37,7 @@ assert(p.speak() == "... woof! yip!", "multi-level super call")
 assert(p.getToy() == "ball", "own method on multi-level object")
 
 // Super calls grandparent method when parent doesn't override
-Obj Cat : Animal(name) {
+class Cat : Animal(name) {
     // Cat doesn't override speak
     func purr() {
         return "purr"
@@ -46,7 +46,7 @@ Obj Cat : Animal(name) {
 let c = Cat("Whiskers")
 assert(c.speak() == "...", "inherited method without super")
 
-Obj Kitten : Cat(name) {
+class Kitten : Cat(name) {
     func speak() {
         return super.speak() + " mew!"
     }

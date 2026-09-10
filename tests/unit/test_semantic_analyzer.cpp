@@ -225,10 +225,11 @@ TEST_CASE("semantic_function_unused_param") {
 // ═══════════════════════════════════════════════════════════════════════════
 
 TEST_CASE("semantic_object_declaration") {
-    auto r = analyze("Obj Counter(init) { this.value = init; func inc() { this.value = this.value + 1 } }");
+    auto r = analyze("class Counter(init) { this.value = init; func inc() { this.value = this.value + 1 } }");
     REQUIRE(r.program);
 
-    auto* sym = r.analyzer.findDeclarationAt(1, 5);
+    // `class ` is six characters wide, so the class name starts at column 7.
+    auto* sym = r.analyzer.findDeclarationAt(1, 7);
     REQUIRE(sym != nullptr);
     CHECK(sym->name == "Counter");
     CHECK(sym->kind == SymbolKind::Object);
@@ -363,7 +364,7 @@ TEST_CASE("semantic_obj_method_not_unused") {
     // Methods accessed via obj.method() should not be flagged as unused.
     // They are part of the object's public interface.
     auto r = analyze(
-        "Obj Person(name, age) {\n"
+        "class Person(name, age) {\n"
         "    this.name = name\n"
         "    this.age = age\n"
         "    func greet() {\n"

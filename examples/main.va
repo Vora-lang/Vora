@@ -48,7 +48,7 @@ T(type({a:1})   == "dict")
 T(type(func(){})== "function")
 T(type(Set())   == "set")
 T(type(Map())   == "map")
-Obj Dummy() {}
+class Dummy() {}
 T(type(Dummy()) == "object")
 
 T(!null && !false && !0 && !0.0 && !"" && ![] && !{})
@@ -300,7 +300,7 @@ T(hi("Vora", "Hi") == "Hi, Vora!")
 // 现状优点: 语法统一, func 关键字明确表达"函数"
 // 现状缺点: 简单映射回调过于冗长; JS/TS 开发者不适
 // 期望优点: 短回调极紧凑; arr.map(x => x * 2) 表达力强
-// 期望缺点: this 绑定语义需定义; 与 Obj 方法语法可能冲突
+// 期望缺点: this 绑定语义需定义; 与 class 方法语法可能冲突
 
 func sumAll(...ns) {
     let t = 0
@@ -395,15 +395,15 @@ T(next(mi) == 9)
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 7. 对象 & 继承 — Obj / 构造器 / 方法 / super / C3 MRO
+// 7. 对象 & 继承 — class / 构造器 / 方法 / super / C3 MRO
 // ═══════════════════════════════════════════════════════════════════════════
 print("\n── 7. 对象 ──")
 
-Obj Pet(name) {
+class Pet(name) {
     this.name = name
     func who() { return this.name }
 }
-Obj Puppy : Pet(name, toy) {
+class Puppy : Pet(name, toy) {
     this.toy = toy
     func play() { return this.name + " plays " + this.toy }
 }
@@ -414,12 +414,12 @@ T(p.who() == "Max")
 T(p.play() == "Max plays ball")
 
 // Static methods via this.func syntax (Ruby-style, zero new keywords)
-Obj MathUtil() {
+class MathUtil() {
     this.func square(x) { return x * x }
 }
 T(MathUtil.square(5) == 25)
 
-Obj Factory(start) {
+class Factory(start) {
     this.val = start
     func inc() { this.val = this.val + 1; return this.val }
     this.func create(n) { return Factory(n) }
@@ -451,27 +451,27 @@ testObjRestLet()
 // 期望缺点: getter 中副作用难以追踪; 调试器需特殊处理
 
 // [WISH] 运算符重载
-// 期望: Obj Vec2 { func +(other) { return Vec2(x+other.x, y+other.y) } }
+// 期望: class Vec2 { func +(other) { return Vec2(x+other.x, y+other.y) } }
 // 现状优点: 语义完全透明; 无隐式操作
 // 现状缺点: 数学/向量对象不能用 + ; 只能用 .add() 方法
 // 期望优点: 数学类型用自然语法; C++/Python/Kotlin 模式
 // 期望缺点: 滥用导致代码不可读; 编译/运行开销
 
-Obj A() { func tag() { return "A" } }
-Obj B : A() { func tag() { return "B" } }
-Obj C : A() {}
-Obj D2 : B, C() {}
+class A() { func tag() { return "A" } }
+class B : A() { func tag() { return "B" } }
+class C : A() {}
+class D2 : B, C() {}
 let dd = D2()
 T(dd.tag() == "B")  // C3 MRO
 
-// [WISH] 原型委托 (prototype) 作为 Obj 之外的轻量选择
+// [WISH] 原型委托 (prototype) 作为 class 之外的轻量选择
 // 期望: let child = {__proto__: parent, ownKey: 42}
-// 现状优点: Obj 是唯一对象模型, 语义统一; 无原型链污染风险
-// 现状缺点: 简单委托场景也需完整 Obj 声明; 缺少轻量对象关联
+// 现状优点: class 是唯一对象模型, 语义统一; 无原型链污染风险
+// 现状缺点: 简单委托场景也需完整 class 声明; 缺少轻量对象关联
 // 期望优点: 灵活; JS/Lua 用户熟悉; 适合配置合并/默认值模式
 // 期望缺点: 原型链查找性能; __proto__ 被认为是 JS 设计错误
 
-Obj Ctr(init) {
+class Ctr(init) {
     this.v = init
     func up() { this.v = this.v + 1; return this.v }
     func dn() { this.v = this.v - 1; return this.v }
@@ -514,7 +514,7 @@ T(msg == "err")
 // 对于 dict/object, throwException() 自动注入 .stack 属性（调用栈追踪）
 // [WISH] 内置 Error 类 — 提供标准化 structured error 工厂
 // 期望: let e = Error("msg", code=42, data={...}); throw e
-// 现状: 可用 Obj/字典替代; 无内置 .stack 自动填充以外的标准化字段
+// 现状: 可用 class/字典替代; 无内置 .stack 自动填充以外的标准化字段
 
 // defer now executes on same-function throw (cross-function still WISH)
 let deferOnThrow = []

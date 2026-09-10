@@ -7,7 +7,7 @@ func 加法(a, b) {
     return a + b
 }
 print(加法(3, 4))
-Obj 动物(种类) {
+class 动物(种类) {
     this.种类 = 种类
     func 叫声() {
         print("The " + this.种类 + " makes a sound")

@@ -63,7 +63,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::WHILE: return "WHILE";
         case TokenType::FOR: return "FOR";
         case TokenType::IN: return "IN";
-        case TokenType::OBJ: return "OBJ";
+        case TokenType::CLASS: return "CLASS";
         case TokenType::THIS: return "THIS";
         case TokenType::SUPER: return "SUPER";
         case TokenType::BREAK: return "BREAK";

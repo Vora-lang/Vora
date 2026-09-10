@@ -11,22 +11,22 @@ print("=== Runtime: Multiple Inheritance Tests ===")
 //    D
 // MRO: D, B, C, A  (first parent B wins over C)
 
-Obj A() {
+class A() {
     func who() { return "A" }
     func fromA() { return "from A" }
 }
 
-Obj B : A () {
+class B : A () {
     func who() { return "B" }
     func fromB() { return "from B" }
 }
 
-Obj C : A () {
+class C : A () {
     func who() { return "C" }
     func fromC() { return "from C" }
 }
 
-Obj D : B, C () {
+class D : B, C () {
     // D inherits from B and C — B listed first, so B wins conflicts
     // MRO should be: D, B, C, A
 }
@@ -39,7 +39,7 @@ assert(d.fromB() == "from B", "first parent own method")
 assert(d.fromC() == "from C", "second parent own method")
 
 // === Super with multiple inheritance ===
-Obj E : B, C () {
+class E : B, C () {
     func who() {
         return super.who() + " from E"
     }
@@ -54,11 +54,11 @@ assert(e.who() == "B from E", "super with multi-inherit calls first parent")
 assert(e.fromB() == "from B from E", "super call through first parent method")
 
 // === Three parents ===
-Obj X() { func tag() { return "X" } }
-Obj Y : X () { func tag() { return "Y" } }
-Obj Z : X () { func tag() { return "Z" } }
+class X() { func tag() { return "X" } }
+class Y : X () { func tag() { return "Y" } }
+class Z : X () { func tag() { return "Z" } }
 
-Obj W : Y, Z () {
+class W : Y, Z () {
     // MRO: W, Y, Z, X
     // Y wins over Z
 }
@@ -71,17 +71,17 @@ assert(w.tag() == "Y", "three parents, first wins")
 // Each constructor consumes the first N arguments where N is its arity.
 // Parents with different parameter names must list shared params first
 // so the parameter positions align.
-Obj PA(name) {
+class PA(name) {
     this.name = name
     func getName() { return this.name }
 }
 
-Obj PB(name, age) {  // name first to align with PA and child
+class PB(name, age) {  // name first to align with PA and child
     this.age = age
     func getAge() { return this.age }
 }
 
-Obj Child : PA, PB (name, age, hobby) {
+class Child : PA, PB (name, age, hobby) {
     this.hobby = hobby
     func getHobby() { return this.hobby }
 }

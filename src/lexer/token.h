@@ -128,7 +128,7 @@ namespace vora {
         WHILE,    ///< 'while'   While loop
         FOR,      ///< 'for'     For-in / C-style for loop
         IN,       ///< 'in'      Iterator keyword (for-in loop)
-        OBJ,      ///< 'Obj'     Object / class definition
+        CLASS,    ///< 'class'   Class definition
         THIS,     ///< 'this'    Reference to current instance
         SUPER,    ///< 'super'   Reference to parent class
         BREAK,    ///< 'break'   Exit innermost loop or match arm

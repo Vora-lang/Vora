@@ -54,7 +54,7 @@ func test_nestedCatchWithParam() {
 }
 
 func test_catchInMethod() {
-    Obj Foo(a, b) {
+    class Foo(a, b) {
         this.a = a
         this.b = b
         func test() {
