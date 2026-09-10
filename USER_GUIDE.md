@@ -608,6 +608,7 @@ print(divide(dividend=100, divisor=4))  // 25
 print(divide(divisor=2, dividend=50))   // 25
 
 print("命名参数示例: PASS")
+```
 
 与剩余参数对称——将数组**展开**为独立的函数实参：
 

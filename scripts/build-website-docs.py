@@ -40,8 +40,8 @@ OUTPUT_FILE_USER_GUIDE = WEBSITE_ROOT / "docs" / "user-guide.html"
 VORA_KEYWORDS = {
     "let", "const", "func", "return", "if", "else", "while", "for",
     "in", "break", "continue", "throw", "try", "catch", "finally",
-    "Obj", "this", "super", "import", "export", "from", "as",
-    "yield", "true", "false", "null",
+    "class", "this", "super", "import", "export", "from", "as",
+    "yield", "true", "false", "null", "and", "or", "not",
 }
 
 VORA_BUILTINS = {
