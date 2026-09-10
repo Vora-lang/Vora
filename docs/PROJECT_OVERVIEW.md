@@ -71,7 +71,7 @@ D:\Vora-lang\
 ### 2.3 语言核心特性
 
 - **类型**：动态类型，9 种可见类型（Null/Boolean/Int64/Float64/String/Array/Dict/Function/Object），v0.23 增 Set/Map，另有 Iterator/Generator/Task。支持可选类型标注 `let a:float = 1`（运行时自动转换）。
-- **面向对象**：`Obj Name(params){...}`，**多继承 + C3 线性化 MRO**，`super`，静态方法。
+- **面向对象**：`class Name(params){...}`，**多继承 + C3 线性化 MRO**，`super`，静态方法。
 - **函数式**：一等函数、闭包、Lambda、高阶函数、**尾调用优化**（无限尾递归不爆栈）。
 - **语法糖**：`match` 模式匹配（含 or-pattern）、`try/catch/finally`、`defer`、`yield`/`async`/`await`、`const` 不可变、`??` 空值合并、`?.` 可选链、`in` 成员测试、位运算 `& | ^ ~ << >>`、解构（含顶层 rest）、列表/字典推导、字符串插值、C 风格 `for`/括号 `for-in`/`do-while`。
 - **模块**：`import/export`，按绝对路径缓存 + 循环导入检测。

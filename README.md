@@ -309,12 +309,12 @@ tcoFact(10000, 1)  // ✅ 不栈溢出 / no stack overflow
 
 ```vora
 // Single inheritance / 单继承
-Obj Animal(name) {
+class Animal(name) {
     this.name = name
     func speak() { print("...") }
 }
 
-Obj Dog : Animal (name, breed) {
+class Dog : Animal (name, breed) {
     this.breed = breed
     func speak() { print("Woof! I'm " + this.name) }
 }
@@ -324,10 +324,10 @@ d.speak()       // "Woof! I'm Rex"
 print(d.name)   // "Rex"
 
 // Multiple inheritance with C3 linearization / 多继承 + C3 线性化
-Obj Speaker() { func speak() { return "hello" } }
-Obj Walker()  { func walk()  { return "walking" } }
+class Speaker() { func speak() { return "hello" } }
+class Walker()  { func walk()  { return "walking" } }
 
-Obj Robot : Speaker, Walker () {    // MRO: Robot, Speaker, Walker
+class Robot : Speaker, Walker () {    // MRO: Robot, Speaker, Walker
     func work() { return "working" }
 }
 
@@ -336,7 +336,7 @@ r.speak()  // → "hello"  (first parent wins on conflicts / 冲突时第一父�
 r.walk()   // → "walking"
 
 // super keyword / super 关键字
-Obj Puppy : Dog (name, breed, toy) {
+class Puppy : Dog (name, breed, toy) {
     this.toy = toy
     func speak() { return super.speak() + " yip!" }
 }

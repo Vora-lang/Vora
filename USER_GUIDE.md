@@ -63,7 +63,7 @@ Vora 是动态类型语言，变量无固定类型，值有类型。
 | **Array** | `[1, 2, 3]` | 动态数组 |
 | **Dict** | `{key: "value"}` | 字符串键字典；`{x}` 为简写，等价 `{x: x}` |
 | **Function** | `func(x) { return x * 2 }` | 一等公民函数 |
-| **Object** | `Obj Foo() { ... }` | 类实例 |
+| **Object** | `class Foo() { ... }` | 类实例 |
 
 ### 类型检查
 
@@ -940,12 +940,12 @@ print(run(process()))       // → 101
 
 ## 8. 对象与继承 / Objects & Inheritance
 
-### Obj 声明
+### class 声明
 
 > 引入版本: v0.7
 
 ```vora
-Obj Person(name, age) {
+class Person(name, age) {
     this.name = name
     this.age = age
 
@@ -963,12 +963,12 @@ p.age = 26          // 属性赋值
 ### 单继承
 
 ```vora
-Obj Animal(name) {
+class Animal(name) {
     this.name = name
     func speak() { print("...") }
 }
 
-Obj Dog : Animal (name, breed) {
+class Dog : Animal (name, breed) {
     this.breed = breed
     func speak() {
         print("Woof! I'm " + this.name)
@@ -984,9 +984,9 @@ d.speak()  // Woof! I'm Rex
 > 引入版本: v0.15
 
 ```vora
-Obj A() { func who() { return "A" } }
-Obj B() { func who() { return "B" } }
-Obj C : A, B () {}
+class A() { func who() { return "A" } }
+class B() { func who() { return "B" } }
+class C : A, B () {}
 
 let c = C()
 c.who()  // "A" — C3 线性化确定方法解析顺序
@@ -997,11 +997,11 @@ c.who()  // "A" — C3 线性化确定方法解析顺序
 > 引入版本: v0.15
 
 ```vora
-Obj Parent() {
+class Parent() {
     func greet() { return "Hello from Parent" }
 }
 
-Obj Child : Parent () {
+class Child : Parent () {
     func greet() {
         return super.greet() + " and Child"
     }
@@ -1014,10 +1014,10 @@ Child().greet()  // "Hello from Parent and Child"
 
 > 引入版本: v0.25
 
-使用 `this.func` 在 Obj 体内部声明静态方法——方法挂在类上而非实例上，不接收 `this`：
+使用 `this.func` 在 class 体内部声明静态方法——方法挂在类上而非实例上，不接收 `this`：
 
 ```vora
-Obj MathUtil() {
+class MathUtil() {
     this.func square(x) { return x * x }
     this.func sum(...ns) {
         let t = 0
@@ -1033,7 +1033,7 @@ MathUtil.sum(1, 2, 3)  // 6
 静态方法适用于工厂模式：
 
 ```vora
-Obj Point(x, y) {
+class Point(x, y) {
     this.x = x; this.y = y
     this.func origin() { return Point(0, 0) }
     func len() { return MathUtil.square(this.x) + MathUtil.square(this.y) }
@@ -1098,7 +1098,7 @@ try {
 抛出字符串或数字时不会注入 `.stack`（因为它们没有属性）。如需栈追踪，使用字典或对象包装：
 
 ```vora
-Obj AppError(msg, code) {
+class AppError(msg, code) {
     this.message = msg
     this.code = code
 }

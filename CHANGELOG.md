@@ -31,6 +31,27 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 > orphans the last reachable copies of old commits (e.g. `f550cce`, the v0.26
 > commit cited below). All other hashes cited in this file were never pushed
 > to those branches and are unrecoverable.
+>
+> **Historical spelling:** entries describing releases up to v0.27 and the
+> `ed722dd` snapshot below spell the class keyword as `Obj`, which was its
+> name at the time. Those entries are kept verbatim; the keyword is `class`
+> from the next release onward.
+
+### Breaking changes
+- **The class-declaration keyword is `class`, not `Obj`** (syntax-review
+  #3.6). Migration is a mechanical rename: `Obj Name(...) { }` becomes
+  `class Name(...) { }`, including the inheritance form
+  (`Obj Dog : Animal(name)` → `class Dog : Animal(name)`).
+  Why `class` rather than simply lowercasing to `obj`: measured over
+  `std/`, `examples/` and `tests/`, `obj` is already used as an identifier
+  28 times — including the natural `let obj = ...` instance-variable name —
+  so reserving it would break real code, whereas `class` appears only
+  inside comments and string literals and so breaks nothing. `class` is
+  also how both JS and Wren (the language's stated OOP influences) spell
+  this keyword, and a lowercase `obj` reads like a variable rather than a
+  declaration keyword. `std/` does not use the keyword at all.
+  Note: the `Obj` spelling throughout the historical entries above is
+  intentional — see the historical-spelling note.
 
 ### Added
 - **Labeled `break` / `continue`** (Phase 1 closing item, syntax-review #2.8):

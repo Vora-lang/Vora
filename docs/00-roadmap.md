@@ -29,9 +29,9 @@
 | 字面量（数字 / 字符串 / Bool / Null / Array / Dict / Lambda） | ✅ | |
 | 二元 / 一元 / 后缀（`?:` `??` `?.` `...spread`） | ✅ | `?:` 优先级低于 `\|\|`（P0 #2 修复后与 C 系列一致）；一元 `+x` 已识别（P1-E） |
 | 控制流（`if/else`、`while`、`for-in`、括号 `for (x in xs)`、`c-for`、`do-while`、`try/catch/finally`、`throw`、`break/continue`） | ✅ | `if`/`while` 括号必需；P1-H 后 for-in 也接受 `for (x in xs)` 形式 |
-| `func` 默认 / 命名 / `rest` 参数 / 闭包 / `yield` / TCO | ✅ | 命名参数 2-token 前瞻冲突已 lock-in（P0 #3）；顶层 rest 参数仍未实现（仅 Obj 方法体内合法） |
+| `func` 默认 / 命名 / `rest` 参数 / 闭包 / `yield` / TCO | ✅ | 命名参数 2-token 前瞻冲突已 lock-in（P0 #3）；顶层 rest 参数仍未实现（仅 class 方法体内合法） |
 | `let` / `const` 解构（含顶层 `...rest`） | ✅ | 顶层 `{x, ...rest}` 与 `[a, ...rest]` P1-D 后可用 |
-| `Obj` OOP（C3 MRO、`super`、`this`、构造、方法） | ✅ | |
+| `class` OOP（C3 MRO、`super`、`this`、构造、方法） | ✅ | |
 | `import` / `export` / `from ... import` | ✅ | 路径含 `-` 时在缺 alias 下编译期报清晰错误（P0 #4）；显式 `as` alias 或 `from ... import` 不受影响 |
 | `match` 表达式（含 or-pattern `1 \| 2 \| 3 =>`） | ✅ | P1-B 后 lexer 产 `TokenType::PIPE`，parser `matchExpression()` 循环累计 alternation |
 | 推导式 `for x in xs yield x*2` | ✅ | v0.27 起 compiler_expr.cpp 走 iter()/next 脱糖，52/53 examples 全跑通 |
@@ -154,7 +154,7 @@ Phase 1 剩余（语法评审第 5 节"第三批"项，尚未纳入本清单，�
 ```
 [ ] stdlib 扩到 12-14 模块：增加 std/path、std/process、std/io、std/text
 [ ] stdlib/http 拆为独立仓库（与 vpm 同理，不进 v1.0 主仓）
-[ ] 顶层 rest 参数（Obj 方法体外 / 顶层函数场景）
+[ ] 顶层 rest 参数（class 方法体外 / 顶层函数场景）
 [ ] 加密 RNG：覆盖 random() 实现，添加 bytes / uuid
 [ ] 增加一组 Vora 自身写的工具：vora-fmt 已存在；新增 vora-lint（静态 AST 检查）
 ```

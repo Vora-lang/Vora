@@ -458,10 +458,10 @@ func add(a, b) {
 }
 ```
 
-### ObjStmt — 对象声明
+### ClassStmt — 对象声明
 
 ```cpp
-class ObjStmt : public Stmt {
+class ClassStmt : public Stmt {
 public:
     std::string name;                           // 类名
     std::vector<std::string> parentNames;       // 父类名列表（多继承，空 = 无继承）
@@ -473,7 +473,7 @@ public:
 
 **Vora 用法**：
 ```vora
-Obj Student(name, age) {
+class Student(name, age) {
     // 以下语句进入 body（构造函数体）
     this.name = name
     this.age = age
@@ -485,12 +485,12 @@ Obj Student(name, age) {
 }
 
 // 多继承
-Obj Robot : Speaker, Walker () {
+class Robot : Speaker, Walker () {
     func work() { return "working" }
 }
 ```
 
-> Parser 在解析 Obj 块时，会将 `FuncStmt` 归入 `methods`，其他语句归入 `body`。`ObjStmt` 支持 `parentNames` 实现多继承（C3 线性化）。
+> Parser 在解析 class 块时，会将 `FuncStmt` 归入 `methods`，其他语句归入 `body`。`ClassStmt` 支持 `parentNames` 实现多继承（C3 线性化）。
 
 ### BreakStmt / ContinueStmt — 循环控制
 
@@ -603,7 +603,7 @@ Program
       ├── ForStmt ─── iterable: Expr
       │               body: Stmt
       ├── FuncStmt ──── body: BlockStmt
-      ├── ObjStmt ───── parentNames: vector<string>
+      ├── ClassStmt ───── parentNames: vector<string>
       │                 methods: vector<Stmt>
       │                 body: BlockStmt
       ├── ReturnStmt ── value: Expr
