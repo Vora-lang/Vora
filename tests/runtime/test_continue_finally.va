@@ -1,0 +1,179 @@
+// runtime/test_continue_finally.va — continue must run an enclosing finally
+// Run: vora tests/runtime/test_continue_finally.va
+//
+// Regression tests for a silently skipped finally block: `continue` used to be
+// compiled as a direct backward OP_LOOP to the loop condition for the loop
+// kinds whose continue target was the loop start (while, for-in). That jump
+// left the continue site entirely, so visitTryStmt never saw it and an
+// enclosing `finally` was skipped for that iteration.
+//
+// Observed before this fix:
+//
+//     let n = 0
+//     let i = 0
+//     while (i < 3) {
+//         i = i + 1
+//         try { n = n + 1; continue } finally { n = n + 10 }
+//     }
+//     print(n)   // 3, expected 33 — the finally never ran
+//
+// `continue` is now a forward jump to a real continue target at the loop's back
+// edge for every loop kind, so the existing finally re-routing applies. This
+// also makes labeled continue through a finally possible.
+
+print("=== Runtime: continue / finally Tests ===")
+
+// ---------------------------------------------------------------------------
+// finally runs exactly once per continue
+// ---------------------------------------------------------------------------
+func continueWhileFinally() {
+    let n = 0
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        try {
+            n = n + 1
+            continue
+        } finally {
+            n = n + 10
+        }
+    }
+    return n
+}
+assert(continueWhileFinally() == 33, "continue in while try/finally")
+
+func continueForInFinally() {
+    let n = 0
+    for i in [1, 2, 3] {
+        try {
+            n = n + 1
+            continue
+        } finally {
+            n = n + 10
+        }
+    }
+    return n
+}
+assert(continueForInFinally() == 33, "continue in for-in try/finally")
+
+func continueDoWhileFinally() {
+    let n = 0
+    let i = 0
+    do {
+        i = i + 1
+        try {
+            n = n + 1
+            continue
+        } finally {
+            n = n + 10
+        }
+    } while (i < 3)
+    return n
+}
+assert(continueDoWhileFinally() == 33, "continue in do-while try/finally")
+
+func continueCForFinally() {
+    let n = 0
+    for (let i = 0; i < 3; i = i + 1) {
+        try {
+            n = n + 1
+            continue
+        } finally {
+            n = n + 10
+        }
+    }
+    return n
+}
+assert(continueCForFinally() == 33, "continue in C-style for try/finally")
+
+// ---------------------------------------------------------------------------
+// continue inside a nested try with two finally blocks: both run, innermost
+// first
+// ---------------------------------------------------------------------------
+func continueNestedFinally() {
+    let trace = ""
+    for i in [1, 2] {
+        try {
+            try {
+                trace = trace + "b"
+                continue
+            } finally {
+                trace = trace + "f1"
+            }
+        } finally {
+            trace = trace + "f2"
+        }
+    }
+    return trace
+}
+assert(continueNestedFinally() == "bf1f2bf1f2", "nested finally on continue")
+
+// ---------------------------------------------------------------------------
+// continue in a try WITHOUT a finally: the catch must stay functional
+// ---------------------------------------------------------------------------
+func continueNoFinallyReturns() {
+    let n = 0
+    for i in [1, 2, 3] {
+        try {
+            n = n + 1
+            if (i < 3) { continue }
+            throw "last"
+        } catch (e) {
+            n = n + 1000
+        }
+    }
+    return n
+}
+assert(continueNoFinallyReturns() == 1003, "continue in try/catch keeps catch")
+
+// ---------------------------------------------------------------------------
+// break through finally still runs it exactly once (already worked)
+// ---------------------------------------------------------------------------
+func breakWhileFinally() {
+    let n = 0
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        try {
+            n = n + 1
+            break
+        } finally {
+            n = n + 10
+        }
+    }
+    return n
+}
+assert(breakWhileFinally() == 11, "break in while try/finally")
+
+// ---------------------------------------------------------------------------
+// Control: no continue, finally runs on the normal path
+// ---------------------------------------------------------------------------
+func finallyOnNormalPath() {
+    let n = 0
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        try {
+            n = n + 1
+        } finally {
+            n = n + 10
+        }
+    }
+    return n
+}
+assert(finallyOnNormalPath() == 33, "control: finally on normal path")
+
+// ---------------------------------------------------------------------------
+// Control: continue in a loop with no try at all
+// ---------------------------------------------------------------------------
+func continueNoTry() {
+    let n = 0
+    for i in [1, 2, 3, 4] {
+        if (i % 2 == 0) { continue }
+        n = n + i
+    }
+    return n
+}
+assert(continueNoTry() == 4, "control: continue without try")
+
+print("Runtime continue/finally tests: PASS")

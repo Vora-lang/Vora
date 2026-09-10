@@ -1016,8 +1016,9 @@ void Compiler::visitWhileStmt(const WhileStmt& stmt) {
     size_t loopStart = chunk.code.size();
 
     // Push loop context for break/continue.
-    // While loops: continueTarget == loopStart (backward jump to condition)
-    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 0, 0, tryNesting});
+    // continueTarget is the back edge at the end of the body, which is not
+    // known yet; continue jumps forward to it (see visitContinueStmt).
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 0, 0, tryNesting});
 
     // Condition
     stmt.condition->accept(*this);
@@ -1027,7 +1028,13 @@ void Compiler::visitWhileStmt(const WhileStmt& stmt) {
     emitByte(static_cast<uint8_t>(OpCode::OP_POP));
     stmt.body->accept(*this);
 
-    // Loop back to condition
+    // Back edge — also the continue target: a continue jump lands here and
+    // falls into the backward jump to the condition.
+    loopStack.back().continueTarget = chunk.code.size();
+    for (size_t jumpOffset : loopStack.back().continueJumps) {
+        patchJump(jumpOffset);
+    }
+    loopStack.back().continueJumps.clear();
     emitLoop(loopStart);
 
     // Patch exit
@@ -1128,9 +1135,10 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
 
     // --- while (true) ---
     size_t loopStart = chunk.code.size();
-    // continueTarget = loopStart (continue jumps go back to top via OP_LOOP).
+    // continueTarget is the back edge at the end of the body, not known yet;
+    // continue jumps forward to it (see visitContinueStmt).
     // extraLocalsToPopOnBreak = 1 (_iter), extraLocalsToPopOnContinue = 0.
-    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0, tryNesting});
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 1, 0, tryNesting});
 
     // --- OP_PUSH_CATCH: try { let x = next(_iter); body } ---
     emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
@@ -1201,6 +1209,13 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
 
     // After catch (normal flow after each iteration)
     patchJump(skipCatchJump);
+
+    // Back edge — also the continue target (see visitWhileStmt).
+    loopStack.back().continueTarget = chunk.code.size();
+    for (size_t jumpOffset : loopStack.back().continueJumps) {
+        patchJump(jumpOffset);
+    }
+    loopStack.back().continueJumps.clear();
 
     // Loop back to try the next element
     emitLoop(loopStart);
@@ -1695,15 +1710,13 @@ void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
                   static_cast<uint8_t>(localsToPop));
     }
 
-    // For while loops (continueTarget == loopStart): emit OP_LOOP backward.
-    // For for-in loops (continueTarget == SIZE_MAX, not yet set): emit OP_JUMP
-    // forward placeholder, patched later when continueTarget is known.
-    if (loopStack.back().continueTarget == loopStack.back().loopStart) {
-        emitLoop(loopStack.back().loopStart);
-    } else {
-        size_t jumpOffset = emitJump(OpCode::OP_JUMP);
-        loopStack.back().continueJumps.push_back(jumpOffset);
-    }
+    // Always a forward jump to the loop's continue target. Keeping continue
+    // forward for every loop kind (not a direct backward OP_LOOP to the
+    // condition) is what lets visitTryStmt re-route it through an enclosing
+    // finally block: a backward jump would leave the continue site entirely
+    // and silently skip the finally.
+    size_t jumpOffset = emitJump(OpCode::OP_JUMP);
+    loopStack.back().continueJumps.push_back(jumpOffset);
 }
 
 void Compiler::visitTryStmt(const TryStmt& stmt) {
@@ -1821,6 +1834,16 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
         // outermost finally bytecode is replayed first at capture sites).
         finallyBytecodeStack.push_back(std::move(finallyBytes));
 
+        // The replay blocks below serve only the captured non-local exits. The
+        // normal path has just run the finally inline, so it must jump over
+        // them: falling through would run the finally a second time and then
+        // take a break/continue/return the normal path never asked for.
+        const bool hasReplays = !capturedBreaks.empty() ||
+                                !capturedContinues.empty() ||
+                                !capturedReturns.empty();
+        size_t skipReplaysJump = hasReplays ? emitJump(OpCode::OP_JUMP) : 0;
+        (void)skipReplaysJump;
+
         // --- Route captured break jumps through finally ---
         for (const auto& cj : capturedBreaks) {
             // Patch the break's OP_JUMP placeholder to point to current position
@@ -1851,6 +1874,7 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
             emitByte(static_cast<uint8_t>(OpCode::OP_FINALLY_END));
             emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
         }
+
 
         // Pop the finally bytecode stack entry
         finallyBytecodeStack.pop_back();
