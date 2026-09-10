@@ -1018,7 +1018,7 @@ void Compiler::visitWhileStmt(const WhileStmt& stmt) {
     // Push loop context for break/continue.
     // continueTarget is the back edge at the end of the body, which is not
     // known yet; continue jumps forward to it (see visitContinueStmt).
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 0, 0, tryNesting});
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 0, 0, tryNesting, finallyNesting});
 
     // Condition
     stmt.condition->accept(*this);
@@ -1065,7 +1065,7 @@ void Compiler::visitDoWhileStmt(const DoWhileStmt& stmt) {
     // Unlike while (where continueTarget == loopStart for backward jump),
     // do-while has continue jump forward to the condition, which hasn't
     // been compiled yet. This matches the for-in/C-for pattern.
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 0, 0, tryNesting});
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 0, 0, tryNesting, finallyNesting});
 
     // --- Body (always executes at least once, unconditionally) ---
     stmt.body->accept(*this);
@@ -1138,7 +1138,7 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
     // continueTarget is the back edge at the end of the body, not known yet;
     // continue jumps forward to it (see visitContinueStmt).
     // extraLocalsToPopOnBreak = 1 (_iter), extraLocalsToPopOnContinue = 0.
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 1, 0, tryNesting});
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 1, 0, tryNesting, finallyNesting});
 
     // --- OP_PUSH_CATCH: try { let x = next(_iter); body } ---
     emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
@@ -1274,7 +1274,7 @@ void Compiler::visitCForStmt(const CForStmt& stmt) {
 
     size_t loopStart = chunk.code.size();
     // continueTarget = SIZE_MAX signals "target will be set later"
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, extraLocals, 0, tryNesting});
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, extraLocals, 0, tryNesting, finallyNesting});
 
     // --- Condition ---
     if (stmt.condition) {
@@ -1652,7 +1652,11 @@ int Compiler::emitLoopExitCleanup(size_t loopIdx, bool isBreak) {
 }
 
 void Compiler::emitLoopExit(size_t loopIdx, bool isBreak) {
-    if (finallyNesting > 0) {
+    // Only the finallys between the exit site and the target loop's exit are
+    // owed. A finally that encloses the target loop is not: control flow never
+    // leaves its try block, so it runs on that try's own normal path instead.
+    const int finallysToRun = finallyNesting - loopStack[loopIdx].finallyDepthAtEntry;
+    if (finallysToRun > 0) {
         // A finally still has to run before these locals may be discarded.
         // Pre-jump patched to zero: falls through to the pad below when no
         // enclosing finally claims it, and is redirected into the finally chain
@@ -1661,7 +1665,7 @@ void Compiler::emitLoopExit(size_t loopIdx, bool isBreak) {
         chunk.writeAt(preJump, 0);
         chunk.writeAt(preJump + 1, 0);
         size_t cleanupPad = chunk.code.size();
-        loopStack[loopIdx].preJumps.push_back({preJump, cleanupPad});
+        loopStack[loopIdx].preJumps.push_back({preJump, cleanupPad, finallysToRun});
     }
 
     // Discard every local the exit abandons, closing captured ones so that
@@ -1745,42 +1749,63 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
     }
     size_t savedReturnCount = pendingReturnJumps.size();
 
-    // Track finally nesting for return routing
+    // Track finally nesting: this try's finally is still owed while the try body
+    // *and* the catch block are compiled — both fall through to it — so the count
+    // stays up until the catch is finished. An exit written in the catch block
+    // must route through the finally exactly like one in the try body, and a
+    // `return` there has to register a pending jump rather than return directly.
     if (stmt.finallyBlock) finallyNesting++;
 
     // Compile try body (break/continue/return inside may emit new jumps)
     stmt.tryBlock->accept(*this);
 
-    if (stmt.finallyBlock) finallyNesting--;
     tryNesting--;
 
     // =========================================================================
-    // Capture the non-local exits emitted inside the try body that still owe a
-    // finally. They are re-routed through the finally block (if present).
+    // Capture the non-local exits emitted so far that still owe a finally.
+    // They are re-routed through the finally block (if present).
+    //
+    // Called after the try body and again after the catch body: an exit written
+    // inside the catch block leaves the try statement just as much as one in the
+    // try body does, so its finally has to run too. (Only capturing the try body
+    // silently skipped the finally for `break` / `continue` / `return` in a
+    // catch block.) It is deliberately not called after the finally block: an
+    // exit written inside a finally must not be re-routed into that same finally.
     // =========================================================================
-    struct CapturedPreJump { size_t offset; size_t cleanupPad; int loopIdx; };
+    struct CapturedPreJump { size_t offset; size_t cleanupPad; int remainingFinallys; int loopIdx; };
     std::vector<CapturedPreJump> capturedPreJumps;
-    for (size_t li = 0; li < loopStack.size() && li < savedPreJumpCounts.size(); li++) {
-        auto& lc = loopStack[li];
-        while (lc.preJumps.size() > savedPreJumpCounts[li]) {
-            capturedPreJumps.push_back({lc.preJumps.back().jumpOffset,
-                                        lc.preJumps.back().cleanupPad,
-                                        static_cast<int>(li)});
-            lc.preJumps.pop_back();
-        }
-    }
-    // Capture return jumps emitted inside try body. Only a try that actually
-    // has a finally block has anything to replay them through; leaving them in
-    // pendingReturnJumps otherwise is what lets an *enclosing* finally claim
-    // them. (Removing them and then dropping them made `return` inside a try
-    // with no finally of its own jump into an unrelated instruction.)
     std::vector<size_t> capturedReturns;
-    if (stmt.finallyBlock) {
-        while (pendingReturnJumps.size() > savedReturnCount) {
-            capturedReturns.push_back(pendingReturnJumps.back());
-            pendingReturnJumps.pop_back();
+
+    auto capturePendingExits = [&]() {
+        // A try with no finally of its own has nothing to replay these through,
+        // so it must leave them alone for an enclosing finally to claim. Same
+        // reasoning applies to the return jumps below.
+        if (stmt.finallyBlock) {
+            for (size_t li = 0; li < loopStack.size() && li < savedPreJumpCounts.size(); li++) {
+                auto& lc = loopStack[li];
+                while (lc.preJumps.size() > savedPreJumpCounts[li]) {
+                    capturedPreJumps.push_back({lc.preJumps.back().jumpOffset,
+                                                lc.preJumps.back().cleanupPad,
+                                                lc.preJumps.back().remainingFinallys,
+                                                static_cast<int>(li)});
+                    lc.preJumps.pop_back();
+                }
+            }
         }
-    }
+        // Only a try that actually has a finally block has anything to replay
+        // return jumps through; leaving them in pendingReturnJumps otherwise is
+        // what lets an *enclosing* finally claim them. (Removing them and then
+        // dropping them made `return` inside a try with no finally of its own
+        // jump into an unrelated instruction.)
+        if (stmt.finallyBlock) {
+            while (pendingReturnJumps.size() > savedReturnCount) {
+                capturedReturns.push_back(pendingReturnJumps.back());
+                pendingReturnJumps.pop_back();
+            }
+        }
+    };
+
+    capturePendingExits();
 
     // =========================================================================
     // Normal try exit: OP_POP_CATCH
@@ -1812,6 +1837,9 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
         stmt.catchBlock->accept(*this);
         endScope();
 
+        // Exits written in the catch block have left the try statement too.
+        capturePendingExits();
+
         // Patch the skip-catch jump from normal flow
         patchJump(skipCatchJump);
     } else {
@@ -1819,6 +1847,12 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
         patchJump(pushCatchPlaceholder);
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
     }
+
+    // The try body and the catch block are both behind us, so this try's finally
+    // can no longer be owed by code compiled from here on — in particular not by
+    // a non-local exit written inside the finally itself, which must never be
+    // re-routed back into that same finally.
+    if (stmt.finallyBlock) finallyNesting--;
 
     // =========================================================================
     // Finally block — compiled once for the normal flow, then bytecode is
@@ -1853,16 +1887,15 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
             // Replay finally bytecode (the abandoned locals are still live here)
             for (uint8_t b : finallyBytecodeStack.back()) emitByte(b);
             emitByte(static_cast<uint8_t>(OpCode::OP_FINALLY_END));
-            if (finallyNesting > 0) {
-                // An outer finally still has to run, so hand the exit on: a new
-                // pre-jump that the next finally layer will claim. Its default
-                // target stays the pad, which is still the right place if that
-                // outer layer turns out not to intercept it.
+            if (cj.remainingFinallys > 1) {
+                // Another finally inside the target loop still has to run, so
+                // hand the exit on with a new pre-jump that the next finally
+                // layer out (still inside the loop) will claim.
                 size_t next = emitJump(OpCode::OP_JUMP);
                 chunk.writeAt(next, 0);
                 chunk.writeAt(next + 1, 0);
                 loopStack[static_cast<size_t>(cj.loopIdx)].preJumps.push_back(
-                    {next, cj.cleanupPad});
+                    {next, cj.cleanupPad, cj.remainingFinallys - 1});
             } else {
                 // Innermost finally is done: return to the cleanup pad, which
                 // sits before these replay blocks, hence the backward jump.

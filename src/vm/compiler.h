@@ -547,6 +547,12 @@ private:
         /// exits; handlers enclosing the target loop must survive, because
         /// control flow stays within their try block.
         int tryDepthAtEntry = 0;
+        /// Number of finally blocks enclosing this loop when it started. An exit
+        /// targeting this loop must run exactly the finallys between here and the
+        /// exit site, i.e. finallyNesting - finallyDepthAtEntry, and no others.
+        /// That is what stops a hand-off from reaching a finally sitting
+        /// *outside* the target loop, which the exit does not leave.
+        int finallyDepthAtEntry = 0;
         /// @brief A non-local exit jump that still owes an enclosing finally.
         ///
         /// Only produced when the exit site sits inside a try that has a
@@ -555,8 +561,9 @@ private:
         /// landing pad, and the real exit jump; this record carries the two
         /// addresses the finally layer needs.
         struct PreJump {
-            size_t jumpOffset;  ///< OP_JUMP placeholder, redirected into the finally chain.
-            size_t cleanupPad;  ///< Pad to run after the chain (sits before these replays).
+            size_t jumpOffset;     ///< OP_JUMP placeholder, redirected into the finally chain.
+            size_t cleanupPad;     ///< Pad to run after the chain (sits before these replays).
+            int remainingFinallys; ///< Finally blocks still owed, innermost first.
         };
         std::vector<PreJump> preJumps;       ///< Exit jumps still waiting for a finally replay.
     };

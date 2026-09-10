@@ -1,0 +1,194 @@
+// runtime/test_finally_handoff.va — which finallys an exit owes, and in what order
+// Run: vora tests/runtime/test_finally_handoff.va
+//
+// Pins down the scope of the exit -> finally chain that break/continue use.
+// An exit owes exactly the finallys that lie between the exit site and the
+// target loop's exit, innermost first, and must not reach any further:
+//
+//   - a finally that *encloses* the target loop is not owed by the exit; the
+//     loop ends normally inside that try, so its finally runs on that path
+//     (exactly once, later)
+//   - a try on the way that has no finally of its own must pass the exit
+//     through untouched, not swallow it
+//
+// Both were wrong while this was being built: the chain was handed on whenever
+// an outer finally merely existed lexically, so a break could fall through into
+// a replay continuation instead of exiting (`i1i2i3o` for a loop that should
+// stop at the first iteration), and a finally-less try dropped the pending exit
+// so the enclosing finally never ran ("b1" instead of "b1f").
+
+print("=== Runtime: finally hand-off Tests ===")
+
+// ---------------------------------------------------------------------------
+// A finally enclosing the target loop is NOT owed by the break
+// ---------------------------------------------------------------------------
+func outerFinallyNotRunByBreak() {
+    let log = ""
+    try {
+        for i in [1, 2, 3] {
+            try {
+                log = log + "b" + toString(i)
+                if (i == 1) { break }
+            } finally {
+                log = log + "i" + toString(i)
+            }
+        }
+    } finally {
+        log = log + "o"
+    }
+    return log
+}
+assert(outerFinallyNotRunByBreak() == "b1i1o",
+       "break owes the inner finally only; the outer one runs on the normal path")
+
+// ---------------------------------------------------------------------------
+// A finally-less try must pass the pending exit through to an enclosing finally
+// ---------------------------------------------------------------------------
+func noFinallyTryBetween() {
+    let log = ""
+    for i in [1, 2] {
+        try {
+            try {
+                log = log + "b" + toString(i)
+                break
+            } catch (e) {
+            }
+        } finally {
+            log = log + "f"
+        }
+    }
+    return log
+}
+assert(noFinallyTryBetween() == "b1f",
+       "a try with no finally does not swallow the pending exit")
+
+// ---------------------------------------------------------------------------
+// Two finallys inside the loop: both owed, innermost first
+// ---------------------------------------------------------------------------
+func twoNestedFinallysInsideLoop() {
+    let log = ""
+    for i in [1, 2] {
+        try {
+            try {
+                log = log + "b" + toString(i)
+                break
+            } finally {
+                log = log + "1"
+            }
+        } finally {
+            log = log + "2"
+        }
+    }
+    return log
+}
+assert(twoNestedFinallysInsideLoop() == "b112", "both inner finallys run, innermost first")
+
+func threeNestedFinallysInsideLoop() {
+    let log = ""
+    for i in [1, 2] {
+        let v = i
+        try {
+            try {
+                try {
+                    log = log + "b" + toString(v)
+                    break
+                } finally {
+                    log = log + "1" + toString(v)
+                }
+            } finally {
+                log = log + "2" + toString(v)
+            }
+        } finally {
+            log = log + "3" + toString(v)
+        }
+    }
+    return log
+}
+assert(threeNestedFinallysInsideLoop() == "b1112131",
+       "three inner finallys run in order, all seeing the live local")
+
+// ---------------------------------------------------------------------------
+// A finally inside the loop and one outside it: the inside one runs on the
+// break, the outside one runs later on the normal path — once each
+// ---------------------------------------------------------------------------
+func innerAndOuterFinally() {
+    let log = ""
+    try {
+        for i in [1, 2, 3] {
+            try {
+                log = log + "b" + toString(i)
+                if (i == 2) { break }
+            } finally {
+                log = log + "i" + toString(i)
+            }
+        }
+    } finally {
+        log = log + "o"
+    }
+    return log
+}
+assert(innerAndOuterFinally() == "b1i1b2i2o",
+       "inner finally per iteration, outer finally once after the loop")
+
+// ---------------------------------------------------------------------------
+// Breaking the inner loop owes only the inner loop's finallys
+// ---------------------------------------------------------------------------
+func breakInnerLoopOnly() {
+    let log = ""
+    for i in [1, 2] {
+        for j in [1, 2] {
+            try {
+                log = log + "b" + toString(i) + toString(j)
+                break
+            } finally {
+                log = log + "f" + toString(i) + toString(j)
+            }
+        }
+        log = log + "z" + toString(i)
+    }
+    return log
+}
+assert(breakInnerLoopOnly() == "b11f11z1b21f21z2",
+       "inner loop break owes the inner finally, then the outer loop continues")
+
+// ---------------------------------------------------------------------------
+// continue with a finally inside the loop
+// ---------------------------------------------------------------------------
+func continueWithInnerFinally() {
+    let log = ""
+    for i in [1, 2] {
+        try {
+            log = log + "b" + toString(i)
+            continue
+        } finally {
+            log = log + "f" + toString(i)
+        }
+    }
+    return log
+}
+assert(continueWithInnerFinally() == "b1f1b2f2", "continue runs the inner finally each time")
+
+// ---------------------------------------------------------------------------
+// A while loop whose finally is outside it: break does not owe it
+// ---------------------------------------------------------------------------
+func whileBreakOuterFinally() {
+    let log = ""
+    let i = 0
+    try {
+        while (i < 5) {
+            i = i + 1
+            try {
+                log = log + "b" + toString(i)
+                break
+            } finally {
+                log = log + "i" + toString(i)
+            }
+        }
+    } finally {
+        log = log + "o"
+    }
+    return log
+}
+assert(whileBreakOuterFinally() == "b1i1o", "while break owes only the inner finally")
+
+print("Runtime finally hand-off tests: PASS")

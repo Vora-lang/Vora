@@ -1,0 +1,198 @@
+// runtime/test_finally_from_catch.va — a finally must run when the catch exits
+// Run: vora tests/runtime/test_finally_from_catch.va
+//
+// Regression tests for a silently skipped finally: an exit written inside a
+// *catch* block was not routed through the enclosing finally, because
+// visitTryStmt only collected non-local exits emitted while compiling the try
+// body, and it dropped this try's finally-nesting count before compiling the
+// catch. So the finally simply did not run:
+//
+//     let log = ""
+//     let i = 0
+//     while (i < 3) {
+//         i = i + 1
+//         try { if (i == 1) { throw "x" } }
+//         catch (e) { log = log + "c"; break }
+//         finally { log = log + "f" }
+//     }
+//     print(log)   // "c", expected "cf"
+//
+// `return` from a catch was wrong too (its finally never ran), and `continue`
+// skipped the finally for that iteration.
+//
+// Fixed by keeping the try's finally-nesting count up while the catch block is
+// compiled — both the try body and the catch fall through to the finally — and
+// by collecting exits a second time after the catch body.
+//
+// Note: the catch variable and locals declared inside the catch block are out of
+// scope in the finally, so these tests assert on locals from outside the catch.
+
+print("=== Runtime: finally from catch Tests ===")
+
+// ---------------------------------------------------------------------------
+// break inside a catch block
+// ---------------------------------------------------------------------------
+func breakInCatch() {
+    let log = ""
+    let i = 0
+    while (i < 3) {
+        i = i + 1
+        try {
+            if (i == 1) { throw "x" }
+        } catch (e) {
+            log = log + "c" + toString(i)
+            break
+        } finally {
+            log = log + "f" + toString(i)
+        }
+        log = log + "z" + toString(i)
+    }
+    return log
+}
+assert(breakInCatch() == "c1f1", "finally runs when the catch breaks out")
+
+// ---------------------------------------------------------------------------
+// The finally must also see the right variable values on that path
+// ---------------------------------------------------------------------------
+func catchBreakFinallySeesLoopVar() {
+    let log = ""
+    for i in [1, 2, 3] {
+        try {
+            throw "x"
+        } catch (e) {
+            log = log + "c" + toString(i)
+            break
+        } finally {
+            log = log + "f" + toString(i)
+        }
+    }
+    return log
+}
+assert(catchBreakFinallySeesLoopVar() == "c1f1",
+       "finally reads the loop variable on a catch break")
+
+// ---------------------------------------------------------------------------
+// continue inside a catch block: finally runs on each such iteration, and the
+// following statement in the loop body is skipped
+// ---------------------------------------------------------------------------
+func continueInCatch() {
+    let log = ""
+    for i in [1, 2, 3] {
+        try {
+            if (i < 3) { throw "x" }
+        } catch (e) {
+            log = log + "c" + toString(i)
+            continue
+        } finally {
+            log = log + "f" + toString(i)
+        }
+        log = log + "z" + toString(i)
+    }
+    return log
+}
+assert(continueInCatch() == "c1f1c2f2f3z3", "finally runs on a catch continue")
+
+// ---------------------------------------------------------------------------
+// return inside a catch block
+// ---------------------------------------------------------------------------
+let catchReturnFinallyRuns = 0
+
+func returnInCatch() {
+    try {
+        throw "x"
+    } catch (e) {
+        return "r"
+    } finally {
+        catchReturnFinallyRuns = catchReturnFinallyRuns + 1
+    }
+    return "no"
+}
+assert(returnInCatch() == "r", "return from a catch keeps its value")
+assert(catchReturnFinallyRuns == 1, "finally runs when the catch returns")
+
+// ---------------------------------------------------------------------------
+// Nested: a break in the inner catch must run the inner finally then the outer
+// one, innermost first
+// ---------------------------------------------------------------------------
+func nestedCatchBreak() {
+    let log = ""
+    for i in [1, 2] {
+        try {
+            try {
+                throw "x"
+            } catch (e) {
+                log = log + "c" + toString(i)
+                break
+            } finally {
+                log = log + "i" + toString(i)
+            }
+        } finally {
+            log = log + "o" + toString(i)
+        }
+    }
+    return log
+}
+assert(nestedCatchBreak() == "c1i1o1", "nested finallys both run on a catch break")
+
+// ---------------------------------------------------------------------------
+// A catch inside a loop inside a try: the outer finally must run once, after
+// the loop leaves
+// ---------------------------------------------------------------------------
+func catchInsideLoopInsideTry() {
+    let log = ""
+    try {
+        for i in [1, 2, 3] {
+            try {
+                if (i == 2) { throw "x" }
+            } catch (e) {
+                log = log + "c" + toString(i)
+                break
+            } finally {
+                log = log + "i" + toString(i)
+            }
+            log = log + "z" + toString(i)
+        }
+    } finally {
+        log = log + "o"
+    }
+    return log
+}
+assert(catchInsideLoopInsideTry() == "i1z1c2i2o",
+       "inner catch break still runs the outer finally exactly once")
+
+// ---------------------------------------------------------------------------
+// A finally must still run exactly once when the catch completes normally
+// ---------------------------------------------------------------------------
+func catchCompletesNormally() {
+    let runs = 0
+    for i in [1, 2, 3] {
+        try {
+            if (i == 2) { throw "x" }
+        } catch (e) {
+            runs = runs + 1
+        } finally {
+            runs = runs + 10
+        }
+    }
+    return runs
+}
+assert(catchCompletesNormally() == 31, "finally runs once per iteration, catch once")
+
+// ---------------------------------------------------------------------------
+// Control: no catch at all, exit in the try body (the pre-existing path)
+// ---------------------------------------------------------------------------
+func noCatchStillWorks() {
+    let log = ""
+    for i in [1, 2, 3] {
+        try {
+            log = log + "b" + toString(i)
+            if (i == 2) { break }
+        } finally {
+            log = log + "f" + toString(i)
+        }
+    }
+    return log
+}
+assert(noCatchStillWorks() == "b1f1b2f2", "control: finally without a catch block")
+
+print("Runtime finally from catch tests: PASS")
