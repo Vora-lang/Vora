@@ -125,11 +125,14 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
 [X] `let x` 免初始化声明（2.7；无初值绑定 null，`let a:int` 等价 `let a:int = null` 得零值；
     const 仍强制初始化；tests/runtime/test_declarations.va + parser 单测）
 
+[X] 对象字面量简写 `{x}`（2.11；等价 `{x: x}`，仅当标识符后紧跟 `,`/`}` 时识别；
+    tests/runtime/test_dict_shorthand.va + 4 个 parser 单测）
+
 Phase 1 剩余（语法评审第 5 节"第三批"项，尚未纳入本清单，实测确认仍未解决）：
   [ ] 插值转义 `\$`（实测 `\${x}` → `\5`，反斜杠保留且插值照常；EBNF §2.3 已改正声明）
   [ ] `not` 关键字（2.9：与 `and`/`or` 配齐）
   [ ] 标签 break/continue（2.8）
-  [ ] 对象字面量简写 `{x}`（2.11）
+  [ ] 尾随逗号（`[1,2,]` / `{a:1,}` / `f(1,2,)` / 形参表，实测均报错；EBNF §5.4 已改正声明）
 ```
 
 ### Phase 2：补能力（2–3 月）

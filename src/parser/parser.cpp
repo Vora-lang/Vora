@@ -1993,14 +1993,36 @@ std::unique_ptr<Expr> Parser::primary() {
         if (!key) {
             key = std::make_unique<ErrorExpr>("Expected dict key", peek());
         }
+        Token keyToken = previous();
 
-        if (!match(TokenType::COLON)) {
-            error("Expected ':' after dict key");
+        // Shorthand entry `{x}` / `{x, y}` means `{"x": x, "y": y}`
+        // (syntax-review #2.11, matching the shorthand already accepted in
+        // destructuring patterns). Guarded on `,`/`}` following the
+        // identifier so dict comprehensions and other forms are unaffected.
+        bool shorthand = false;
+        std::string shorthandName;
+        if (!check(TokenType::COLON) &&
+            (check(TokenType::COMMA) || check(TokenType::RIGHT_BRACE))) {
+            if (auto* varKey = dynamic_cast<VariableExpr*>(key.get())) {
+                shorthand = true;
+                shorthandName = varKey->name;
+            }
         }
 
-        auto value = expression();
-        if (!value) {
-            value = std::make_unique<ErrorExpr>("Expected dict value", peek());
+        std::unique_ptr<Expr> value;
+        if (shorthand) {
+            key = std::make_unique<LiteralExpr>(
+                GcHeap::instance().alloc<GcString>(shorthandName));
+            value = std::make_unique<VariableExpr>(shorthandName, keyToken);
+        } else {
+            if (!match(TokenType::COLON)) {
+                error("Expected ':' after dict key");
+            }
+
+            value = expression();
+            if (!value) {
+                value = std::make_unique<ErrorExpr>("Expected dict value", peek());
+            }
         }
 
         // Check if this is a dict comprehension: {key: val for var in iterable if cond}
@@ -2061,6 +2083,21 @@ std::unique_ptr<Expr> Parser::primary() {
             auto nextKey = expression();
             if (!nextKey) {
                 nextKey = std::make_unique<ErrorExpr>("Expected dict key", peek());
+            }
+            Token nextKeyToken = previous();
+
+            // Shorthand entry (see above): {a: 1, b} -> b: b
+            if (!check(TokenType::COLON) &&
+                (check(TokenType::COMMA) || check(TokenType::RIGHT_BRACE))) {
+                if (auto* varKey = dynamic_cast<VariableExpr*>(nextKey.get())) {
+                    std::string name = varKey->name;
+                    pairs.push_back({
+                        std::make_unique<LiteralExpr>(
+                            GcHeap::instance().alloc<GcString>(name)),
+                        std::make_unique<VariableExpr>(name, nextKeyToken)
+                    });
+                    continue;
+                }
             }
 
             if (auto varKey = dynamic_cast<VariableExpr*>(nextKey.get())) {

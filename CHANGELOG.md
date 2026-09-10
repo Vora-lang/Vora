@@ -23,6 +23,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 > longer resolvable on `main`. This section is the authoritative record.
 
 ### Added
+- **Object literal shorthand `{x}`** (Phase 1, syntax-review #2.11): a bare
+  identifier entry expands to `{x: x}`, matching the shorthand already
+  accepted in destructuring patterns. Recognized only when the identifier is
+  followed by `,` or `}`, so dict comprehensions and other forms are
+  unaffected (`{a: 1, b}` mixes explicit and shorthand entries). Previously
+  an error ("Expected ':' after dict key").
+  Tests: `tests/runtime/test_dict_shorthand.va` + 4 parser units including a
+  negative case for `{a + b}` in expression position.
 - **`let x` without an initializer** (Phase 1, syntax-review #2.7): the
   binding defaults to `null`, enabling declare-then-assign in branches
   (`let x; if (c) { x = 1 }`). With a type annotation the declaration is
@@ -198,7 +206,7 @@ from `git log --oneline` on `main` and from `docs/08-已实现功能总结.md`
 > derivation, bitwise operators (`&` `|` `^` `~` `<<` `>>`), and
 > list/dict comprehensions (verified working at Phase 1 P1-A).
 > Still open at time of writing: `\$` interpolation escape, `not`
-> keyword, labeled break/continue, object-literal shorthand, stdlib
+> keyword, labeled break/continue, trailing commas, stdlib
 > expansion, DAP server (verify against Vora-LSP repo).
 
 These are real and verifiable in current code; do not write code that

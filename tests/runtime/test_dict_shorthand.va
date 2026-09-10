@@ -1,0 +1,70 @@
+// =========================================================================
+// test_dict_shorthand.va — Object literal shorthand
+// Tests: `{x}` expands to `{x: x}` (syntax-review #2.11), mixing with
+//        explicit pairs, and that destructuring shorthand still works
+// =========================================================================
+
+let x = 1
+let y = 2
+let name = "Vora"
+let count = 42
+
+// --- single shorthand ---
+let d1 = {x}
+assert(d1.x == 1, "d1.x should be 1")
+assert(d1["x"] == 1, "d1['x'] should be 1")
+assert(len(d1) == 1, "d1 should have exactly one entry")
+
+// --- multiple shorthand ---
+let d2 = {x, y}
+assert(d2.x == 1 and d2.y == 2, "d2.x=1, d2.y=2")
+assert(len(d2) == 2, "d2 should have two entries")
+
+// --- shorthand mixed with explicit pairs ---
+let d3 = {x: 10, y}
+assert(d3.x == 10, "explicit pair value wins: d3.x should be 10")
+assert(d3.y == 2, "shorthand contributes d3.y = 2")
+
+let d4 = {name, count}
+assert(d4.name == "Vora", "d4.name should be 'Vora'")
+assert(d4.count == 42, "d4.count should be 42")
+
+// --- shorthand uses the *variable name* as the key ---
+let key = "value"
+let d5 = {key}
+assert(d5.key == "value", "key is the variable name, not its value")
+assert(d5["key"] == "value", "d5['key'] should be 'value'")
+assert(len(d5) == 1, "d5 has one entry")
+
+// --- works inside function bodies ---
+func build(a, b) {
+    let sum = a + b
+    return {a, b, sum}
+}
+let built = build(3, 4)
+assert(built.a == 3 and built.b == 4, "built.a=3, built.b=4")
+assert(built.sum == 7, "built.sum should be 7")
+
+// --- works via return value into another dict ---
+let extra = 99
+let d6 = {extra, x}
+assert(d6.extra == 99 and d6.x == 1, "d6 should carry extra and x")
+
+// --- empty dict unchanged ---
+let empty = {}
+assert(len(empty) == 0, "empty dict stays empty")
+
+// --- explicit pairs still work (regression) ---
+let d7 = {a: 1, b: 2}
+assert(d7.a + d7.b == 3, "explicit dict literal still works")
+
+// --- destructuring shorthand (pre-existing) still works ---
+let src = {x: 100, y: 200}
+let {x: dx, y: dy} = src
+assert(dx == 100 and dy == 200, "explicit-key destructuring still works")
+
+// --- shorthand dict can be destructured via shorthand ---
+let {a, b} = build(5, 6)
+assert(a == 5 and b == 6, "shorthand destructuring of a shorthand dict")
+
+print("All dict shorthand tests passed!")

@@ -1355,6 +1355,52 @@ TEST_CASE("parser_c_style_for_still_works") {
 }
 
 // ============================================================================
+// Object literal shorthand (syntax-review #2.11)
+// ============================================================================
+
+TEST_CASE("parser_dict_shorthand_single") {
+    // {x} expands to {"x": x} — key is a string literal, value a variable.
+    auto expr = parseExpr("{x}");
+    REQUIRE(expr != nullptr);
+    auto* dict = dynamic_cast<DictExpr*>(expr.get());
+    REQUIRE(dict != nullptr);
+    REQUIRE(dict->pairs.size() == 1);
+    CHECK(dynamic_cast<LiteralExpr*>(dict->pairs[0].first.get()) != nullptr);
+    auto* val = dynamic_cast<VariableExpr*>(dict->pairs[0].second.get());
+    REQUIRE(val != nullptr);
+    CHECK(val->name == "x");
+}
+
+TEST_CASE("parser_dict_shorthand_mixed") {
+    // {a: 1, b} — explicit pair plus shorthand.
+    auto expr = parseExpr("{a: 1, b}");
+    REQUIRE(expr != nullptr);
+    auto* dict = dynamic_cast<DictExpr*>(expr.get());
+    REQUIRE(dict != nullptr);
+    CHECK(dict->pairs.size() == 2);
+}
+
+TEST_CASE("parser_dict_explicit_pair_unchanged") {
+    auto expr = parseExpr("{a: 1, b: 2}");
+    REQUIRE(expr != nullptr);
+    auto* dict = dynamic_cast<DictExpr*>(expr.get());
+    REQUIRE(dict != nullptr);
+    CHECK(dict->pairs.size() == 2);
+}
+
+TEST_CASE("parser_dict_shorthand_rejects_complex_key") {
+    // {a + b} in expression position is not a shorthand entry — must not
+    // silently become a dict. (At statement level `{` is a block, so the
+    // negative case has to be written in expression position.)
+    StderrErrorReporter reporter("let d = {a + b}");
+    Lexer lexer("let d = {a + b}", reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    auto prog = parser.parse();
+    CHECK(parser.hasError());
+}
+
+// ============================================================================
 // Bitwise operators (P1-F)
 // ============================================================================
 
