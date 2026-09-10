@@ -33,6 +33,44 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 > to those branches and are unrecoverable.
 
 ### Added
+- **Labeled `break` / `continue`** (Phase 1 closing item, syntax-review #2.8):
+  `name: <loop>` names a loop, and `break name` / `continue name` target it from
+  any nesting depth, so nested loops no longer need boolean flags to exit:
+
+      outer: for i in [1, 2, 3] {
+          for j in [1, 2, 3] {
+              if (j == 2) { continue outer }
+              if (i == 3) { break outer }
+          }
+      }
+
+  All four loop forms take a label. No new AST node was needed — the loop
+  statements gained an optional `label` and break/continue an optional
+  `targetLabel` — so the visitor interface and its four implementations are
+  untouched; only the formatter had to learn about labels. Unlabeled
+  break/continue is unchanged, byte for byte.
+
+  Rejected at compile time: a label pointing at no enclosing loop, the same
+  label twice on one nesting chain, and a label on anything that is not a loop
+  (`x: if (...) { }` — with no `goto` such a label could never be a target).
+  A label after `break` / `continue` counts only when it is on the same line as
+  the keyword, matching the Go-style ASI rule, so `break` followed by `foo()` on
+  the next line is still two statements. Loops that are not nested may reuse a
+  name.
+
+  ⚠ **Breaking change for one previously-accepted form:** `break <identifier>`
+  on a single line used to be legal and parsed as two statements with the second
+  one unreachable (`break` transfers control unconditionally). It now parses as
+  a label reference, so such code becomes a compile error. A full scan of
+  `tests/`, `examples/` and `std/` found no occurrence.
+
+  Design: `docs/17-labeled-break-continue-design.md`. Tests:
+  `tests/runtime/test_labeled_break_continue.va`, parser/compiler units for all
+  four negative cases, and label cases in the formatter round-trip test.
+  Editor syntax updated in all three front-ends (VS Code tmLanguage, Zed
+  tree-sitter incl. the rebuilt WASM, and the website playground, which needed
+  no change).
+
 - **`\$` interpolation escape** (Phase 1, syntax-review #2.10): `"\${x}"`
   now yields the literal text `${x}` instead of interpolating. The lexer
   stores an escaped dollar as an in-band sentinel (`kEscapedDollar`,
@@ -100,6 +138,76 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   brace-aware scan; previously a syntax dead-end.
 
 ### Fixed
+- **A `finally` could not see the locals the exit had just discarded**
+  (`c8211c6`, pre-existing, **syntactically valid but semantically invisible**):
+  break/continue popped the locals they abandoned and *then* jumped to the
+  finally replay, so a finally that read one of them evaluated its own
+  expressions into the recycled slots. The finally's pushes start at the
+  abandoned region's base, so it clobbered the *lowest* abandoned local first —
+  which is why the loop variable was the visible symptom:
+
+      let trace = ""
+      for i in [1, 2, 3] {
+          try { trace = trace + "b" + toString(i); if (i == 2) { break } }
+          finally { trace = trace + "f" + toString(i) }
+      }
+      print(trace)   // b1f1b2f<native fn toString>, expected b1f1b2f2
+
+  The same applied to the C-style `for` initializer local and to the first local
+  of a `while` / `do-while` body, and the corrupted value fed back into the loop,
+  so those loops also ran the wrong number of iterations (`b1f1b2fb1f1b2f`
+  instead of `b1f1b2f2`). The exit is now split — a pre-jump enters the finally
+  chain while the locals are still live, the chain falls back to a cleanup pad,
+  and only then does the real exit jump run — which is also what makes labeled
+  exits through a finally correct.
+  Tests: `tests/runtime/test_finally_locals_visibility.va`.
+- **Non-local exits written in a `catch` block skipped the enclosing `finally`**
+  (`53f63e0`, pre-existing): `visitTryStmt` only collected exits emitted while
+  compiling the *try body*, and it released this try's finally-nesting count
+  before compiling the catch — so `break`, `continue` and `return` written in a
+  catch block behaved as if no finally were pending:
+
+      let log = ""
+      let i = 0
+      while (i < 3) {
+          i = i + 1
+          try { if (i == 1) { throw "x" } }
+          catch (e) { log = log + "c"; break }
+          finally { log = log + "f" }
+      }
+      print(log)   // "c", expected "cf"
+
+  Both the try body and the catch fall through to the finally, so the count now
+  stays up until the catch is finished (released before the finally block
+  itself, so an exit written in a finally is never routed back into it), and
+  pending exits are collected again after the catch body.
+  Tests: `tests/runtime/test_finally_from_catch.va`.
+- **`return` inside a try with no `finally` of its own was dropped**
+  (`c8211c6`, pre-existing): such a return was removed from the pending-jump
+  list and then discarded, leaving its `OP_JUMP` operand at the 0xFF
+  placeholder. Nested in an outer try that had a finally this aborted with
+  "Unknown opcode":
+
+      func f() {
+          try { try { return 1 } catch (e) { } } finally { print("outer finally") }
+          return 2
+      }
+
+  Return jumps are now captured only by a try that has a finally of its own to
+  replay them through; otherwise they stay pending for an enclosing finally.
+  Tests: covered by `tests/runtime/test_finally_locals_visibility.va` and
+  `tests/runtime/test_finally_from_catch.va`.
+- **Which finallys a non-local exit owes was computed too coarsely**
+  (`53f63e0`, introduced and fixed within the same unreleased work): an exit was
+  handed to an enclosing finally whenever one merely existed lexically, but a
+  finally that *encloses* the target loop is not owed by the exit — the loop
+  ends normally inside its try. Two consequences: a finally-less try between the
+  exit and a finally swallowed the pending exit so the finally never ran ("b1"
+  instead of "b1f"), and a break could fall through into a replay continuation
+  instead of exiting (`i1i2i3o` for a loop that should stop at the first
+  iteration). LoopContext now records the finally depth at loop entry, and an
+  exit owes exactly the finallys between it and its target.
+  Tests: `tests/runtime/test_finally_handoff.va`.
 - **`break` / `continue` did not close upvalues** (`8696cb5`, pre-existing):
   both statements discard the loop body's locals with `OP_POPN` but, unlike
   `endScope()` (`src/vm/compiler.cpp:310`), never emitted `OP_CLOSE_UPVALUE`. A

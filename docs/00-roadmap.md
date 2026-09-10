@@ -135,8 +135,17 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
     覆盖常量折叠与 formatter 往返；tests/runtime/test_string_escape.va + formatter 往返用例）
     —— 顺带修复既有缺陷：`"a" + "${x}"` 因常量折叠吞掉插值而**静默不插值**，现已在折叠前检查 `${`。
 
+[X] 标签 break/continue（2.8；`outer: for ... { break outer }` / `continue outer` 可从任意嵌套深度
+    指定目标循环。无新 AST 节点，只给 4 个循环语句与 break/continue 加可选 label 字段，故
+    StmtVisitor 接口与 4 个实现都未改动。指向不存在的标签、重复标签、给非循环打标签三种情况
+    均为编译期错误；`break` 换行后的标识符仍按 ASI 视为两条语句。
+    tests/runtime/test_labeled_break_continue.va + parser/compiler 单测 + formatter 往返用例
+    + 三端编辑器高亮）
+    —— 行为变化：同一行的 `break <标识符>` 旧版是合法的（解析为两条语句，后一条是死代码），
+    本次起改为引用标签。对 `tests/`、`examples/`、`std/` 全量 grep 无一处受影响。
+    —— 设计过程中发现并修复 7 个既有静默缺陷，见 `CHANGELOG.md [Unreleased] → Fixed`。
+
 Phase 1 剩余（语法评审第 5 节"第三批"项，尚未纳入本清单，实测确认仍未解决）：
-  [ ] 标签 break/continue（2.8）
   [ ] 尾随逗号（`[1,2,]` / `{a:1,}` / `f(1,2,)` / 形参表，实测均报错；EBNF §5.4 已改正声明）
 ```
 

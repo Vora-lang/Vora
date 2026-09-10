@@ -1,6 +1,23 @@
 # 标签 break / continue —— 设计与实现方案
 
-> 状态：**设计阶段，未实现**
+> 状态：**已实现**（标签功能落地于 `3334704`，前置项 Bug F 于 `c8211c6`）
+>
+> **实现后记（2026-09-10）**：按 §7 顺序实现完成。三项对本设计的修正：
+> 1. §4.3-F 的 Bug F 已按设计落地（`c8211c6`）。**§4.3-F 要点 7「`return` 不受影响」是错的**——
+>    实测 `return` 写在 **catch 块内**、或写在**自身无 finally 的 try** 内（外层有 finally）时同样出问题，
+>    已一并修复；同一次改动还发现并修掉「无 finally 的 try 丢弃 return 跳转」，见 §2.6。
+> 2. 实现中发现**第三个**同类既有缺陷：catch 块内的非局部退出**完全跳过**外层 finally
+>    （`53f63e0`）。§4.3-F 只讨论了 try 体内的退出，未覆盖 catch 体，现已修复。
+> 3. §4.3-F 的「谁负责最后一跳」判据用 `finallyNesting` 判断**不够精确**：`finallyNesting > 0`
+>    只说明词法上有外层 finally，而**包住目标循环**的 finally 并不被该退出所欠（循环在其 try 内正常结束）。
+>    实现改为 `LoopContext::finallyDepthAtEntry` 记录循环入口处的 finally 深度，退出只欠
+>    `finallyNesting - finallyDepthAtEntry` 个 finally（`53f63e0`）。
+>    未修正前实测症状：无 finally 的 try 会吞掉待处理退出（`b1` 而非 `b1f`）；`break` 可能被交给
+>    循环外的 finally，导致它掉进重放块而不是退出（`i1i2i3o`）。
+>
+> 回归测试：`test_loop_closure` / `test_loop_try_interaction` / `test_try_loop_jump_routing` /
+> `test_continue_finally` / `test_finally_replay_isolation` / `test_finally_locals_visibility` /
+> `test_finally_from_catch` / `test_finally_handoff` / `test_labeled_break_continue`（均在 `tests/runtime/`）。
 > 目标项：`VORA_SYNTAX_REVIEW.md` §2.8（P1，能力断头路）
 > 覆盖面：AST / parser / compiler / 编辑器语法 / 文档
 > 前置：Phase 1 其余 5 项语法缺口已完成（见 `CHANGELOG.md [Unreleased]`）
@@ -230,9 +247,9 @@ v1 的「只针对体局部变量」设想还**漏了两处**（本版实测确�
 `OP_CLOSE_UPVALUE`。回归测试 `tests/runtime/test_loop_closure.va` 覆盖 continue / break /
 嵌套 break / 四种循环 / 每轮多个捕获变量 / 可变捕获 / 两组对照，每个用例都先确认修复前失败。
 
-### 2.6 未修复的既有缺陷：Bug F —— finally 读到已被弹出的局部变量
+### 2.6 既有缺陷 F：finally 读到已被弹出的局部变量（**已修复** `c8211c6`）
 
-**状态：未修复，v2 新增前置项。** 这是 `visitTryStmt` 路由机制里最后一处结构性缺陷，
+**状态：已按 §4.3-F 修复。** 这是 `visitTryStmt` 路由机制里最后一处结构性缺陷。
 按「文档即契约」需要先在设计层定案。
 
 复现（**实测**，`main@59dd146`）：
@@ -258,7 +275,16 @@ print(trace)   // 实测 b1f1b2f<native fn toString>，期望 b1f1b2f2
 就是 `toString` 自身。
 
 该缺陷是**既有**的（在原二进制上同样错，只是被缺陷 E 的提前退出掩盖）。`break` 与 `continue`
-都受影响；`return` **不受影响**（`visitReturnStmt` 不做局部变量清理，靠帧销毁）。
+都受影响。
+
+> ⚠ **v2 这里漏了一层（本版据实测更正）**：`return` 本身不做局部变量清理（靠帧销毁），所以
+> **不存在**「清理早于 finally」的问题 —— 但实现时发现 `return` 在另外两种位置上同样是错的，
+> 都与本节的机制相邻：
+> - `return` 写在 **catch 块内**：外层 finally 完全不执行（与下述缺陷 G 同一个成因）；
+> - `return` 写在**自身无 finally 的 try 内**、而外层 try 有 finally：该 return 跳转被这个
+>   内层 try 收走后又丢弃，占位停在 `0xFF`，实测直接 `Unknown opcode`。
+>
+> 两者均已修复（见 §4.3-F 要点 7 的更正与 `docs/../CHANGELOG.md`）。
 
 **注意它对本设计的影响面**：§6 中「标签 break / continue 跨 try/finally —— finally 恰好执行
 一次，且**顺序**正确」这条验收用例，在 Bug F 未修时无法通过。因此 Bug F 必须排在标签实现之前
@@ -493,7 +519,7 @@ v1 设想的「抽一个 `emitCloseUpvaluesFor(int targetScopeDepth)`」已以�
 序列与 `OP_POPN` 操作数。注意它比 v1 的设想多覆盖了「基础设施局部变量也可被捕获」这一情形
 （C-for 的初始化变量，见 §2.5），这是 v1 漏掉的。
 
-**F. ★ v2 新增前置项：Bug F —— 把清理挪到 finally 重放之后**
+**F. ★ v2 新增前置项：Bug F —— 把清理挪到 finally 重放之后（**已实现** `c8211c6`）**
 
 现状（问题）：`visitBreakStmt` / `visitContinueStmt` 的发射顺序是
 
@@ -563,9 +589,17 @@ cleanup 落点:                          ← 固定地址；位于这些重放�
    其他任何落点穿透——每个落点都必须以 J2（无条件跳转）收尾；且所有 pre-jump 最终都必须被
    回填（要么被某层 finally 改道，要么落到本跳出点的 cleanup 落点），不得留下 `0xFF` 占位
    （这正是缺陷 C 的教训）。
-7. **`return` 不受影响**：`visitReturnStmt`（`:934`）不做局部变量清理（不清 `OP_POPN`、不发射
-   `OP_CLOSE_UPVALUE`），靠帧销毁，因此没有「清理早于 finally」的问题；其 `pendingReturnJumps`
-   的处理（`:1867`）不在本项改动范围内。
+7. **`return` 的位置要分两种看（v2 此处判断有误，据实测更正）**：
+   `return` 不做局部变量清理（不清 `OP_POPN`、不发射 `OP_CLOSE_UPVALUE`），靠帧销毁，因此**没有**
+   「清理早于 finally」的问题；但它在**另外两种位置**上是错的，且都落在本项的布线范围内：
+   - 写在 **catch 块内**：外层 finally 不执行。成因与本节的 try 体讨论无关，而是
+     `finallyNesting` 在 catch 编译**之前**就被 `--` 掉了，于是 catch 里的 `return` 直接发
+     `OP_RETURN` 而不登记待改道跳转。修法与 catch 块内的 `break`/`continue` 相同：把计数保持到
+     catch 结束（`53f63e0`）。
+   - 写在**自身无 finally 的 try 内**、外层 try 有 finally：该跳转被内层 try 收走，而内层没有
+     finally 可重放，于是被丢弃、占位停在 `0xFF`（实测 `Unknown opcode`）。修法：只有**自身有
+     finally** 的 try 才收走 return 跳转，否则留给外层 finally 认领（`c8211c6`）。
+   其 `pendingReturnJumps` 的处理（`:1867`）**在**本项改动范围内，与 `preJumps` 通道并列。
 8. **对标签设计的依赖**：标签跳转同样经过这条路径。若 Bug F 未修，标签 `break`/`continue`
    跨 finally 时会继承同一个「finally 看不到循环体局部变量」的错误，§6 中「顺序正确」的
    验收用例无法通过。因此 Bug F 排在标签实现之前（§7）。

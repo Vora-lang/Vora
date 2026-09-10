@@ -434,6 +434,39 @@ while (true) {
 }
 ```
 
+### 标签循环 / Labeled loops
+
+> 引入版本: v0.30（Phase 1 语法冻结前收尾，syntax-review #2.8）
+
+`名称: <循环>` 为循环命名，`break 名称` / `continue 名称` 从**任意嵌套深度**跳到指定的那一层，
+不必再用布尔标志逐层退出：
+
+```vora
+outer: for i in [1, 2, 3] {
+    for j in [1, 2, 3] {
+        if (j == 2) { continue outer }   // 跳到 outer 的下一轮
+        if (i == 3) { break outer }      // 直接跳出 outer
+        print(toString(i) + "," + toString(j))
+    }
+}
+
+// while / do-while / C 风格 for 同样可以带标签
+w: while (cond) { for (x in xs) { continue w } }
+c: for (let k = 0; k < n; k = k + 1) { break c }
+```
+
+规则与注意事项：
+
+- 不带标签的 `break` / `continue` 语义**完全不变**：仍然作用于最内层循环。
+- 标签**只能挂在循环上**。`x: if (...) { }` 是编译期错误——没有 `goto`，非循环标签不可能成为跳转目标。
+- 标签后的标识符**必须与 `break` / `continue` 在同一行**（与 Go 式 ASI 一致）：
+  `break` 换行后跟 `foo()` 是两条语句，不是 `break foo`。
+- 指向不存在的标签、以及同一嵌套链上重复的标签，都是编译期错误；**不相邻**的两个循环可以重名。
+  标签与变量名互不干扰（`let outer = 1` 与 `outer: for ...` 可以共存）。
+
+> ⚠ **兼容性变化**：旧版同一行的 `break <标识符>` 是合法的，会被解析为两条语句，且后一条恒为
+> 死代码（`break` 无条件转移控制）。现在它被解析为标签引用，因此这类写法会变成编译错误。
+
 ---
 
 ## 6. 函数与闭包 / Functions & Closures
