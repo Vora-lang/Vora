@@ -1,0 +1,145 @@
+// runtime/test_loop_try_interaction.va — break/continue vs. enclosing try blocks
+// Run: vora tests/runtime/test_loop_try_interaction.va
+//
+// Regression tests for a silent control-flow bug: break/continue emitted one
+// OP_POP_CATCH per lexically enclosing try block, but a jump out of a loop only
+// leaves the try blocks registered *inside* that loop. Every try that enclosed
+// the loop had its catch handler popped, so a later throw in the same try block
+// escaped uncaught — or was silently caught by an outer handler.
+//
+// The pop count is now derived from the try-nesting depth recorded when the
+// loop was entered, so handlers enclosing the target loop survive.
+
+print("=== Runtime: Loop / Try Interaction Tests ===")
+
+// ---------------------------------------------------------------------------
+// break inside a loop inside a try: the try's own handler must survive
+// ---------------------------------------------------------------------------
+func breakInLoopInsideTry() {
+    let n = 0
+    try {
+        let i = 0
+        while (i < 5) { n = n + 1; break }
+        throw "boom"
+    } catch (e) {
+        n = n + 1000
+    }
+    return n
+}
+assert(breakInLoopInsideTry() == 1001, "break: enclosing try still catches")
+
+// ---------------------------------------------------------------------------
+// continue inside a loop inside a try
+// ---------------------------------------------------------------------------
+func continueInLoopInsideTry() {
+    let n = 0
+    try {
+        for i in [1, 2] {
+            n = n + 1
+            continue
+        }
+        throw "boom"
+    } catch (e) {
+        n = n + 1000
+    }
+    return n
+}
+assert(continueInLoopInsideTry() == 1002, "continue: enclosing try still catches")
+
+// ---------------------------------------------------------------------------
+// A completed for-in inside a try (its synthetic StopIteration break) must not
+// disable the try either — this fired on every normal loop exit.
+// ---------------------------------------------------------------------------
+func forInInsideTry() {
+    let n = 0
+    try {
+        for i in [1, 2, 3] { n = n + 1 }
+        throw "boom"
+    } catch (e) {
+        n = n + 1000
+    }
+    return n
+}
+assert(forInInsideTry() == 1003, "for-in exit: enclosing try still catches")
+
+// ---------------------------------------------------------------------------
+// Nested try blocks: a break under the inner try must leave the inner handler
+// alive so the inner catch still wins over the outer one.
+// ---------------------------------------------------------------------------
+func breakUnderInnerTry() {
+    let n = 0
+    try {
+        try {
+            for i in [1, 2, 3] {
+                n = n + 1
+                break
+            }
+            throw "boom"
+        } catch (e) {
+            n = n + 1000
+        }
+    } catch (e2) {
+        n = n + 10000
+    }
+    return n
+}
+assert(breakUnderInnerTry() == 1001, "nested try: inner catch wins after break")
+
+// ---------------------------------------------------------------------------
+// A try block that lives inside the loop IS exited by break, so its handler
+// must be popped — otherwise the handler stack leaks and a later unrelated
+// throw is caught by a dead handler.
+// ---------------------------------------------------------------------------
+func tryInsideLoopPoppedOnContinue() {
+    let n = 0
+    for i in [1, 2] {
+        try {
+            n = n + 1
+            continue
+        } catch (e) {
+            n = n + 100
+        }
+    }
+    try {
+        throw "outer"
+    } catch (e) {
+        n = n + 1000
+    }
+    return n
+}
+assert(tryInsideLoopPoppedOnContinue() == 1002, "try inside loop is popped by continue")
+
+// ---------------------------------------------------------------------------
+// A list comprehension desugars into its own try/catch loop; make sure it does
+// not disable an enclosing try either.
+// ---------------------------------------------------------------------------
+func comprehensionInsideTry() {
+    let n = 0
+    try {
+        let doubled = [x * 2 for x in [1, 2, 3]]
+        n = doubled[0] + doubled[1] + doubled[2]
+        throw "boom"
+    } catch (e) {
+        n = n + 1000
+    }
+    return n
+}
+assert(comprehensionInsideTry() == 1012, "comprehension: enclosing try still catches")
+
+// ---------------------------------------------------------------------------
+// Control: a while loop that never breaks inside a try (always worked)
+// ---------------------------------------------------------------------------
+func noJumpInsideTry() {
+    let n = 0
+    try {
+        let i = 0
+        while (i < 2) { n = n + 1; i = i + 1 }
+        throw "boom"
+    } catch (e) {
+        n = n + 1000
+    }
+    return n
+}
+assert(noJumpInsideTry() == 1002, "control: no-jump loop inside try")
+
+print("Runtime loop/try interaction tests: PASS")

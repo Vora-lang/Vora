@@ -691,7 +691,7 @@ void Compiler::visitListCompExpr(const ListCompExpr& expr) {
     // ── Step 3: while (true) loop ──
     size_t loopStart = chunk.code.size();
     // continueTarget = loopStart, extraLocalsToPopOnBreak = 1 (_iter)
-    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0});
+    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0, tryNesting});
 
     // ── Step 4: OP_PUSH_CATCH ──
     emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
@@ -860,7 +860,7 @@ void Compiler::visitDictCompExpr(const DictCompExpr& expr) {
 
     // ── Step 3: while (true) loop ──
     size_t loopStart = chunk.code.size();
-    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0});
+    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0, tryNesting});
 
     // ── Step 4: OP_PUSH_CATCH ──
     emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));

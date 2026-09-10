@@ -542,6 +542,11 @@ private:
         int enclosingScopeDepth;             ///< Scope depth at loop entry (for local cleanup on break).
         int extraLocalsToPopOnBreak = 0;     ///< Auto-generated locals to pop when breaking out.
         int extraLocalsToPopOnContinue = 0;  ///< Auto-generated locals to pop when continuing.
+        /// Active try-block depth (tryNesting) at loop entry. A break/continue
+        /// may only pop the catch handlers registered *inside* the loops it
+        /// exits; handlers enclosing the target loop must survive, because
+        /// control flow stays within their try block.
+        int tryDepthAtEntry = 0;
     };
 
     std::vector<LoopContext> loopStack;      ///< Stack of active loop contexts (innermost at back).

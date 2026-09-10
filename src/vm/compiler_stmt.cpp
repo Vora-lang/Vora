@@ -1017,7 +1017,7 @@ void Compiler::visitWhileStmt(const WhileStmt& stmt) {
 
     // Push loop context for break/continue.
     // While loops: continueTarget == loopStart (backward jump to condition)
-    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 0, 0});
+    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 0, 0, tryNesting});
 
     // Condition
     stmt.condition->accept(*this);
@@ -1058,7 +1058,7 @@ void Compiler::visitDoWhileStmt(const DoWhileStmt& stmt) {
     // Unlike while (where continueTarget == loopStart for backward jump),
     // do-while has continue jump forward to the condition, which hasn't
     // been compiled yet. This matches the for-in/C-for pattern.
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 0, 0});
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, 0, 0, tryNesting});
 
     // --- Body (always executes at least once, unconditionally) ---
     stmt.body->accept(*this);
@@ -1130,7 +1130,7 @@ void Compiler::visitForStmt(const ForStmt& stmt) {
     size_t loopStart = chunk.code.size();
     // continueTarget = loopStart (continue jumps go back to top via OP_LOOP).
     // extraLocalsToPopOnBreak = 1 (_iter), extraLocalsToPopOnContinue = 0.
-    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0});
+    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0, tryNesting});
 
     // --- OP_PUSH_CATCH: try { let x = next(_iter); body } ---
     emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
@@ -1259,7 +1259,7 @@ void Compiler::visitCForStmt(const CForStmt& stmt) {
 
     size_t loopStart = chunk.code.size();
     // continueTarget = SIZE_MAX signals "target will be set later"
-    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, extraLocals, 0});
+    loopStack.push_back({loopStart, SIZE_MAX, {}, {}, scopeDepth, extraLocals, 0, tryNesting});
 
     // --- Condition ---
     if (stmt.condition) {
@@ -1644,9 +1644,12 @@ void Compiler::visitBreakStmt(const BreakStmt& stmt) {
         return;
     }
 
-    // Pop catch handlers for any enclosing try blocks (they are skipped by
-    // the break jump and would otherwise leak on the VM's catch handler stack).
-    for (int t = 0; t < tryNesting; t++) {
+    // Pop the catch handlers registered inside the loops being exited. Only
+    // those are skipped by the break jump; a try block that *encloses* the
+    // target loop stays active, so its handler must survive. Using tryNesting
+    // here would over-pop and silently disable an enclosing try/catch.
+    const int handlersToPop = tryNesting - loopStack.back().tryDepthAtEntry;
+    for (int t = 0; t < handlersToPop; t++) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
     }
 
@@ -1674,8 +1677,10 @@ void Compiler::visitContinueStmt(const ContinueStmt& stmt) {
         return;
     }
 
-    // Pop catch handlers for any enclosing try blocks.
-    for (int t = 0; t < tryNesting; t++) {
+    // Same reasoning as break: only handlers registered inside the loops being
+    // exited are skipped by the continue jump.
+    const int handlersToPop = tryNesting - loopStack.back().tryDepthAtEntry;
+    for (int t = 0; t < handlersToPop; t++) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
     }
 
@@ -1850,6 +1855,7 @@ void Compiler::visitTryStmt(const TryStmt& stmt) {
         // Pop the finally bytecode stack entry
         finallyBytecodeStack.pop_back();
     }
+    // TEMP-REVERT-BUGC
 }
 
 void Compiler::visitThrowStmt(const ThrowStmt& stmt) {
