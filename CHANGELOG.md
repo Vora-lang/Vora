@@ -140,6 +140,51 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   Matches that already end in `_`, or whose arms cover the value, are
   unaffected. Defers in the enclosing function still run, as with `throw`.
 
+- **A newline now ends a statement (Go-style ASI)** (P0 #1). Previously the
+  parser kept consuming across line breaks, so `let b = a` followed by `-1` on
+  the next line was a single subtraction — a statement could swallow the line
+  below it. A newline at statement level (paren/bracket depth 0) now terminates
+  the statement, so those are two statements.
+  Migration: where an expression really should continue across lines, leave the
+  operator at the end of the first line (`let b = a -` then `1` on the next) or
+  parenthesize it.
+- **`?:` binds looser than `||` and `??`** (P0 #2). `?:` used to bind tighter, so
+  `a || b ? c : d` parsed as `a || (b ? c : d)`. It now shares the lowest
+  precedence with `||`/`??` and is right-associative, so the same text parses as
+  `(a || b) ? c : d` — C/JS/Go/Python semantics.
+  Migration: parenthesize to keep the old grouping (`a || (b ? c : d)`).
+- **An import path that is not identifier-shaped is now a compile error**
+  (P0 #4). A path such as `./my-mod` contains `-`, so the binding derived from it
+  could not be referenced afterwards; it used to be derived silently. It is now
+  rejected with a clear compile-time error.
+  Migration: name the binding explicitly — `import "./my-mod" as mod`, or use
+  `from "./my-mod" import thing`.
+- **`not` is a reserved word** (syntax-review #2.9). `not` used to be an ordinary
+  identifier. It is now a keyword and an alias for `!`, so boolean negation reads
+  the way Python users expect. Because it is reserved, code using `not` as a name
+  no longer parses.
+  Migration: rename any variable, parameter, function or property called `not`.
+  A scan of `tests/`, `examples/` and `std/` found no such use.
+- **`\$` escapes interpolation** (syntax-review #2.10). `"\${x}"` used to
+  interpolate, and there was no way at all to write a literal `${`. It now yields
+  the four characters `${x}`, and a lone `"\$"` yields `$`.
+  Migration: ordinary interpolation is unaffected (`"${x}"` still interpolates);
+  code that wanted the literal characters `${...}` writes `"\${...}"`.
+- **`break <name>` / `continue <name>` now refer to a label** (syntax-review
+  #2.8, Phase 1). Both forms were added so nested loops need no boolean flags,
+  which reinterprets one previously-legal line: `break foo` on a single line used
+  to parse as two statements with the second unreachable (a `break` transfers
+  control unconditionally). It is now a label reference, and naming no enclosing
+  loop label is a compile error.
+  Migration: delete the unreachable statement, or add the label the `break`
+  names (`outer: for ...`). A scan of `tests/`, `examples/` and `std/` found no
+  occurrence.
+- **`vora fmt -w` now preserves comments** (see Fixed below). It used to delete
+  every comment in a file, so formatting a file that contains comments now
+  changes it where it previously removed them.
+  Migration: none beyond re-running the formatter. Comment text is reproduced
+  verbatim; a comment inside a multi-line expression may move by a line, and the
+  formatter's output for any file with comments will differ once.
 ### Added
 - **Optional trailing commas.** A comma-separated list may end with one extra
   comma before its closing delimiter: `[1, 2,]`, `{x: 1,}`, `f(1, 2,)`,
