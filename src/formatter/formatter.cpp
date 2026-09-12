@@ -45,24 +45,32 @@ static std::string formatFloatLiteral(double d) {
     if (std::isnan(d)) return "0.0 / 0.0";          // not a Vora literal; see above
     if (std::isinf(d)) return d < 0 ? "-1.0 / 0.0" : "1.0 / 0.0";
 
-    // 512 bytes is comfortable: the longest fixed form is ~1.8e308 (309 digits)
-    // or the smallest subnormal (~330 characters).
-    char buf[512];
-    auto res = std::to_chars(buf, buf + sizeof(buf), d, std::chars_format::fixed);
-    std::string out;
-    if (res.ec == std::errc()) {
-        out.assign(buf, res.ptr);
-    } else {
-        // Should be unreachable given the buffer size; fall back to scientific
-        // rather than returning something truncated or empty.
-        char big[512];
-        auto r2 = std::to_chars(big, big + sizeof(big), d, std::chars_format::scientific);
-        out.assign(big, r2.ptr);
-    }
+    auto render = [](double v, std::chars_format fmt) {
+        char buf[512];
+        auto res = std::to_chars(buf, buf + sizeof(buf), v, fmt);
+        if (res.ec != std::errc()) return std::string();
+        return std::string(buf, res.ptr);
+    };
 
-    // A lexeme with no '.' is an integer literal, which would silently change
+    // Both layouts are shortest-round-trip; they differ only in shape, so emit
+    // whichever is shorter and let fixed notation win ties (it reads better).
+    // This matters most at the extremes: `1e300` is 6 characters where the
+    // equivalent fixed form is 301.
+    const std::string fixed = render(d, std::chars_format::fixed);
+    const std::string general = render(d, std::chars_format::general);
+    std::string out;
+    if (fixed.empty()) out = general;
+    else if (general.empty()) out = fixed;
+    else out = (general.size() < fixed.size()) ? general : fixed;
+
+    // Whatever was chosen must re-lex as a *float*: a lexeme carrying neither a
+    // '.' nor an exponent is an integer literal, which would silently change
     // the value's type on the next parse.
-    if (out.find('.') == std::string::npos) out += ".0";
+    const bool readsAsFloat =
+        out.find('.') != std::string::npos ||
+        out.find('e') != std::string::npos ||
+        out.find('E') != std::string::npos;
+    if (!readsAsFloat) out += ".0";
     return out;
 }
 

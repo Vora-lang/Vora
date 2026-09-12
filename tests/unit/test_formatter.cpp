@@ -12,6 +12,7 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
+#include <algorithm>
 #include <charconv>
 #include <cstring>
 #include <system_error>
@@ -67,19 +68,36 @@ static std::string formattedLiteral(double d) {
 }
 
 // Properties every emitted float literal must have:
-//   1. it contains no exponent (the lexer only accepts digit+ [ "." digit+ ])
-//   2. it contains a '.' (otherwise it would re-parse as an *integer*)
-//   3. std::stod on it returns a bit-identical double (lossless round trip)
+//   1. it re-lexes as a *float* — it carries a '.' or an exponent, because a
+//      bare integer lexeme would silently change the value's type
+//   2. std::stod on it returns a bit-identical double (lossless round trip)
+//   3. it is at most the shorter of the two layouts, plus the ".0" that may be
+//      appended to keep an integral value a float (fixed "2" -> emitted "2.0")
 static void checkFloatLiteralRoundTrip(double d) {
     const std::string lit = formattedLiteral(d);
-    CHECK(lit.find('e') == std::string::npos);
-    CHECK(lit.find('E') == std::string::npos);
-    CHECK(lit.find('.') != std::string::npos);
+    const bool readsAsFloat =
+        lit.find('.') != std::string::npos ||
+        lit.find('e') != std::string::npos ||
+        lit.find('E') != std::string::npos;
+    CHECK(readsAsFloat);
     const double back = std::stod(lit);
     uint64_t a = 0, b = 0;
     std::memcpy(&a, &d, sizeof(a));
     std::memcpy(&b, &back, sizeof(b));
     CHECK(a == b);
+
+    // The emitted text must be at most the shorter of the two layouts, plus at
+    // most the two characters of an appended ".0".
+    auto layoutLen = [d](std::chars_format f) -> size_t {
+        char buf[512];
+        auto res = std::to_chars(buf, buf + sizeof(buf), d, f);
+        return (res.ec == std::errc()) ? static_cast<size_t>(res.ptr - buf) : SIZE_MAX;
+    };
+    const size_t shorter = std::min(layoutLen(std::chars_format::fixed),
+                                    layoutLen(std::chars_format::general));
+    if (shorter != SIZE_MAX) {
+        CHECK(lit.size() <= shorter + 2);
+    }
 }
 
 // Helper: format twice and verify idempotency.
@@ -403,7 +421,9 @@ TEST_CASE("fmt_float_precision_is_lossless") {
     CHECK(trimmed(fmt("let a = 0.30000000000000004")) == "let a = 0.30000000000000004");
     CHECK(trimmed(fmt("let a = 2.2250738585072014")) == "let a = 2.2250738585072014");
     CHECK(trimmed(fmt("let a = 100000.5")) == "let a = 100000.5");
-    CHECK(trimmed(fmt("let a = 0.0000001")) == "let a = 0.0000001");
+    // 1e-7 is shorter in exponent form (5 chars vs 9), which is why the
+    // formatter now emits one: the language gained exponent literals.
+    CHECK(trimmed(fmt("let a = 0.0000001")) == "let a = 1e-07");
 }
 
 TEST_CASE("fmt_float_integral_values_stay_floats") {
@@ -418,24 +438,22 @@ TEST_CASE("fmt_float_integral_values_stay_floats") {
     CHECK(trimmed(fmt("let a = 1.50")) == "let a = 1.5");
 }
 
-TEST_CASE("fmt_float_never_emits_exponent_notation") {
-    // These previously became 1.23457e+08 / 1e-07 / 3.51844e+13. Because the
-    // lexer has no exponent form, ASI then split such a line into two
-    // statements — and when a variable named `e` was in scope it silently
-    // evaluated to a different number instead of failing.
-    const char* sources[] = {
-        "let a = 123456789.123456789",
-        "let a = 0.0000001",
-        "let a = 35184372088832.0",
-        "let a = 1000000.0",
-        "let a = 123456789012345.0",
-    };
-    for (const char* src : sources) {
-        const std::string lit = literalFromSource(src);
-        CHECK(lit.find('e') == std::string::npos);
-        CHECK(lit.find('E') == std::string::npos);
-        CHECK(lit.find('.') != std::string::npos);
-    }
+TEST_CASE("fmt_float_chooses_the_shorter_layout") {
+    // Exponent and fixed layouts are both shortest-round-trip; the formatter
+    // emits whichever is shorter, which keeps extreme magnitudes readable
+    // (1e300 rather than 301 digits) without any loss.
+    CHECK(trimmed(fmt("let a = 1e10")) == "let a = 1e+10");
+    CHECK(trimmed(fmt("let a = 1e300")) == "let a = 1e+300");
+    CHECK(trimmed(fmt("let a = 1e-300")) == "let a = 1e-300");
+    CHECK(trimmed(fmt("let a = 0.0000001")) == "let a = 1e-07");
+    CHECK(trimmed(fmt("let a = 6.02e23")) == "let a = 6.02e+23");
+    // Fixed wins when it is shorter or ties.
+    CHECK(trimmed(fmt("let a = 123456789.123456789")) == "let a = 123456789.12345679");
+    CHECK(trimmed(fmt("let a = 35184372088832.0")) == "let a = 35184372088832.0");
+    CHECK(trimmed(fmt("let a = 1234.5678")) == "let a = 1234.5678");
+    // An exponent form must never come back as an integer: 1e+10 keeps a
+    // non-empty exponent, and an integral value with no '.' grows a ".0".
+    CHECK(trimmed(fmt("let a = 42.0")) == "let a = 42.0");
 }
 
 TEST_CASE("fmt_float_property_round_trips_bitwise") {

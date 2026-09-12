@@ -1,0 +1,66 @@
+// =========================================================================
+// test_exponent_literals.va — Exponent (scientific) number literals
+//
+// The lexer accepts `e`/`E`, an optional sign and at least one digit, so
+// `1e10`, `2.5e-3` and `1E+5` are float literals. Expectations are written in
+// the *other* layout (plain fixed decimals) wherever possible, so a bug that
+// mangles one spelling is not masked by the same bug mangling the other.
+//
+// Run: vora tests/runtime/test_exponent_literals.va
+// =========================================================================
+
+print("=== Runtime: Exponent Literal Tests ===")
+
+// --- Basic values, each checked against the fixed spelling -----------------
+let a = 1e10
+assert(a == 10000000000.0, "1e10")
+assert(a == 1e+10, "1e10 has the same value as 1e+10")
+assert(type(a) == "float", "1e10 is a float, not an int")
+
+let b = 2.5e-3
+assert(b == 0.0025, "2.5e-3")
+
+let c = 1E+5
+assert(c == 100000.0, "1E+5 (uppercase, explicit plus)")
+
+let d = 3e0
+assert(d == 3.0, "3e0")
+
+let e = 1.5e3
+assert(e == 1500.0, "1.5e3")
+
+let f = 6.02e23
+assert(f > 600000000000000000000000.0 and f < 610000000000000000000000.0,
+       "6.02e23 is the expected magnitude")
+
+// --- Extremes: previously expressible only as very long fixed decimals -----
+let big = 1e300
+assert(big > 0.0, "1e300 is representable")
+assert(big * 10.0 > big, "1e300 * 10 is larger (still finite)")
+let small = 1e-300
+assert(small > 0.0, "1e-300 is representable")
+assert(small / 10.0 < small, "1e-300 / 10 is smaller")
+
+// --- Interplay with arithmetic -------------------------------------------
+assert(1e3 + 1e3 == 2000.0, "exponent literals take part in arithmetic")
+assert(1e3 - 1e3 == 0.0, "exponent literals subtract")
+assert(2e3 / 1e3 == 2.0, "exponent literals divide")
+assert(1e2 % 3e1 == 10.0, "exponent literals in modulo")
+assert(1e10 == 10e9, "different exponent spellings agree")
+
+// --- Mixing with integers keeps the float rule ----------------------------
+assert(1e10 == 10000000000, "a float exponent literal equals the integer value")
+assert(type(1e10 + 0) == "float", "float + int stays a float")
+assert(type(2 * 3) == "int", "integer arithmetic is still an int")
+
+// --- An exponent is only an exponent when digits follow -------------------
+// `1e` must not swallow a variable named `e`.
+let e10 = 5
+assert(1e10 == 10000000000.0, "a variable named e10 does not interfere")
+assert(e10 == 5, "a variable named e10 is still readable")
+
+// --- Out-of-range is a compile error, not a crash -------------------------
+// `1e400` overflows double; verified in tests/unit/test_parser.cpp, since a
+// script cannot assert its own failure to compile.
+
+print("All exponent literal tests passed!")

@@ -220,6 +220,10 @@ private:
      * @return The character at `current + 1`, or '\\0' if past end of file.
      */
     char peekNext() const;
+    /// @brief Return the character @p offset positions ahead of the cursor.
+    /// @param offset Number of characters to look ahead (0 == the cursor).
+    /// @return The character, or '\0' when the offset runs past end of input.
+    char peekAt(size_t offset) const;
 
     /**
      * @brief Conditionally consume the next character if it matches the expected value.

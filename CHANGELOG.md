@@ -141,6 +141,30 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   unaffected. Defers in the enclosing function still run, as with `throw`.
 
 ### Added
+- **Exponent notation in float literals** (`1e10`, `2.5e-3`, `1E+5`, `6.02e23`).
+  `USER_GUIDE` and the EBNF had documented this since v0.27 and the parser
+  already carried an `hasExp` branch, but the lexer never scanned an exponent:
+  `1e10` lexed as `NUMBER(1)` followed by `IDENTIFIER(e10)`, so writing a
+  documented literal produced `Undefined variable 'e10'`. The lexer now
+  consumes `e`/`E`, an optional sign and at least one digit. Additive and
+  backward compatible: an exponent is only recognised when digits actually
+  follow, so `1e` still lexes as `NUMBER(1)` + `IDENTIFIER(e)` (a variable
+  named `e` is unaffected), and `0x1e5` is still one hex literal because hex
+  digits include `e`.
+  Two consequences worth noting:
+  - The formatter now emits whichever of the two layouts is shorter, so
+    extreme magnitudes stay readable: `1e300` instead of a 301-digit literal,
+    `DBL_MAX` as `1.7976931348623157e+308` instead of 309 digits. Both layouts
+    are shortest-round-trip, and an integral value still gets its `.0` so it
+    cannot come back as an int.
+  - A float literal that overflows double — now trivially writable as `1e400` —
+    is a **compile error** (`Float literal out of range`) rather than escaping
+    as `Internal error: stod` with exit code 2. Underflowing literals behave
+    the same way; this is unchanged for subnormal-range input, which Vora has
+    never been able to parse.
+  Tests: `tests/runtime/test_exponent_literals.va`,
+  `tests/unit/test_{lexer,parser,vm,formatter}.cpp`.
+  Docs: EBNF §2.3 now spells out the exponent rule in the grammar itself.
 - **Big integers participate in bitwise operators** (`& | ^ ~ << >>`), with
   Python's infinite two's-complement semantics. Previously a boxed integer in a
   bitwise expression raised, because the only implementation was the 64-bit one;

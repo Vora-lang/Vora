@@ -87,6 +87,13 @@ namespace vora {
         return source[current + 1];
     }
 
+    char Lexer::peekAt(size_t offset) const {
+        if (current + offset >= source.length()) {
+            return '\0';
+        }
+        return source[current + offset];
+    }
+
     bool Lexer::match(char expected) {
         if (isAtEnd()) return false;
         if (source[current] != expected) return false;
@@ -156,6 +163,24 @@ namespace vora {
             advance(); // consume the '.'
             while (std::isdigit(static_cast<unsigned char>(peek()))) {
                 advance();
+            }
+        }
+
+        // Optional exponent: e/E [sign] digit+ . The lookahead demands a
+        // digit (possibly behind a sign), so `1e` still lexes as NUMBER(1)
+        // followed by IDENTIFIER(e) instead of swallowing the identifier,
+        // and a trailing `.e` can never be read as an exponent.
+        if (peek() == 'e' || peek() == 'E') {
+            const char after = peekNext();
+            const bool signThenDigit =
+                (after == '+' || after == '-') &&
+                std::isdigit(static_cast<unsigned char>(peekAt(2)));
+            if (std::isdigit(static_cast<unsigned char>(after)) || signThenDigit) {
+                advance();  // consume e / E
+                if (peek() == '+' || peek() == '-') advance();
+                while (std::isdigit(static_cast<unsigned char>(peek()))) {
+                    advance();
+                }
             }
         }
 

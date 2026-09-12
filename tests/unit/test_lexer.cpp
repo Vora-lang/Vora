@@ -145,6 +145,59 @@ TEST_CASE("lexer_float_literal") {
     CHECK(t[2].lexeme == "10.0");
 }
 
+TEST_CASE("lexer_exponent_literal") {
+    // Exponent literals: e/E, optional sign, at least one digit.
+    auto t1 = scan("1e10");
+    REQUIRE(t1.size() >= 2);
+    CHECK(t1[0].type == TokenType::NUMBER);
+    CHECK(t1[0].lexeme == "1e10");
+
+    auto t2 = scan("2.5e-3");
+    REQUIRE(t2.size() >= 2);
+    CHECK(t2[0].type == TokenType::NUMBER);
+    CHECK(t2[0].lexeme == "2.5e-3");
+
+    auto t3 = scan("1E+5");
+    REQUIRE(t3.size() >= 2);
+    CHECK(t3[0].lexeme == "1E+5");
+
+    auto t4 = scan("6.02e23");
+    CHECK(t4[0].lexeme == "6.02e23");
+
+    // A leading sign is a separate token, as for every other number.
+    auto t5 = scan("-1e10");
+    REQUIRE(t5.size() >= 3);
+    CHECK(t5[0].type == TokenType::MINUS);
+    CHECK(t5[1].lexeme == "1e10");
+}
+
+TEST_CASE("lexer_exponent_requires_digits") {
+    // `1e` is NUMBER(1) followed by IDENTIFIER(e): an exponent needs digits, and
+    // swallowing the identifier would break `1e` where `e` is a variable.
+    auto t = scan("1e");
+    REQUIRE(t.size() >= 3);
+    CHECK(t[0].type == TokenType::NUMBER);
+    CHECK(t[0].lexeme == "1");
+    CHECK(t[1].type == TokenType::IDENTIFIER);
+    CHECK(t[1].lexeme == "e");
+
+    // Same for a bare sign with no digits behind it.
+    auto t2 = scan("1e+");
+    REQUIRE(t2.size() >= 4);
+    CHECK(t2[0].lexeme == "1");
+    CHECK(t2[1].type == TokenType::IDENTIFIER);
+    CHECK(t2[1].lexeme == "e");
+    CHECK(t2[2].type == TokenType::PLUS);
+}
+
+TEST_CASE("lexer_hex_exponent_is_not_an_exponent") {
+    // Hex digits include 'e', so 0x1e5 must stay a single hex literal.
+    auto t = scan("0x1e5");
+    REQUIRE(t.size() >= 2);
+    CHECK(t[0].type == TokenType::NUMBER);
+    CHECK(t[0].lexeme == "0x1e5");
+}
+
 TEST_CASE("lexer_dot_number_boundary") {
     // ".5" — dot is DOT token, then "5" is NUMBER
     auto t = scan(".5");

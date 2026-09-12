@@ -1615,3 +1615,28 @@ TEST_CASE("parser_label_on_a_non_loop_is_rejected") {
     CHECK_FALSE(parseHasError("x: while (true) { break x }"));
 }
 
+TEST_CASE("parser_float_literal_out_of_range_is_a_compile_error") {
+    // `1e400` overflows double. std::stod reports that by throwing; it must
+    // surface as a compile error rather than escaping as an internal error.
+    const std::string src = "let x = 1e400";
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.setSource(src);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    CHECK(reporter.hadError());
+}
+
+TEST_CASE("parser_exponent_literal_parses") {
+    const std::string src = "let x = 1e10\nlet y = 2.5e-3\n";
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.setSource(src);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    CHECK_FALSE(reporter.hadError());
+}

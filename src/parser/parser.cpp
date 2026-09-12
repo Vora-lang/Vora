@@ -1907,8 +1907,19 @@ std::unique_ptr<Expr> Parser::primary() {
         bool hasExp = (lexeme.find('e') != std::string::npos || lexeme.find('E') != std::string::npos);
 
         if (hasDot || hasExp) {
-            // Float literal
-            return std::make_unique<LiteralExpr>(std::stod(lexeme));
+            // Float literal. An exponent makes an out-of-range literal easy to
+            // write (1e400), and std::stod reports that by throwing; turn it
+            // into a compile error rather than letting it escape as an
+            // internal error.
+            try {
+                return std::make_unique<LiteralExpr>(std::stod(lexeme));
+            } catch (const std::out_of_range&) {
+                error("Float literal out of range");
+                return std::make_unique<ErrorExpr>("Float literal out of range", previous());
+            } catch (const std::invalid_argument&) {
+                error("Invalid float literal");
+                return std::make_unique<ErrorExpr>("Invalid float literal", previous());
+            }
         } else {
             // Integer literal — parsed exactly, at any length. Values beyond the
             // inline range become a boxed big integer rather than silently

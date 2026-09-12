@@ -504,6 +504,37 @@ TEST_CASE("vm_bitwise_not") {
     CHECK(vm.getGlobal("c").asInt() == 0);
 }
 
+TEST_CASE("vm_exponent_literals") {
+    auto [result, vm] = run(
+        "let a = 1e10;"
+        "let b = 2.5e-3;"
+        "let c = 1E+5;"
+        "let d = 1e300;"
+        "let e = 6.02e23;"
+        "a;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(vm.getGlobal("a").isDouble());
+    CHECK(vm.getGlobal("a").asDouble() == 1e10);
+    CHECK(vm.getGlobal("b").asDouble() == 2.5e-3);
+    CHECK(vm.getGlobal("c").asDouble() == 1e5);
+    CHECK(vm.getGlobal("d").asDouble() == 1e300);
+    CHECK(vm.getGlobal("e").asDouble() == 6.02e23);
+    // An exponent literal is always a float, never an integer.
+    CHECK_FALSE(vm.getGlobal("a").isInt());
+    CHECK_FALSE(vm.getGlobal("d").isInt());
+}
+
+TEST_CASE("vm_exponent_literal_equals_fixed_spelling") {
+    auto [result, vm] = run(
+        "let exp = 1e10;"
+        "let fixed = 10000000000.0;"
+        "exp == fixed;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(valuesEqual(vm.getGlobal("exp"), vm.getGlobal("fixed")));
+}
+
 TEST_CASE("vm_bitwise_shift_left") {
     auto [result, vm] = run(
         "let a = 1 << 3;"    // 8
