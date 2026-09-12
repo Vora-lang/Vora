@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <cmath>
+#include <cstdlib>
 
 namespace vora {
 
@@ -294,8 +295,17 @@ void Chunk::writeConstant(Value value, int line, int column) {
         uint8_t hi = static_cast<uint8_t>((index >> 8) & 0xFF);
         write(lo, line, column);        // lo byte
         write(hi, line, column); // hi byte
-        std::cerr << "Chunk::writeConstant: OP_CONSTANT_LONG bytes emitted lo=" << static_cast<int>(lo)
-                  << ", hi=" << static_cast<int>(hi) << " for index=" << index << "\n";
+        // Diagnostics for the 16-bit constant encoding, behind the same kind of
+        // env flag the VM uses. This used to print unconditionally, which made
+        // stderr non-deterministic for any chunk with more than 256 constants —
+        // it is what made several formatter round-trip comparisons look like
+        // failures when only the logged indices had shifted.
+        if (std::getenv("VORA_DEBUG_CONSTANTS") != nullptr) {
+            std::cerr << "Chunk::writeConstant: OP_CONSTANT_LONG bytes emitted lo="
+                      << static_cast<int>(lo)
+                      << ", hi=" << static_cast<int>(hi)
+                      << " for index=" << index << "\n";
+        }
     }
 }
 

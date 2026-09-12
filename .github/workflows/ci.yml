@@ -63,6 +63,18 @@ jobs:
         if: matrix.arch == 'x64'
         run: ctest --test-dir "build/linux-${{ matrix.arch }}-${{ env.cfg }}" -R "^unit-" --output-on-failure
 
+      # The C++ embedding example is opt-in (VORA_EMBED_DEMO defaults to OFF) and
+      # no job built it, so it silently stopped compiling: an `auto&` was bound to
+      # a prvalue GcPtr, which GCC rejects. GCC is the right guard here precisely
+      # because MSVC accepts that as an extension, so a Windows-only build would
+      # not have caught it. Build it and run it, or it will rot again.
+      - name: Build + run embedded C++ example
+        if: matrix.arch == 'x64'
+        run: |
+          cmake --preset "linux-${{ matrix.arch }}-${{ env.cfg }}" -DVORA_EMBED_DEMO=ON
+          cmake --build "build/linux-${{ matrix.arch }}-${{ env.cfg }}" --target embed_demo
+          "build/linux-${{ matrix.arch }}-${{ env.cfg }}/examples/embed/embed_demo"
+
       # ── Package (Release only) ─────────────────────────────────────
       - name: Package (.deb / .rpm / .pkg.tar.xz)
         if: matrix.config == 'Release'
