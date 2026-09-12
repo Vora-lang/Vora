@@ -257,13 +257,49 @@ std::string SourceFormatter::formatBlockBody(const Stmt& stmt) {
         ss << " {";
         incIndent();
         ss << nl();
-        ss << stmt.accept(*this);
+        ss << formatStmtWithComments(stmt);
         decIndent();
         ss << nl() << "}";
         result = ss.str();
     }
     depth_--;
     return result;
+}
+
+// Render a comment for the current line.  A block comment may span lines; its
+// continuation lines are re-indented rather than emitted flush left, so nesting
+// survives reformatting.
+//
+// Note the indentation convention, which matches statements: the text carries
+// no leading indent of its own, because the caller has already positioned the
+// line with nl().  Adding it here would double the indent.
+std::string SourceFormatter::formatComment(const Comment& comment, bool leading) {
+    std::string out = leading ? std::string() : " ";
+    const std::string& text = comment.text;
+    for (size_t i = 0; i < text.size(); ++i) {
+        out += text[i];
+        if (text[i] == '\n' && i + 1 < text.size()) out += indentStr();
+    }
+    return out;
+}
+
+// Render one statement together with its comment trivia.
+//
+// Every statement-emission site routes through here, which is what makes the
+// "no comment is ever dropped" property hold: a comment the parser cannot
+// attach to a specific statement lands on the enclosing block or program,
+// and all of those are printed.
+std::string SourceFormatter::formatStmtWithComments(const Stmt& stmt) {
+    std::string out;
+    for (const Comment& c : stmt.leadingComments) {
+        out += formatComment(c, true);
+        out += nl();
+    }
+    out += stmt.accept(*this);
+    for (const Comment& c : stmt.trailingComments) {
+        out += formatComment(c, false);
+    }
+    return out;
 }
 
 std::string SourceFormatter::formatStatements(
@@ -274,7 +310,7 @@ std::string SourceFormatter::formatStatements(
         if (i > 0) {
             ss << nl();
         }
-        ss << stmts[i]->accept(*this);
+        ss << formatStmtWithComments(*stmts[i]);
     }
     return ss.str();
 }
@@ -572,7 +608,7 @@ std::string SourceFormatter::visitMatchExpr(const MatchExpr& expr) {
             const auto& stmts = c.blockBody->statements;
             for (size_t si = 0; si < stmts.size(); si++) {
                 ss << nl();
-                ss << stmts[si]->accept(*this);
+                ss << formatStmtWithComments(*stmts[si]);
             }
             decIndent();
             ss << nl() << "}";
@@ -603,7 +639,7 @@ std::string SourceFormatter::visitFuncExpr(const FuncExpr& expr) {
     ss << "{" << nl();
     const auto& stmts = expr.body->statements;
     for (size_t i = 0; i < stmts.size(); i++) {
-        ss << stmts[i]->accept(*this);
+        ss << formatStmtWithComments(*stmts[i]);
         if (i + 1 < stmts.size()) {
             ss << nl();
         }
@@ -782,6 +818,10 @@ std::string SourceFormatter::visitBlockStmt(const BlockStmt& stmt) {
         ss << nl();
         ss << formatStatements(stmt.statements);
     }
+    // Comments that sat before this block's closing brace.
+    for (const Comment& c : stmt.trailingComments) {
+        ss << nl() << formatComment(c, true);
+    }
 
     decIndent();
     ss << nl() << "}";
@@ -938,7 +978,7 @@ std::string SourceFormatter::visitObjStmt(const ClassStmt& stmt) {
     // Methods — one newline before each, no blank line separation
     for (size_t i = 0; i < stmt.methods.size(); ++i) {
         ss << nl();
-        ss << stmt.methods[i]->accept(*this);
+        ss << formatStmtWithComments(*stmt.methods[i]);
     }
 
     decIndent();
@@ -1008,7 +1048,7 @@ std::string SourceFormatter::visitImportStmt(const ImportStmt& stmt) {
 
 std::string SourceFormatter::visitExportStmt(const ExportStmt& stmt) {
     // Visit the inner declaration and prefix with 'export '
-    return "export " + stmt.declaration->accept(*this);
+    return "export " + formatStmtWithComments(*stmt.declaration);
 }
 
 std::string SourceFormatter::visitDeferStmt(const DeferStmt& stmt) {
@@ -1027,6 +1067,11 @@ std::string SourceFormatter::visitErrorStmt(const ErrorStmt& stmt) {
 std::string SourceFormatter::visitProgram(const Program& program) {
     std::stringstream ss;
     ss << formatStatements(program.statements);
+    // Comments after the last statement (or a file of nothing but comments).
+    for (const Comment& c : program.trailingComments) {
+        if (!program.statements.empty()) ss << nl();
+        ss << formatComment(c, true);
+    }
     ss << "\n";
     return ss.str();
 }

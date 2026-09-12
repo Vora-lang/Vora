@@ -66,6 +66,9 @@ static int runFmt(
 
     Parser parser(tokens, reporter);
     parser.setSource(source);
+    // Hand the formatter the comments: they are trivia rather than tokens, and
+    // without this the output would silently drop every comment in the file.
+    parser.setComments(lexer.comments());
     auto program = parser.parse();
 
     if (parser.hasError()) {

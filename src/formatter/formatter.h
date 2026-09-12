@@ -274,6 +274,18 @@ private:
      * @return The formatted statement list, with each statement starting on
      *         a new indented line.
      */
+    /// @brief Render a comment at the current indentation.
+    /// @param comment The comment trivia to render.
+    /// @param leading True when it occupies its own line(s), false when it
+    ///                trails a statement on the same line.
+    /// @return The rendered comment, already indented.
+    std::string formatComment(const Comment& comment, bool leading);
+
+    /// @brief Render a statement together with its attached comment trivia.
+    /// @param stmt The statement to render.
+    /// @return Leading comments, the statement, then any trailing comment.
+    std::string formatStmtWithComments(const Stmt& stmt);
+
     std::string formatStatements(const std::vector<std::unique_ptr<Stmt>>& stmts);
 
     /**

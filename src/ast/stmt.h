@@ -70,6 +70,21 @@ public:
     // in each concrete subclass (stmt.cpp).
     virtual void         accept(StmtVisitor<void>& visitor)         const = 0;
     virtual std::string  accept(StmtVisitor<std::string>& visitor)  const = 0;
+
+    // --- Comment trivia (see Comment in lexer/token.h) ---
+    //
+    // Comments have no meaning for execution, so they live here rather than in
+    // the token stream.  The parser attaches each one to the statement it
+    // precedes or trails, and the formatter re-emits them; before this existed
+    // `vora fmt -w` deleted every comment in a file.
+    //
+    // Held on the base class deliberately: all 19 statement types inherit it,
+    // so no visitor signature had to change to carry trivia.
+
+    /// @brief Comments appearing before this statement (its own lines).
+    std::vector<Comment> leadingComments;
+    /// @brief Comments on the same line as this statement's end, after it.
+    std::vector<Comment> trailingComments;
 };
 
 /**
@@ -162,6 +177,9 @@ public:
     std::string accept(StmtVisitor<std::string>& visitor) const override;
 
     std::vector<std::unique_ptr<Stmt>> statements;  ///< Statements in the block body.
+
+    /// @brief Comments after the block's final statement, before its `}`.
+    std::vector<Comment> trailingComments;
 };
 
 /**

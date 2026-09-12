@@ -284,6 +284,36 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   brace-aware scan; previously a syntax dead-end.
 
 ### Fixed
+- **`vora fmt -w` deleted every comment in a file** (pre-existing; it was
+  destroying user source on every run). The lexer consumed comments and emitted
+  nothing, so the token stream never carried them, the AST had nowhere to hold
+  them, and the formatter had nothing to print — the loss was structural, not a
+  formatting detail, which is why changing the comment spelling would not have
+  helped. Comments are now carried as trivia: the lexer collects them into
+  `Lexer::comments()` (deliberately *not* as tokens, so nothing in the parser's
+  precedence, lookahead or ASI logic has to step over them), the parser attaches
+  each one to a statement as leading or trailing trivia, and the formatter
+  re-emits them. Trivia lives on the `Stmt` base class, so all 19 statement
+  types carry it and no visitor signature had to change.
+  Placement rules: a comment on its own line becomes a leading comment of the
+  following statement; a comment on a statement's last line trails that
+  statement; a comment with no statement after it belongs to the enclosing
+  block or program (so a trailing comment block, and a file of nothing but
+  comments, both survive). Comment text is reproduced verbatim, untrimmed apart
+  from trailing blanks on a line comment.
+  Corpus effect: of 161 files, **123 contain comments and 122 of them now
+  round-trip with an identical comment set** (the 123rd is
+  `test_interpolation.va`, whose formatted output already failed to parse for
+  the unrelated interpolation bug, so its comments are truncated with the rest
+  of the file). Before this change all 123 lost every comment. Formatter
+  idempotence and the 23 pre-existing round-trip failures are unchanged — the
+  non-idempotent file set is identical, so this introduced no new instability.
+  Tests: `tests/unit/test_lexer.cpp` (trivia collection),
+  `tests/unit/test_formatter.cpp` (leading, trailing, in-block, end-of-file,
+  comments-only file, verbatim text, idempotence).
+  Suite: 463 unit / 30498 assertions, 95/95 script, 58/58 examples, 8/8 fuzz.
+  Docs: USER_GUIDE gains a comment section (there was none before); the EBNF
+  records that comments are trivia rather than tokens.
 - **`vora fmt` silently corrupted float literals and could emit unparseable
   output** (pre-existing; the formatter destroyed user source on every run).
   The formatter printed doubles with the default stream precision, which has two

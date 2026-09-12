@@ -551,6 +551,7 @@ namespace vora {
         while (peek() != '\n' && !isAtEnd()) {
             advance();
         }
+        recordComment(false);
     }
 
     void Lexer::blockComment() {
@@ -574,6 +575,7 @@ namespace vora {
                 advance();  // consume /
                 depth--;
                 if (depth == 0) {
+                    recordComment(true);   // the closed case exits here
                     return;
                 }
                 continue;
@@ -585,6 +587,25 @@ namespace vora {
         if (depth > 0) {
             error("Unterminated block comment (missing */)");
         }
+    }
+
+    void Lexer::recordComment(bool block) {
+        // `start` and `startColumn` still point at the comment's first
+        // character: lineComment()/blockComment() only advance `current`.
+        std::string text = source.substr(start, current - start);
+        // A line comment's trailing blanks are noise; dropping them keeps
+        // formatting stable instead of reproducing stray whitespace.
+        while (!text.empty() &&
+               (text.back() == ' ' || text.back() == '\t' ||
+                text.back() == '\r' || text.back() == '\n')) {
+            text.pop_back();
+        }
+        Comment c;
+        c.text = std::move(text);
+        c.line = line;
+        c.column = startColumn;
+        c.block = block;
+        comments_.push_back(std::move(c));
     }
 
 } // namespace vora

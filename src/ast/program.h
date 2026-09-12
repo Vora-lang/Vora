@@ -62,6 +62,13 @@ public:
         : statements(std::move(statements)) {
     }
 
+    /// @brief Comments after the final top-level statement.
+    ///
+    /// They belong to no statement, so the program holds them directly;
+    /// otherwise a trailing comment block (or a file of only comments) would
+    /// still be dropped by the formatter.
+    std::vector<Comment> trailingComments;
+
     /// Dispatch a visitor to this Program.
     ///
     /// Templated because Program has no subclasses, so a virtual accept()

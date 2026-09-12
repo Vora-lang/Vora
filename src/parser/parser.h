@@ -107,6 +107,14 @@ public:
      */
     Parser(std::vector<Token> tokens, ErrorReporter& reporter);
 
+    /// @brief Supply the comments collected by the lexer as AST trivia.
+    ///
+    /// Optional: when not called, statements simply carry no trivia, which is
+    /// what the execution path wants.  The formatter is the consumer that
+    /// needs it, since it is the only pass that reproduces source text.
+    /// @param comments Comments in source order (as Lexer::comments() gives).
+    void setComments(std::vector<Comment> comments);
+
     /**
      * @brief Parse the entire token stream and return a Program AST node.
      *
@@ -419,6 +427,9 @@ private:
      * @return The parsed statement node. ErrorStmt on failure.
      */
     std::unique_ptr<Stmt> statement();
+    /// @brief Parse one statement, without comment-trivia attachment.
+    /// @return The parsed statement, or nullptr on an unrecoverable error.
+    std::unique_ptr<Stmt> statementImpl();
 
     /**
      * @brief Parse a let variable declaration statement.
@@ -797,6 +808,18 @@ private:
      * @return The precedence level (0 if the token is not an operator).
      */
     int getPrecedence(TokenType type) const;
+
+    /// @brief Comments awaiting attachment, in source order.
+    std::vector<Comment> comments_;
+    /// @brief Index of the next unclaimed comment in comments_.
+    size_t commentCursor_ = 0;
+
+    /// @brief Move every unclaimed comment starting before @p line into @p out.
+    void takeCommentsBefore(int line, std::vector<Comment>& out);
+    /// @brief Move every unclaimed comment starting on @p line into @p out.
+    void takeCommentsOn(int line, std::vector<Comment>& out);
+    /// @brief Move all remaining unclaimed comments into @p out.
+    void takeRemainingComments(std::vector<Comment>& out);
 };
 
 }

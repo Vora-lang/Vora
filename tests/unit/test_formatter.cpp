@@ -28,6 +28,9 @@ static std::string fmt(const std::string& src) {
     auto tokens = lexer.scanTokens();
     Parser parser(std::move(tokens), reporter);
     parser.setSource(src);
+    // Comments are trivia, so the parser only carries them when handed the
+    // lexer's list; the formatter is the consumer that needs them.
+    parser.setComments(lexer.comments());
     auto prog = parser.parse();
     REQUIRE(prog != nullptr);
     SourceFormatter formatter;
@@ -109,6 +112,7 @@ static bool isIdempotent(const std::string& src) {
     auto tokens = lexer.scanTokens();
     Parser parser(std::move(tokens), reporter);
     parser.setSource(first);
+    parser.setComments(lexer.comments());
     auto prog = parser.parse();
     if (!prog) return false;
     SourceFormatter formatter;
@@ -508,4 +512,58 @@ TEST_CASE("fmt_bigint_literal_is_lossless") {
           == "let a = -18446744073709551616");
     CHECK(trimmed(fmt("let a = 35184372088832")) == "let a = 35184372088832");
     CHECK(trimmed(fmt("let a = 9223372036854775807")) == "let a = 9223372036854775807");
+}
+
+// ============================================================================
+// Comment preservation
+//
+// `vora fmt -w` used to delete every comment in a file: the lexer consumed
+// them and emitted nothing, so the AST had nowhere to hold them. Comments are
+// now carried as trivia on statements and re-emitted.
+// ============================================================================
+
+TEST_CASE("fmt_preserves_leading_comment") {
+    CHECK(trimmed(fmt("// note\nlet a = 1")) == "// note\nlet a = 1");
+}
+
+TEST_CASE("fmt_preserves_trailing_comment") {
+    // A comment on the statement's own line stays there.
+    CHECK(trimmed(fmt("let a = 1 // note")) == "let a = 1 // note");
+}
+
+TEST_CASE("fmt_preserves_comments_inside_blocks") {
+    const std::string out = fmt(
+        "func f() {\n    // inside\n    let y = 1 // trailing\n    // before brace\n}");
+    CHECK(out.find("    // inside") != std::string::npos);
+    CHECK(out.find("    let y = 1 // trailing") != std::string::npos);
+    CHECK(out.find("    // before brace") != std::string::npos);
+}
+
+TEST_CASE("fmt_preserves_block_comment") {
+    const std::string out = fmt("/* keep me */\nlet a = 1");
+    CHECK(out.find("/* keep me */") != std::string::npos);
+}
+
+TEST_CASE("fmt_preserves_comment_after_last_statement") {
+    // Nothing follows it, so the program holds it rather than a statement.
+    const std::string out = fmt("let a = 1\n// the end");
+    CHECK(out.find("// the end") != std::string::npos);
+}
+
+TEST_CASE("fmt_preserves_a_file_of_only_comments") {
+    const std::string out = fmt("// just\n// comments");
+    CHECK(out.find("// just") != std::string::npos);
+    CHECK(out.find("// comments") != std::string::npos);
+}
+
+TEST_CASE("fmt_comment_handling_is_idempotent") {
+    CHECK(isIdempotent("// note\nlet a = 1 // trailing\n"));
+    CHECK(isIdempotent("func f() {\n    // c\n    let y = 1\n}\n"));
+    CHECK(isIdempotent("/* a */\n\n// b\nlet z = 2\n// tail\n"));
+}
+
+TEST_CASE("fmt_keeps_comment_text_verbatim") {
+    // Nothing inside a comment is reformatted: it is opaque text.
+    const std::string out = fmt("// let x = 1  +  2   <- untouched\nlet a = 1");
+    CHECK(out.find("// let x = 1  +  2   <- untouched") != std::string::npos);
 }

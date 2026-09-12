@@ -47,6 +47,30 @@ Parser::Parser(std::vector<Token> tokens, ErrorReporter& reporter)
     : tokens(std::move(tokens)), reporter_(reporter) {
 }
 
+void Parser::setComments(std::vector<Comment> comments) {
+    comments_ = std::move(comments);
+    commentCursor_ = 0;
+}
+
+void Parser::takeCommentsBefore(int line, std::vector<Comment>& out) {
+    while (commentCursor_ < comments_.size() &&
+           comments_[commentCursor_].line < line) {
+        out.push_back(comments_[commentCursor_++]);
+    }
+}
+
+void Parser::takeCommentsOn(int line, std::vector<Comment>& out) {
+    while (commentCursor_ < comments_.size() &&
+           comments_[commentCursor_].line == line) {
+        out.push_back(comments_[commentCursor_++]);
+    }
+}
+
+void Parser::takeRemainingComments(std::vector<Comment>& out) {
+    while (commentCursor_ < comments_.size()) {
+        out.push_back(comments_[commentCursor_++]);
+    }
+}
 std::unique_ptr<Expr> Parser::parseStandaloneExpression(const std::string& source,
                                                         ErrorReporter& reporter) {
     Lexer lexer(source, reporter);
@@ -90,7 +114,11 @@ std::unique_ptr<Program> Parser::parse() {
     // Always return a Program — even with errors, the partial AST is
     // useful for LSP diagnostics, completion, and go-to-definition.
     // Callers check Parser::hasError() to decide whether to execute.
-    return std::make_unique<Program>(std::move(statements));
+    auto program = std::make_unique<Program>(std::move(statements));
+    // Comments past the last statement (including a file of only comments)
+    // belong to no statement, so the program holds them directly.
+    takeRemainingComments(program->trailingComments);
+    return program;
 }
 
 void Parser::error(const std::string& message) {
@@ -204,6 +232,27 @@ std::unique_ptr<Expr> Parser::expression() {
 }
 
 std::unique_ptr<Stmt> Parser::statement() {
+    // Comment trivia is attached around the real parse so that no return path
+    // inside statementImpl() has to remember to do it.
+    std::vector<Comment> leading;
+    takeCommentsBefore(peek().line, leading);
+
+    auto stmt = statementImpl();
+
+    if (stmt) {
+        if (!leading.empty()) stmt->leadingComments = std::move(leading);
+        // A comment on the statement's final line trails it: `let x = 1 // note`.
+        // Deliberately not guarded on isAtEnd(): the last statement of a file
+        // can carry a trailing comment too, and previous() is valid whenever
+        // the statement consumed at least one token.
+        if (!tokens.empty()) {
+            takeCommentsOn(previous().line, stmt->trailingComments);
+        }
+    }
+    return stmt;
+}
+
+std::unique_ptr<Stmt> Parser::statementImpl() {
 
     // Labeled loop: `name: for (...) { ... }` / `while` / `do`.
     //
@@ -643,6 +692,9 @@ std::unique_ptr<BindingPattern> Parser::convertDictExprToBinding(const DictExpr&
 std::unique_ptr<BlockStmt> Parser::blockStatement() {
 
     std::vector<std::unique_ptr<Stmt>> statements;
+    // Comments sitting just before the closing brace have no statement after
+    // them inside this block, so the block itself takes them.
+    std::vector<Comment> blockTrailing;
 
     while (!isAtEnd() &&
            peek().type != TokenType::RIGHT_BRACE) {
@@ -659,18 +711,24 @@ std::unique_ptr<BlockStmt> Parser::blockStatement() {
         );
     }
 
+    // Only comments strictly inside the block: anything on or after the brace
+    // line trails the enclosing statement, which statement() handles.
+    takeCommentsBefore(peek().line, blockTrailing);
+
     if (!match(TokenType::RIGHT_BRACE)) {
 
                     error("Expected '}' after block\n");
 
         // Return partial block anyway — the caller can still use what
         // was parsed before the error.
-        return std::make_unique<BlockStmt>(std::move(statements));
+        auto partial = std::make_unique<BlockStmt>(std::move(statements));
+        partial->trailingComments = std::move(blockTrailing);
+        return partial;
     }
 
-    return std::make_unique<BlockStmt>(
-        std::move(statements)
-    );
+    auto block = std::make_unique<BlockStmt>(std::move(statements));
+    block->trailingComments = std::move(blockTrailing);
+    return block;
 }
 
 std::unique_ptr<Stmt> Parser::returnStatement() {

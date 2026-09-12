@@ -13,6 +13,31 @@
 
 namespace vora {
 
+/**
+ * @brief A source comment, kept as trivia so tools can reproduce the file.
+ *
+ * Comments carry no meaning for execution, so they are deliberately not
+ * tokens: nothing in the parser's precedence, lookahead or ASI logic should
+ * have to step over them.  Instead the lexer collects them into a side list,
+ * the parser attaches each one to a statement as leading or trailing trivia,
+ * and the formatter re-emits them.
+ *
+ * This exists because `vora fmt -w` used to delete every comment in a file:
+ * the scanner consumed them and emitted nothing, so the AST had nowhere to
+ * hold them and the formatter had nothing to print.
+ */
+struct Comment {
+    /// @brief Exact source text including its delimiters ("//..." or the whole
+    ///        "/* ... */" run).  Trailing blanks are trimmed.
+    std::string text;
+    /// @brief 1-based line on which the comment starts.
+    int line = 0;
+    /// @brief 1-based column at which the comment starts.
+    int column = 0;
+    /// @brief True for a block comment, false for a line comment.
+    bool block = false;
+};
+
     /**
      * @brief In-band marker for an escaped dollar sign (`\$`).
      *

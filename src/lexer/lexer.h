@@ -51,6 +51,9 @@ namespace vora {
  */
 class Lexer {
 public:
+    /// @brief Return every comment seen while scanning, in source order.
+    /// @return Const reference to the collected trivia.
+    const std::vector<Comment>& comments() const { return comments_; }
     /**
      * @brief Construct a Lexer for the given source text.
      *
@@ -117,6 +120,7 @@ private:
      * @return true when `current >= source.length()`.
      */
     bool isAtEnd() const;
+
 
     /**
      * @brief Consume and return the current character, advancing the scanner.
@@ -249,7 +253,8 @@ private:
      * @brief Skip a line comment (// to end of line).
      *
      * Consumes all characters until a newline or EOF is encountered.
-     * Does not emit a token.
+     * Does not emit a token, but records the text in comments() so the
+     * formatter can reproduce it instead of deleting it.
      */
     void lineComment();
 
@@ -259,9 +264,20 @@ private:
      * Tracks nesting depth so that nested block comments (/* /* *​/ *​/) are
      * handled correctly.  Tracks newlines for line counting.  Reports an
      * error if the comment is unterminated (EOF reached with depth > 0).
-     * Does not emit a token.
+     * Does not emit a token, but records the text in comments().
      */
     void blockComment();
+
+    /// @brief Append the comment just consumed to comments().
+    /// @param block True when the comment was a block comment.
+    void recordComment(bool block);
+
+    /// @brief Comments seen while scanning, in source order.
+    ///
+    /// Trivia rather than tokens: the parser never sees these in the token
+    /// stream, and they carry no meaning for execution.  The formatter
+    /// reads them (via the AST) to re-emit comments verbatim.
+    std::vector<Comment> comments_;
 };
 
 }

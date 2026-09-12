@@ -462,4 +462,52 @@ TEST_CASE("lexer_bitwise_vs_logical") {
     CHECK(t[2].type == TokenType::OR);
     CHECK(t[3].type == TokenType::PIPE);
 }
+TEST_CASE("lexer_collects_comments_as_trivia") {
+    const std::string src = "// one" + std::string(1, char(10)) +
+                            "let x = 1 // two" + std::string(1, char(10)) +
+                            "/* three */" + std::string(1, char(10)) +
+                            "let y = 2" + std::string(1, char(10));
+    StderrErrorReporter rep(src);
+    Lexer lexer(src, rep);
+    auto tokens = lexer.scanTokens();
+    const auto& cs = lexer.comments();
+    REQUIRE(cs.size() == 3);
+    CHECK(cs[0].text == "// one");
+    CHECK(cs[0].line == 1);
+    CHECK_FALSE(cs[0].block);
+    CHECK(cs[1].text == "// two");
+    CHECK(cs[1].line == 2);
+    CHECK(cs[2].text == "/* three */");
+    CHECK(cs[2].line == 3);
+    CHECK(cs[2].block);
+    // Comments are trivia, not tokens: the token stream is unchanged.
+    for (const auto& t : tokens) CHECK(t.type != TokenType::INVALID);
+}
 
+TEST_CASE("lexer_comment_text_is_verbatim_and_multiline") {
+    const std::string nl(1, char(10));
+    const std::string src = "/* a" + nl + "   b */" + nl + "let x = 1" + nl;
+    StderrErrorReporter rep(src);
+    Lexer lexer(src, rep);
+    lexer.scanTokens();
+    REQUIRE(lexer.comments().size() == 1);
+    // Interior newlines and spacing survive: a comment is opaque text.
+    CHECK(lexer.comments()[0].text == "/* a" + nl + "   b */");
+}
+
+TEST_CASE("lexer_comment_like_text_in_strings_is_not_a_comment") {
+    const std::string src = "let s = \"// not a comment\"" + std::string(1, char(10));
+    StderrErrorReporter rep(src);
+    Lexer lexer(src, rep);
+    lexer.scanTokens();
+    CHECK(lexer.comments().empty());
+}
+
+TEST_CASE("lexer_trailing_blank_inside_line_comment_is_trimmed") {
+    const std::string src = "// padded   " + std::string(1, char(10)) + "let x = 1" + std::string(1, char(10));
+    StderrErrorReporter rep(src);
+    Lexer lexer(src, rep);
+    lexer.scanTokens();
+    REQUIRE(lexer.comments().size() == 1);
+    CHECK(lexer.comments()[0].text == "// padded");
+}
