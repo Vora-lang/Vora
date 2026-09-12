@@ -38,6 +38,63 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 > from the next release onward.
 
 ### Breaking changes
+- **Integers are no longer clamped to ±2^45 — they are now arbitrary
+  precision.** Any integer outside the inline 46-bit NaN-boxing payload is
+  stored as a heap `GcBigInt`; anything that fits stays an inline `Int`, so the
+  hot path is unchanged. What this fixes: every integer ≥ 2^45 used to be
+  **silently clamped** to `35184372088831` (and ≤ −2^45 to `−35184372088832`)
+  with no diagnostic. `35184372088831 == 1152921504606846977` was `true`;
+  `0x1000000000000` printed `35184372088831`; `1 << 62` printed
+  `35184372088831`; and a 20-digit decimal literal silently degraded to a
+  *float* through a `std::stod` fallback. All of these are now exact.
+  Migration: nothing to change for values in range, which are bit-for-bit
+  unchanged; code that had come to depend on the clamp now gets the real value.
+  Semantics (the four decisions recorded in the design doc §13):
+  - `+`, `-`, `*`, unary `-` and `%` are exact. A result leaving the inline
+    range is boxed, and one that fits demotes back, so a given integer has
+    exactly one representation and therefore one hash/equality identity —
+    `Map`/`Set` keys cannot split.
+  - `%` keeps C-style truncated semantics (sign follows the dividend), exactly
+    as inline `%` already did: `-7 % 3` is `-1`, not `2`.
+  - `/` still returns a **float**, unchanged (`5 / 2 == 2.5`).
+  - `**` still returns a **float**, unchanged.
+  - Comparison (`<`, `<=`, `>`, `>=`, `==`, `!=`) is **exact**. It previously
+    went through `double`, so `2^70 < 2^70 + 1` compared equal; that can no
+    longer happen. The documented by-value rule (`42 == 42.0`) is preserved and
+    NaN is still equal to nothing.
+  - **Bitwise operators keep their 64-bit contract** for inline operands,
+    including the documented shift-count clamping (`1 << 64 == 0`,
+    `-8 >> 100 == -1`). Only the *result* is now exact rather than clamped:
+    `1 << 63` is `INT64_MIN` (still negative) instead of a clamped
+    `−35184372088832`. Big-integer operands for `& | ^ ~ << >>` are not part of
+    this change.
+  - An integer literal beyond `kMaxBigIntLimbs` (4096 limbs ≈ 78,900 decimal
+    digits) is a **compile-time error** rather than a rounded float.
+  - `type()` returns `"int"` for both representations, so scripts never see a
+    third numeric type. `toString()` and the formatter emit every digit exactly,
+    and `vora fmt` round-trips an oversized literal unchanged.
+  - `asInt()` on a boxed integer **never returns a truncated value**: it fails
+    an assertion in debug builds and throws a catchable `RuntimeError` in
+    release builds. Use `fitsInt64()` / `toInt64Exact()` instead.
+  - Embedding ABI (frozen for v1.0): `isBigInt()`, `fitsInt64()`,
+    `toInt64Exact()`, and `valueToString()` for lossless arbitrary-precision
+    text. The internal limb layout is deliberately **not** part of the ABI; see
+    the block comment in `src/vora.h`.
+  - `jsonStringify` emits an integer within `int64` as a JSON number and
+    anything larger as a decimal string, since a JSON number cannot carry
+    arbitrary precision. (JSON *input* numbers beyond `int64` still lose
+    precision inside the underlying JSON parser; unchanged.)
+  - Incidental fix required by the above: `Chunk` constant pools are now traced
+    by the GC. `FunctionPrototype::trace()` was an empty stub and
+    `VM::collectGarbage()` never scanned a chunk's constants, so a heap object
+    reachable only from a constant pool could be swept while the bytecode still
+    referenced it. This was already reachable with string literals; boxing made
+    it routine. The top-level script chunk, which no `GcObject` owns, is now
+    rooted explicitly.
+  Tests: `tests/runtime/test_bigint.va`, `tests/unit/test_bigint.cpp`,
+  `tests/formatter/test_fmt_roundtrip.va`. Suite: 435 unit / 1590 assertions,
+  94/94 script, 58/58 examples, 8/8 fuzz corpus, formatter round-trip.
+  Design: `docs/19-bignum-value-design.md`.
 - **String interpolation evaluates a real expression, and unknown names
   raise** (syntax-review-adjacent; the EBNF and USER_GUIDE had always
   claimed `${ expression }` but the compiler only substituted *names*).

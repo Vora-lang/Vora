@@ -1,6 +1,6 @@
 # Vora 路线图
 
-> 最后更新：2026-09-07（P1-F 位运算收尾，Phase 1 主体完成）
+> 最后更新：2026-09-12（任意精度整数：内联 Int / 堆 GcBigInt 混合表示）
 > 当前基线：v0.27.0（`ed722dd`）之上叠加 Phase 1 修复提交（见 `CHANGELOG.md [Unreleased]`）
 
 本路线图依据 `CHANGELOG.md` 与源代码重新核对。**任何"声称完成"的功能必须同时出现在
@@ -26,7 +26,8 @@
 |------|------|------|
 | JS 风格块语法（`{ }`，无显式分号） | ✅ | |
 | Pratt 解析器 + 34 关键字 + 91 操作码 | ✅ | 见 `src/lexer/token.h`、`src/chunk.h`；33 + `not`（2.9）；85 + P1-F 新增 6 位运算 opcode |
-| 字面量（数字 / 字符串 / Bool / Null / Array / Dict / Lambda） | ✅ | |
+| 字面量（数字 / 字符串 / Bool / Null / Array / Dict / Lambda） | ✅ | 整数字面量**任意长度**（十进制/十六/八/二进制），超出内联 ±2^45 自动装箱为 `GcBigInt`；上限 `kMaxBigIntLimbs`（≈78,900 位十进制）报编译期错误 |
+| **任意精度整数**（`+` `-` `*` `%` 精确、比较精确、`/` 与 `**` 仍为 float） | ✅ | 2026-09 修复**静默夹取**：此前 ≥2^45 的整数（含字面量与运算结果）被静默夹到 `35184372088831`，20 位以上十进制字面量还会静默退化成 float。现按 §13 定案实现混合表示（内联 Int / 堆 GcBigInt），不变量「能内联的值绝不装箱」保证同一数值只有一个哈希/相等身份。位运算仍是 64 位（BigInt 位运算暂不支持）。见 `CHANGELOG.md` Breaking changes、`docs/19-bignum-value-design.md`、`tests/runtime/test_bigint.va`、`tests/unit/test_bigint.cpp` |
 | 二元 / 一元 / 后缀（`?:` `??` `?.` `...spread`） | ✅ | `?:` 优先级低于 `\|\|`（P0 #2 修复后与 C 系列一致）；一元 `+x` 已识别（P1-E） |
 | 控制流（`if/else`、`while`、`for-in`、括号 `for (x in xs)`、`c-for`、`do-while`、`try/catch/finally`、`throw`、`break/continue`） | ✅ | `if`/`while` 括号必需；P1-H 后 for-in 也接受 `for (x in xs)` 形式 |
 | `func` 默认 / 命名 / `rest` 参数 / 闭包 / `yield` / TCO | ✅ | 命名参数 2-token 前瞻冲突已 lock-in（P0 #3）；顶层 rest 参数仍未实现（仅 class 方法体内合法） |

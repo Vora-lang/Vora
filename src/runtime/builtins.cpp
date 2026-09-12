@@ -54,6 +54,10 @@ void registerBuiltins(VM& vm) {
                 case DispatchTag::Null:   return GcHeap::instance().alloc<GcString>("null");
                 case DispatchTag::Bool:   return GcHeap::instance().alloc<GcString>("boolean");
                 case DispatchTag::Int:    return GcHeap::instance().alloc<GcString>("int");
+                // A boxed integer is still an `int` at the language level: the
+                // hybrid representation is an implementation detail, so scripts
+                // never see a third numeric type appear.
+                case DispatchTag::BigInt: return GcHeap::instance().alloc<GcString>("int");
                 case DispatchTag::Double: return GcHeap::instance().alloc<GcString>("float");
                 case DispatchTag::GcString: return GcHeap::instance().alloc<GcString>("string");
                 case DispatchTag::Array:  return GcHeap::instance().alloc<GcString>("array");
@@ -115,6 +119,9 @@ void registerBuiltins(VM& vm) {
             const auto& arg = arguments[0];
             if (arg.isInt())
                 return arg;
+            // A boxed integer is already an int: int(big) must stay exact.
+            if (arg.isBigInt())
+                return arg;
             if (arg.isDouble())
                 return static_cast<int64_t>(std::trunc(arg.asDouble()));
             if (arg.isGcString()) {
@@ -133,6 +140,9 @@ void registerBuiltins(VM& vm) {
         [](const std::vector<Value>& arguments) -> Value {
             const auto& arg = arguments[0];
             if (arg.isInt()) return static_cast<double>(arg.asInt());
+            // Matches the language rule that an integer mixed with a float goes
+            // through double, so this conversion may lose precision.
+            if (arg.isBigInt()) return arg.asDouble();
             if (arg.isDouble()) return arg;
             if (arg.isGcString()) {
                 try {
@@ -150,9 +160,14 @@ void registerBuiltins(VM& vm) {
         [](const std::vector<Value>& arguments) -> Value {
             // Determine whether to use integer or float arithmetic.
             // If all arguments are integers and step is integer, produce ints.
+            //
+            // A boxed big integer counts as an integer here.  Testing only
+            // isInt() would have made a bound one past the inline range (2^45)
+            // silently switch the whole range to float arithmetic, so `range`
+            // would start yielding floats purely because a value was boxed.
             bool useInt = true;
             for (auto& arg : arguments) {
-                if (!arg.isInt()) {
+                if (arg.isDouble() || (!arg.isInt() && !arg.isBigInt())) {
                     useInt = false;
                     break;
                 }
@@ -162,20 +177,20 @@ void registerBuiltins(VM& vm) {
 
             if (useInt) {
                 int64_t start = 0, end = 0, step = 1;
+                // Bounds must fit int64: a range that large is not materialisable
+                // anyway, and refusing beats silently degrading to doubles.
+                auto intArg = [](const Value& v, int64_t& out) {
+                    return v.toInt64Exact(out);
+                };
                 if (arguments.size() >= 1) {
-                    if (!arguments[0].isInt()) return nullptr;
-                    end = arguments[0].asInt();
+                    if (!intArg(arguments[0], end)) return nullptr;
                 }
                 if (arguments.size() >= 2) {
-                    if (!arguments[1].isInt()) return nullptr;
-                    start = arguments[0].asInt();
-                    end = arguments[1].asInt();
+                    if (!intArg(arguments[0], start) || !intArg(arguments[1], end)) return nullptr;
                 }
                 if (arguments.size() >= 3) {
-                    if (!arguments[2].isInt()) return nullptr;
-                    start = arguments[0].asInt();
-                    end = arguments[1].asInt();
-                    step = arguments[2].asInt();
+                    if (!intArg(arguments[0], start) || !intArg(arguments[1], end) ||
+                        !intArg(arguments[2], step)) return nullptr;
                 }
                 if (step == 0) return nullptr;
                 if (step > 0) {
@@ -641,13 +656,19 @@ GcPtr<NativeFunction> getArrayMethod(
                             arr->elements[i].asBool() == args[0].asBool()) return static_cast<int64_t>(i);
                         if (arr->elements[i].isInt() &&
                             arr->elements[i].asInt() == args[0].asInt()) return static_cast<int64_t>(i);
+                        if (arr->elements[i].isBigInt() &&
+                            BigInt::compare(arr->elements[i].asBigInt()->value,
+                                            args[0].asBigInt()->value) == 0) return static_cast<int64_t>(i);
                         if (arr->elements[i].isDouble() &&
                             arr->elements[i].asDouble() == args[0].asDouble()) return static_cast<int64_t>(i);
                         if (arr->elements[i].isGcString() &&
                             arr->elements[i].asGcString()->value == args[0].asGcString()->value) return static_cast<int64_t>(i);
                     }
+                    // Cross-representation numeric match (int vs float, int vs
+                    // bigint). Exact, so two distinct large integers that merely
+                    // round to the same double are not reported as equal.
                     if (isNumeric(arr->elements[i]) && isNumeric(args[0]) &&
-                        toDouble(arr->elements[i]) == toDouble(args[0])) return static_cast<int64_t>(i);
+                        numericValuesEqual(arr->elements[i], args[0])) return static_cast<int64_t>(i);
                 }
                 return static_cast<int64_t>(-1);
             });
@@ -980,6 +1001,12 @@ void registerMathBuiltins(VM& vm) {
                 int64_t v = arg.asInt();
                 return (v < 0) ? -v : v;
             }
+            if (arg.isBigInt()) {
+                const BigInt& b = arg.asBigInt()->value;
+                return b.isNegative()
+                    ? Value(GcHeap::instance().alloc<GcBigInt>(BigInt::negate(b)))
+                    : arg;
+            }
             if (arg.isDouble()) {
                 double v = arg.asDouble();
                 return (v < 0.0) ? -v : v;
@@ -1209,6 +1236,15 @@ nlohmann::json valueToJson(const Value& val) {
             return val.asBool();
         case ValueTag::Int:
             return val.asInt();
+        case ValueTag::BigInt: {
+            // A JSON number is text, so an integer within int64 round-trips
+            // exactly.  Beyond that there is no faithful numeric form and a
+            // double would silently destroy the value, so fall back to the
+            // exact decimal digits.
+            int64_t exact = 0;
+            if (val.toInt64Exact(exact)) return exact;
+            return val.asBigInt()->value.toDecimal();
+        }
         case ValueTag::GcString:
             return val.asGcString()->value;
         case ValueTag::Array: {

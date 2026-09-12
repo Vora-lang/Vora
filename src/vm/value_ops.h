@@ -104,4 +104,25 @@ int valuesCompare(const Value& a, const Value& b);
  */
 Value addValues(const Value& a, const Value& b, bool& error);
 
+// =========================================================================
+// Exact integer arithmetic (hybrid inline Int / heap BigInt).
+//
+// Each helper requires both operands to be integers — callers must have already
+// established isNumeric() and handled the double case.  A result is returned
+// inline whenever it fits, so a value's representation — and therefore its hash
+// and equality identity — never depends on how the value was computed.
+// =========================================================================
+
+/// @brief Exact `a + b` for two integer operands.
+Value intAddExact(const Value& a, const Value& b);
+/// @brief Exact `a - b` for two integer operands.
+Value intSubExact(const Value& a, const Value& b);
+/// @brief Exact `a * b` for two integer operands.
+Value intMulExact(const Value& a, const Value& b);
+/// @brief Truncated `a % b`; the sign follows the dividend.
+///        @p b must be non-zero — the caller is responsible for that check.
+Value intModExact(const Value& a, const Value& b);
+/// @brief Exact `-a` for an integer operand.
+Value intNegateExact(const Value& a);
+
 } // namespace vora

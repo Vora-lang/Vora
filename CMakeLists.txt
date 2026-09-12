@@ -49,6 +49,7 @@ add_library(vora_lib STATIC
     src/runtime/builtins.cpp
     src/runtime/class_constructor.cpp
     src/runtime/value.cpp
+    src/runtime/bigint.cpp
     src/runtime/native_function.cpp
     src/runtime/vora_function.cpp
     src/runtime/environment.cpp
@@ -280,6 +281,7 @@ add_executable(Vora_tests EXCLUDE_FROM_ALL
     tests/unit/test_parser.cpp
     tests/unit/test_compiler.cpp
     tests/unit/test_vm.cpp
+    tests/unit/test_bigint.cpp
     tests/unit/test_formatter.cpp
     tests/unit/test_semantic_analyzer.cpp
     tests/unit/test_json_rpc.cpp

@@ -12,6 +12,19 @@ let f = false
 let nothing = null
 print(n, pi, s, t, f, nothing)
 
+// Big integers: the formatter must re-emit oversized literals with their exact
+// digits, so a formatted file still evaluates to the same values.
+let bigLit = 123456789012345678901234567890
+let bigNeg = -18446744073709551616
+let bigHex = 0x10000000000000000
+let bigSum = bigLit + bigNeg
+let bigRem = bigLit % 1000000007
+assert(bigLit == 123456789012345678901234567890, "big literal survives formatting")
+assert(bigNeg == -18446744073709551616, "negative big literal survives formatting")
+assert(bigHex == 18446744073709551616, "big hex literal survives formatting")
+assert(bigSum == 123456788993898934827525016274, "big arithmetic survives formatting")
+print(bigLit, bigNeg, bigHex, bigSum, bigRem)
+
 // Arithmetic with precedence
 let arith = 1 + 2 * 3 ** 2
 assert(arith == 19, "1 + 2 * 9 should be 19")

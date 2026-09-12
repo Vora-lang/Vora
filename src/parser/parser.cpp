@@ -9,6 +9,40 @@
 
 namespace vora {
 
+namespace {
+
+/**
+ * @brief Parse an integer literal's digits into a Value of any magnitude.
+ *
+ * The digits are converted exactly; a value too large for the inline 46-bit
+ * payload is boxed as a GcBigInt.  This replaces a `std::stoll`/`std::stoull`
+ * pair whose failure modes were both silent: decimal overflow fell back to
+ * `std::stod` (losing precision and turning the integer into a float), and a
+ * hex/octal/binary value above INT64_MAX wrapped to a negative number when cast
+ * from uint64_t.
+ *
+ * @param digits Digit characters only — any `0x`/`0o`/`0b` prefix is stripped
+ *               by the caller.
+ * @param base   Radix, 2..16.
+ * @param out    Receives the literal value on success.
+ * @return `false` when a digit is invalid for @p base or the literal exceeds
+ *         the supported magnitude (kMaxBigIntLimbs); the caller reports it as
+ *         a compile-time error, since an unrepresentable literal is a defect in
+ *         the program rather than a runtime condition.
+ */
+bool parseIntegerLiteral(const std::string& digits, int base, Value& out) {
+    BigInt b;
+    if (!BigInt::fromChars(digits.c_str(), digits.size(), base, b)) return false;
+    if (b.fitsInt64()) {
+        out = Value(b.toInt64());  // Value() boxes internally if out of inline range
+    } else {
+        out = Value(GcHeap::instance().alloc<GcBigInt>(std::move(b)));
+    }
+    return true;
+}
+
+} // namespace
+
 Parser::Parser(std::vector<Token> tokens, ErrorReporter& reporter)
     : tokens(std::move(tokens)), reporter_(reporter) {
 }
@@ -1839,42 +1873,30 @@ std::unique_ptr<Expr> Parser::primary() {
         // Handle hex, octal, binary prefixes — always integer
         if (lexeme.size() >= 2 && lexeme[0] == '0') {
             switch (lexeme[1]) {
-                case 'x': case 'X':
-                    try {
-                        return std::make_unique<LiteralExpr>(
-                            static_cast<int64_t>(std::stoull(lexeme, nullptr, 16))
-                        );
-                    } catch (const std::invalid_argument&) {
-                        error("Invalid hex literal");
-                        return std::make_unique<ErrorExpr>("Invalid hex literal", previous());
-                    } catch (const std::out_of_range&) {
+                case 'x': case 'X': {
+                    Value v;
+                    if (!parseIntegerLiteral(lexeme.substr(2), 16, v)) {
                         error("Hex literal out of range");
                         return std::make_unique<ErrorExpr>("Hex literal out of range", previous());
                     }
-                case 'o': case 'O':
-                    try {
-                        return std::make_unique<LiteralExpr>(
-                            static_cast<int64_t>(std::stoull(lexeme.substr(2), nullptr, 8))
-                        );
-                    } catch (const std::invalid_argument&) {
-                        error("Invalid octal literal");
-                        return std::make_unique<ErrorExpr>("Invalid octal literal", previous());
-                    } catch (const std::out_of_range&) {
+                    return std::make_unique<LiteralExpr>(v);
+                }
+                case 'o': case 'O': {
+                    Value v;
+                    if (!parseIntegerLiteral(lexeme.substr(2), 8, v)) {
                         error("Octal literal out of range");
                         return std::make_unique<ErrorExpr>("Octal literal out of range", previous());
                     }
-                case 'b': case 'B':
-                    try {
-                        return std::make_unique<LiteralExpr>(
-                            static_cast<int64_t>(std::stoull(lexeme.substr(2), nullptr, 2))
-                        );
-                    } catch (const std::invalid_argument&) {
-                        error("Invalid binary literal");
-                        return std::make_unique<ErrorExpr>("Invalid binary literal", previous());
-                    } catch (const std::out_of_range&) {
+                    return std::make_unique<LiteralExpr>(v);
+                }
+                case 'b': case 'B': {
+                    Value v;
+                    if (!parseIntegerLiteral(lexeme.substr(2), 2, v)) {
                         error("Binary literal out of range");
                         return std::make_unique<ErrorExpr>("Binary literal out of range", previous());
                     }
+                    return std::make_unique<LiteralExpr>(v);
+                }
                 default:
                     break;
             }
@@ -1888,17 +1910,15 @@ std::unique_ptr<Expr> Parser::primary() {
             // Float literal
             return std::make_unique<LiteralExpr>(std::stod(lexeme));
         } else {
-            // Integer literal — try int64, fallback to double if overflow
-            try {
-                size_t pos;
-                int64_t ival = std::stoll(lexeme, &pos);
-                if (pos == lexeme.size()) {
-                    return std::make_unique<LiteralExpr>(ival);
-                }
-            } catch (const std::out_of_range&) {
-                // Overflow — fall through to double
+            // Integer literal — parsed exactly, at any length. Values beyond the
+            // inline range become a boxed big integer rather than silently
+            // degrading to a double (which lost precision) or clamping.
+            Value v;
+            if (!parseIntegerLiteral(lexeme, 10, v)) {
+                error("Integer literal out of range");
+                return std::make_unique<ErrorExpr>("Integer literal out of range", previous());
             }
-            return std::make_unique<LiteralExpr>(std::stod(lexeme));
+            return std::make_unique<LiteralExpr>(v);
         }
     }
 

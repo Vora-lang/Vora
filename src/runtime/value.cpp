@@ -2,13 +2,115 @@
 
 #include "callable.h"
 #include "native_function.h"
+#include "runtime_error.h"
 #include "vora_function.h"
+#include "../gc/gc_heap.h"
 #include "../vm/compiler.h"
 
 #include <algorithm>
+#include <cassert>
+#include <cmath>
 #include <iostream>
+#include <limits>
 
 namespace vora {
+
+// =========================================================================
+// Integer boxing — the cold half of the hybrid integer representation.
+// =========================================================================
+
+Value::Raw Value::boxedIntBits(int64_t v) {
+    BigInt b = BigInt::fromInt64(v);
+    // The inline range is a strict subset of what this type can hold, so a
+    // value reaching here can never be demoted straight back — assert the
+    // invariant so a future edit to INT47_* cannot silently create a boxed
+    // value that should have been inline.
+    assert(!b.fitsInt64() || v > INT47_MAX || v < INT47_MIN);
+    GcBigInt* obj = GcHeap::instance().allocate<GcBigInt>(std::move(b));
+    return TAG_MARKER | (static_cast<uint64_t>(ValueTag::BigInt) << TAG_SHIFT) |
+           (ptrPayload(static_cast<void*>(obj)));
+}
+
+void Value::failBigIntAsInt() {
+    assert(false && "Value::asInt() called on a BigInt — use fitsInt64()/toInt64Exact()");
+    // Release builds have no assertion; report a catchable error rather than
+    // returning a truncated value.
+    throw RuntimeError("Integer too large to be represented as int64", Token());
+}
+
+// =========================================================================
+// Exact numeric comparison — shared by == and by the ordering operators.
+// =========================================================================
+
+namespace {
+
+/// @brief Convert an integer Value (Int or BigInt) to BigInt.
+BigInt integerToBigInt(const Value& v) {
+    if (v.isBigInt()) return v.asBigInt()->value;
+    return BigInt::fromInt64(v.asInt());
+}
+
+/// @brief Compare an integer Value against a double, exactly.
+/// @return -1 if integer < d, 0 if equal, 1 if integer > d.
+int compareIntegerToDouble(const Value& iv, double d) {
+    if (std::isnan(d)) return 0;  // unordered
+    if (d == std::numeric_limits<double>::infinity()) return -1;
+    if (d == -std::numeric_limits<double>::infinity()) return 1;
+
+    if (std::floor(d) == d) {
+        // Integral double: decompose exactly and compare as integers.
+        return BigInt::compare(integerToBigInt(iv), BigInt::fromDoubleTrunc(d));
+    }
+
+    // A non-integral double is necessarily < 2^52 in magnitude (above that,
+    // every double is an integer), so floor(d) and floor(d)+1 are both exactly
+    // representable and the integer can only be below or above the whole
+    // interval — never inside it.
+    const BigInt floorVal = BigInt::fromDoubleTrunc(std::floor(d));
+    if (BigInt::compare(integerToBigInt(iv), floorVal) <= 0) return -1;
+    return 1;
+}
+
+} // namespace
+
+int numericValuesCompare(const Value& a, const Value& b) {
+    assert(a.isNumeric() && b.isNumeric() && "numericValuesCompare requires numeric operands");
+
+    // Two doubles: plain double ordering.
+    if (a.isDouble() && b.isDouble()) {
+        const double da = a.asDouble();
+        const double db = b.asDouble();
+        if (std::isnan(da) || std::isnan(db)) return 0;
+        if (da < db) return -1;
+        if (da > db) return 1;
+        return 0;
+    }
+
+    // Two integers: exact integer ordering.
+    if (!a.isDouble() && !b.isDouble()) {
+        int64_t ai = 0, bi = 0;
+        if (a.toInt64Exact(ai) && b.toInt64Exact(bi)) {
+            if (ai < bi) return -1;
+            if (ai > bi) return 1;
+            return 0;
+        }
+        return BigInt::compare(integerToBigInt(a), integerToBigInt(b));
+    }
+
+    // Mixed integer/double.
+    const bool intIsLeft = !a.isDouble();
+    const Value& iv = intIsLeft ? a : b;
+    const double d = intIsLeft ? b.asDouble() : a.asDouble();
+    const int cmp = compareIntegerToDouble(iv, d);
+    return intIsLeft ? cmp : -cmp;
+}
+
+bool numericValuesEqual(const Value& a, const Value& b) {
+    // NaN is never equal to anything, including itself.
+    if (a.isDouble() && std::isnan(a.asDouble())) return false;
+    if (b.isDouble() && std::isnan(b.asDouble())) return false;
+    return numericValuesCompare(a, b) == 0;
+}
 
 // =========================================================================
 // ValueHash — content-based hash for Value (used by Set/Map)
@@ -17,6 +119,16 @@ namespace vora {
 // Simple hash combiner (boost::hash_combine equivalent)
 static inline void hashCombine(size_t& seed, size_t h) {
     seed ^= h + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+/// @brief Hash an integer (BigInt) so that equal numeric values hash alike.
+///
+/// Mirrors the double branch below: values that fit in int64_t hash as int64_t,
+/// anything larger hashes as the double it rounds to.  That keeps a BigInt, an
+/// inline Int and an integral Double consistent for the same number.
+static size_t hashBigInt(const BigInt& b) {
+    if (b.fitsInt64()) return std::hash<int64_t>{}(b.toInt64());
+    return std::hash<double>{}(b.toDouble());
 }
 
 size_t ValueHash::operator()(const Value& v) const {
@@ -39,6 +151,8 @@ size_t ValueHash::operator()(const Value& v) const {
         return std::hash<bool>{}(v.asBool());
     case ValueTag::Int:
         return std::hash<int64_t>{}(v.asInt());
+    case ValueTag::BigInt:
+        return hashBigInt(v.asBigInt()->value);
     case ValueTag::GcString:
         return std::hash<std::string>{}(v.asGcString()->value);
     case ValueTag::Array: {
@@ -90,9 +204,10 @@ size_t ValueHash::operator()(const Value& v) const {
 // =========================================================================
 
 bool ValueEqual::operator()(const Value& a, const Value& b) const {
-    // Numeric cross-type equality: 42 == 42.0
+    // Numeric cross-type equality: 42 == 42.0.  Compared exactly so a BigInt is
+    // not reported equal to a double it merely rounds to.
     if (isNumeric(a) && isNumeric(b))
-        return toDouble(a) == toDouble(b);
+        return numericValuesEqual(a, b);
 
     // Different dispatch tag → not equal
     if (a.dispatchTag() != b.dispatchTag()) return false;
@@ -110,6 +225,10 @@ bool ValueEqual::operator()(const Value& a, const Value& b) const {
         return a.asBool() == b.asBool();
     case ValueTag::Int:
         return a.asInt() == b.asInt();
+    case ValueTag::BigInt:
+        // Unreachable while both BigInts are numeric (handled above); kept so
+        // the tag switch stays exhaustive.
+        return BigInt::compare(a.asBigInt()->value, b.asBigInt()->value) == 0;
     case ValueTag::GcString:
         return a.asGcString()->value == b.asGcString()->value;
 
@@ -177,8 +296,8 @@ bool ValueEqual::operator()(const Value& a, const Value& b) const {
 // =========================================================================
 // pushGcRefs — extract all GcObject* references from a Value.
 //
-// With NaN-boxing, all 11 GcObject-backed types share the same payload
-// encoding (pointer in bits 45:0). This collapses what was an 11-branch
+// With NaN-boxing, all 12 GcObject-backed types share the same payload
+// encoding (pointer in bits 45:0). This collapses what was a 12-branch
 // std::get_if chain into a single isObject() + asObject().
 // =========================================================================
 
@@ -288,6 +407,9 @@ static void appendValue(std::string& out, const Value& value, int depth) {
         break;
     case ValueTag::Int:
         out += std::to_string(value.asInt());
+        break;
+    case ValueTag::BigInt:
+        out += value.asBigInt()->value.toDecimal();
         break;
     case ValueTag::GcString:
         out += value.asGcString()->value;

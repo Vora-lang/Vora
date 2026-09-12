@@ -4,11 +4,25 @@
  *
  * Defines the universal 8-byte Value type using IEEE 754 NaN-boxing for the Vora
  * language runtime.  Also defines all garbage-collected heap objects (Array, Dict,
- * GcString, ObjectInstance, Iterator, Generator, Set, Map), the Upvalue mechanism
- * for closure variable capture, and supporting hash/equality functors.
+ * GcString, GcBigInt, ObjectInstance, Iterator, Generator, Set, Map), the Upvalue
+ * mechanism for closure variable capture, and supporting hash/equality functors.
  *
  * @note Value is trivially copyable and trivially destructible — it fits in a
  *       machine register and requires no constructor/destructor bookkeeping.
+ *
+ * ## Integer representation (hybrid)
+ *
+ * Integers use a hybrid representation so that arbitrary precision does not cost
+ * the inline fast path:
+ *
+ *   - Values in [-2^45, 2^45 - 1] are stored directly in the 46-bit payload as
+ *     an inline Int (tag 2).  This is the hot path and is unchanged by big-int
+ *     support.
+ *   - Any other integer is stored as a heap `GcBigInt` (tag 15).
+ *
+ * Invariant: a value representable inline is **never** boxed, so a given integer
+ * has exactly one representation and therefore one identity for hashing and
+ * equality.  Out-of-range results demote back to inline automatically.
  */
 
 #pragma once
@@ -24,6 +38,7 @@
 
 #include "../gc/gc_object.h"
 #include "../gc/gc_ptr.h"
+#include "bigint.h"
 
 namespace vora {
 
@@ -80,9 +95,10 @@ static constexpr uint64_t TAG_MARKER   = SIGN_MASK | NAN_EXP_MASK | QNAN_BIT | V
 
 /// @brief 4-bit type tag stored in bits 49:46 of a NaN-boxed Value.
 ///
-/// Each heap-allocated or immediate type gets a unique tag. Tags 0–13 are
-/// used; 14 and 15 are reserved. The tag is embedded in the IEEE 754 NaN
-/// payload alongside the VORA_TAG_BIT discriminator.
+/// Each heap-allocated or immediate type gets a unique tag. All 16 tag slots
+/// are now allocated — there is no spare tag, so any future type would need to
+/// share a tag with a payload-level discriminator. The tag is embedded in the
+/// IEEE 754 NaN payload alongside the VORA_TAG_BIT discriminator.
 // --- Type tags for NaN-boxed values ---
 enum class ValueTag : uint8_t {
     Null             = 0,
@@ -100,16 +116,20 @@ enum class ValueTag : uint8_t {
     Set              = 12,
     Map              = 13,
     Task             = 14,
-    // 15 reserved
+    BigInt           = 15,  ///< payload is a pointer to a GcBigInt
 };
 
 /// @brief Flat dispatch tag for switch-based type branching, replacing std::visit.
 ///
-/// Values 0–13 mirror ValueTag exactly. The extra entry Double = 14 serves
-/// as a pseudo-tag so that a single switch can handle both tagged and
-/// untagged (IEEE 754 double) Values without a separate isDouble() branch.
+/// Entries 0–15 mirror ValueTag exactly, so a tagged Value's tag() can be cast
+/// straight to a DispatchTag. The extra entry Double = 16 serves as a
+/// pseudo-tag for genuine IEEE 754 doubles so that a single switch can handle
+/// both tagged and untagged Values without a separate isDouble() branch.
+///
+/// @note DispatchTag is a computed classification, not a field of Value, so it
+///       is not constrained to 4 bits and may exceed the ValueTag range.
 // Dispatch tag for switch statements (replaces std::visit).
-// Values 0-13 match ValueTag exactly. Double = 14 is a pseudo-tag.
+// Values 0-15 match ValueTag exactly. Double = 16 is a pseudo-tag.
 enum class DispatchTag : uint8_t {
     Null             = 0,
     Bool             = 1,
@@ -126,15 +146,16 @@ enum class DispatchTag : uint8_t {
     Set              = 12,
     Map              = 13,
     Task             = 14,
-    Double           = 15,
+    BigInt           = 15,
+    Double           = 16,
 };
 
 /// @brief Range limits for inline 47-bit integers stored in the NaN payload.
 ///
-/// Integers outside [-35,184,372,088,832 .. 35,184,372,088,831] are clamped
-/// on construction. This range is enforced by the 46-bit payload width with
-/// sign-extension from bit 45.
-// int47 range for inline integers
+/// Integers outside [-35,184,372,088,832 .. 35,184,372,088,831] are **boxed as
+/// GcBigInt**, not clamped. This range is enforced by the 46-bit payload width
+/// with sign-extension from bit 45.
+// int47 range for inline integers — outside this range values are boxed
 static constexpr int64_t INT47_MAX =  0x00001FFFFFFFFFFFLL;  //  35,184,372,088,831
 static constexpr int64_t INT47_MIN = -0x0000200000000000LL;  // -35,184,372,088,832
 
@@ -155,8 +176,10 @@ public:
     Value(std::nullptr_t) : Value() {}
     /// @brief Construct a Bool Value (true = payload bit 0 set, false = clear).
     /*implicit*/ Value(bool b) : bits_(tagBits(ValueTag::Bool, b ? 1ULL : 0ULL)) {}
-    /// @brief Construct an Int Value with int47-range clamping.
-    /// @param v Integer value; clamped to [-35,184,372,088,832, 35,184,372,088,831].
+    /// @brief Construct an integer Value — inline when it fits, boxed otherwise.
+    /// @param v Integer value. Values in [-2^45, 2^45 - 1] become inline Int
+    ///          Values; anything else is boxed as a GcBigInt. Nothing is
+    ///          clamped or truncated.
     /*implicit*/ Value(int64_t v);
     /// @brief Construct a Double Value.  IEEE 754 bit-pattern is stored as-is
     ///        after defensively clearing VORA_TAG_BIT on NaN inputs.
@@ -187,6 +210,7 @@ public:
     /*implicit*/ Value(GcPtr<struct Task> p)         : bits_(tagBits(ValueTag::Task, ptrPayload(p.get()))) {}
     /*implicit*/ Value(GcPtr<struct Set> p)          : bits_(tagBits(ValueTag::Set, ptrPayload(p.get()))) {}
     /*implicit*/ Value(GcPtr<struct Map> p)          : bits_(tagBits(ValueTag::Map, ptrPayload(p.get()))) {}
+    /*implicit*/ Value(GcPtr<struct GcBigInt> p)     : bits_(tagBits(ValueTag::BigInt, ptrPayload(p.get()))) {}
     /// @}
 
     // Value is trivially copyable
@@ -254,18 +278,24 @@ public:
     bool isSet()               const { return !isDouble() && tag() == ValueTag::Set; }
     /// @brief True when the Value is a Map reference (tag 13).
     bool isMap()               const { return !isDouble() && tag() == ValueTag::Map; }
-    /// @brief True for any numeric type (Int or Double).
-    bool isNumeric()           const { return isInt() || isDouble(); }
+    /// @brief True when the Value is a boxed arbitrary-precision integer (tag 15).
+    ///
+    /// BigInt is a distinct representation of *integer* values, not a distinct
+    /// numeric type: `isInt()` and `isBigInt()` are mutually exclusive, and
+    /// `isNumeric()` is true for both.
+    bool isBigInt()            const { return !isDouble() && tag() == ValueTag::BigInt; }
+    /// @brief True for any numeric type (Int, BigInt or Double).
+    bool isNumeric()           const { return isInt() || isBigInt() || isDouble(); }
 
-    /// @brief True for any GcObject-backed type (tags 3–14).
+    /// @brief True for any GcObject-backed type (tags 3–15).
     ///
     /// Used by the GC to identify Values that carry a valid heap pointer
     /// in their payload.
-    // True for any GcObject-backed type (tags 3–14)
+    // True for any GcObject-backed type (tags 3-15, GcString..BigInt)
     bool isObject() const {
         if (isDouble()) return false;
         auto t = tag();
-        return t >= ValueTag::GcString && t <= ValueTag::Task;
+        return t >= ValueTag::GcString && t <= ValueTag::BigInt;
     }
 
     // --- Value extractors ---
@@ -273,13 +303,30 @@ public:
     /// @brief Extract Bool value from payload bit 0.
     /// @return true if bit 0 is set, false otherwise.
     bool    asBool()   const;
-    /// @brief Extract Int value by sign-extending the 46-bit payload.
-    /// @return The 64-bit signed integer stored in the payload.
+    /// @brief Extract an inline Int by sign-extending the 46-bit payload.
+    ///
+    /// @warning Valid only when `isInt()`.  A BigInt's value cannot always be
+    ///          returned as int64_t, so calling this on a BigInt fails an
+    ///          assertion in debug builds and throws RuntimeError in release
+    ///          builds.  It **never** returns a truncated value.  Where a value
+    ///          may be a BigInt, use fitsInt64() / toInt64Exact() instead.
+    /// @return The sign-extended 64-bit integer stored in the payload.
     int64_t asInt()    const;
-    /// @brief Extract numeric value as double.  Promotes Int internally.
-    /// @return The double value, or the Int promoted to double.  Returns 0.0
-    ///         for non-numeric types.
-    double  asDouble() const;  // promotes int→double, returns 0.0 for non-numeric
+    /// @brief True when the Value is an integer representable exactly as int64_t.
+    ///
+    /// True for every inline Int, and for a BigInt whose magnitude fits in
+    /// int64_t.  False for every non-integer type.
+    bool fitsInt64() const;
+    /// @brief Losslessly extract an integer Value as an int64_t.
+    /// @param out Receives the value; left untouched on failure.
+    /// @return `true` when the Value is an integer fitting in int64_t, else
+    ///         `false` (including for doubles, even integral ones).
+    bool toInt64Exact(int64_t& out) const;
+    /// @brief Extract numeric value as double.  Promotes Int and BigInt.
+    /// @return For Int, the value promoted to double; for BigInt, the nearest
+    ///         double (may round, and overflows to infinity for huge values);
+    ///         for Double, the value itself.  Returns 0.0 for non-numeric types.
+    double  asDouble() const;  // promotes int/bigint→double, returns 0.0 for non-numeric
 
     /// @brief Extract payload as a raw GcObject pointer for GC scanning.
     /// @return Pointer to the GcObject header (nullptr for Null or immediate types).
@@ -302,6 +349,7 @@ public:
     GcPtr<Task>              asTask()              const { return GcPtr<Task>(reinterpret_cast<Task*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
     GcPtr<Set>               asSet()               const { return GcPtr<Set>(reinterpret_cast<Set*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
     GcPtr<Map>               asMap()               const { return GcPtr<Map>(reinterpret_cast<Map*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
+    GcPtr<GcBigInt>          asBigInt()            const { return GcPtr<GcBigInt>(reinterpret_cast<GcBigInt*>(ptrFromPayload(bits_ & PAYLOAD_MASK))); }
     /// @}
 
     // --- Comparison (bitwise identity) ---
@@ -336,6 +384,20 @@ private:
     static void* ptrFromPayload(uint64_t payload) {
         return reinterpret_cast<void*>(payload << 2);
     }
+
+    /// @brief Box an out-of-inline-range integer as a GcBigInt; return its bits.
+    ///
+    /// Defined out-of-line in value.cpp because it needs GcHeap.  Allocating
+    /// here keeps the common inline path free of any GC dependency, and the
+    /// call sits behind a well-predicted branch.
+    static Raw boxedIntBits(int64_t v);
+
+    /// @brief Report asInt() being called on a BigInt.
+    ///
+    /// Asserts in debug builds and throws RuntimeError in release builds; never
+    /// returns, and never yields a truncated value.  Defined out-of-line in
+    /// value.cpp so this header does not need the error machinery.
+    [[noreturn]] static void failBigIntAsInt();
 };
 
 static_assert(sizeof(Value) == 8, "NaN-boxed Value must be exactly 8 bytes");
@@ -424,6 +486,37 @@ struct GcString : GcObject {
     /// @brief Conservative size estimate for GC heuristics.
     /// @return sizeof(GcString) + allocated string capacity.
     size_t gcSize() const override { return sizeof(GcString) + value.capacity(); }
+};
+
+/// @brief Heap-allocated arbitrary-precision integer.
+///
+/// GcBigInt owns a BigInt (sign + base-2^64 magnitude) and is the boxed
+/// representation for every integer that does not fit in the inline 46-bit
+/// payload.  If it were not a GcObject it could not be traced, so it is
+/// allocated through GcHeap like every other heap type.
+///
+/// @note GcBigInt contains no inner GcObject references, so trace() is a no-op.
+///
+/// @note Invariant (enforced by construction, not by this type): a GcBigInt is
+///       never created for a value that fits inline.  All boxes go through
+///       Value's integer constructor or its arithmetic helpers, which demote
+///       back to an inline Int as soon as the value fits.  This is what keeps a
+///       given integer to a single hash/equality identity.
+struct GcBigInt : GcObject {
+    /// @brief The wrapped value.
+    BigInt value;
+
+    GcBigInt() = default;
+    /// @brief Construct from a BigInt (move semantics).
+    /// @param v Value to take ownership of.
+    explicit GcBigInt(BigInt v) : value(std::move(v)) {}
+
+    /// @brief No-op — GcBigInt contains no GcObject references.
+    void trace(std::vector<GcObject*>& wl) override {}  // no GcObject references
+
+    /// @brief Conservative size estimate for GC heuristics.
+    /// @return sizeof(GcBigInt) + allocated limb storage.
+    size_t gcSize() const override { return sizeof(GcBigInt) + value.limbs.capacity() * sizeof(uint64_t); }
 };
 
 /// @brief Runtime instance of a Vora class.
@@ -672,19 +765,21 @@ struct Map : GcObject {
 // =========================================================================
 
 /**
- * @brief Construct an inline Int Value with int47-range clamping.
+ * @brief Construct an integer Value — inline when it fits, boxed otherwise.
  *
- * Values outside [-35,184,372,088,832, 35,184,372,088,831] are silently
- * clamped to the nearest boundary.  The clamped value is masked into
- * 46 bits and tagged with ValueTag::Int.
+ * Values in [-2^45, 2^45 - 1] are stored inline (the fast path).  Any other
+ * int64 is boxed as a GcBigInt.  Nothing is clamped: this used to silently
+ * clamp to the int47 boundary, which turned every oversized integer — literal
+ * or computed — into a wrong value with no diagnostic.
  *
- * @param v The integer value to box.
+ * @param v The integer value to store.
  */
 inline Value::Value(int64_t v) {
-    // Clamp to int47 range
-    if (v > INT47_MAX) v = INT47_MAX;
-    else if (v < INT47_MIN) v = INT47_MIN;
-    bits_ = tagBits(ValueTag::Int, static_cast<uint64_t>(v) & PAYLOAD_MASK);
+    if (v >= INT47_MIN && v <= INT47_MAX) {
+        bits_ = tagBits(ValueTag::Int, static_cast<uint64_t>(v) & PAYLOAD_MASK);
+    } else {
+        bits_ = boxedIntBits(v);
+    }
 }
 
 /**
@@ -721,24 +816,51 @@ inline bool Value::asBool() const {
 }
 
 /**
- * @brief Extract int64_t by sign-extending the 46-bit payload.
+ * @brief Extract an inline Int by sign-extending the 46-bit payload.
  *
  * The payload occupies bits [45:0].  Sign-extension copies bit 45 into
  * all bits [63:46], reconstructing the full signed 64-bit integer.
  *
+ * For a BigInt this cannot produce an exact result, so it fails an assertion
+ * in debug builds and throws in release builds rather than truncating.
+ *
  * @return The sign-extended 64-bit integer value.
  */
 inline int64_t Value::asInt() const {
+    if (isBigInt()) failBigIntAsInt();
     uint64_t payload = bits_ & PAYLOAD_MASK;
     // Sign-extend from bit 45 to bits 63:46
     return static_cast<int64_t>(payload << 18) >> 18;
 }
 
+/// @brief True when the Value is an integer representable exactly as int64_t.
+inline bool Value::fitsInt64() const {
+    if (isInt()) return true;
+    if (isBigInt()) return asBigInt()->value.fitsInt64();
+    return false;
+}
+
+/// @brief Losslessly extract an integer Value as an int64_t.
+inline bool Value::toInt64Exact(int64_t& out) const {
+    if (isInt()) {
+        out = asInt();
+        return true;
+    }
+    if (isBigInt()) {
+        const BigInt& b = asBigInt()->value;
+        if (!b.fitsInt64()) return false;
+        out = b.toInt64();
+        return true;
+    }
+    return false;
+}
+
 /**
- * @brief Extract the Value as a double, promoting Int if necessary.
+ * @brief Extract the Value as a double, promoting Int and BigInt.
  *
  * @return For Double values, the raw bit pattern reinterpreted as double.
  *         For Int values, the integer promoted to double.
+ *         For BigInt values, the nearest double (may round).
  *         For all other types, 0.0.
  */
 inline double Value::asDouble() const {
@@ -749,6 +871,9 @@ inline double Value::asDouble() const {
     }
     if (isInt()) {
         return static_cast<double>(asInt());
+    }
+    if (isBigInt()) {
+        return asBigInt()->value.toDouble();
     }
     return 0.0;
 }
@@ -798,15 +923,51 @@ inline double toDouble(const Value& v) {
     return v.asDouble();
 }
 
-/// @brief Ensure a Value is a double by promoting Int to double.
+/**
+ * @brief Exact three-way comparison of two numeric Values.
+ *
+ * Exactness matters once BigInt exists: converting to double first would make
+ * `2^70 < 2^70 + 1` compare equal.  Two integers (Int and/or BigInt) are
+ * compared as integers; a double is compared against an integer exactly by
+ * decomposing it into an integer where that is possible.
+ *
+ * Unordered comparisons (either side NaN) return 0, matching the historical
+ * behaviour of the double-based path.
+ *
+ * @param a Left operand.  Must be numeric (Int, BigInt or Double).
+ * @param b Right operand.  Must be numeric.
+ * @return -1 if a < b, 0 if a == b or unordered, 1 if a > b.
+ */
+int numericValuesCompare(const Value& a, const Value& b);
+
+/**
+ * @brief Exact numeric equality of two numeric Values.
+ *
+ * Follows the language's by-value numeric rule (`42 == 42.0` is true) but
+ * without the precision loss of a double round-trip: a BigInt is never
+ * reported equal to a double it merely rounds to.  NaN is never equal to
+ * anything, including itself.
+ *
+ * @param a Left operand.  Must be numeric.
+ * @param b Right operand.  Must be numeric.
+ * @return `true` when the two operands denote the same number.
+ */
+bool numericValuesEqual(const Value& a, const Value& b);
+
+/// @brief Ensure a Value is a double by promoting Int or BigInt to double.
 ///
-/// If the Value is an Int, the integer is promoted to double and boxed in a
-/// new Double Value.  Otherwise the Value is returned unchanged.
+/// If the Value is an Int or a BigInt, the integer is converted to double and
+/// boxed in a new Double Value.  Otherwise the Value is returned unchanged.
+///
+/// @note Promoting a BigInt may lose precision, or overflow to infinity for
+///       values beyond the double range.  Callers that need exactness must
+///       handle BigInt separately.
 ///
 /// @param v The Value to promote.
 /// @return A Double Value (or the original if already Double).
 inline Value promoteToFloat(const Value& v) {
     if (v.isInt()) return Value(static_cast<double>(v.asInt()));
+    if (v.isBigInt()) return Value(v.asDouble());
     return v;
 }
 

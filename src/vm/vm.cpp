@@ -1304,6 +1304,20 @@ void VM::collectGarbage() {
         pushGcRefs(nativeErrorValue, roots);
     }
 
+    // 8. Constant pools of the chunks currently executing.
+    //
+    // A Chunk's constants can reference heap objects (GcString literals, and
+    // GcBigInt for oversized integer literals).  Constants belonging to a
+    // FunctionPrototype are reached through that prototype's trace(); the
+    // top-level script chunk is a plain stack object in main(), owned by no
+    // GcObject at all, so its pool has to be rooted explicitly here.
+    if (currentChunk != nullptr) {
+        for (const auto& c : currentChunk->constants) pushGcRefs(c, roots);
+    }
+    if (pendingChunk != nullptr && pendingChunk != currentChunk) {
+        for (const auto& c : pendingChunk->constants) pushGcRefs(c, roots);
+    }
+
     GcHeap::instance().collectIfNeeded(roots);
 }
 
@@ -1528,12 +1542,11 @@ InterpretResult VM::run() {
             // --- Unary ---
             case OpCode::OP_NEGATE: {
                 if (peek(0).isInt()) {
-                    int64_t v = pop().asInt();
-                    if (v == INT64_MIN) {
-                        push(-static_cast<double>(v));
-                    } else {
-                        push(-v);
-                    }
+                    // Each inline int is within ±2^45, so the only negation that
+                    // leaves inline range is -(-2^45) = 2^45, which boxes.
+                    push(Value(-pop().asInt()));
+                } else if (peek(0).isBigInt()) {
+                    push(intNegateExact(pop()));
                 } else if (peek(0).isDouble()) {
                     push(-pop().asDouble());
                 } else {
@@ -1554,6 +1567,8 @@ InterpretResult VM::run() {
                     case 0: { // float
                         if (v.isInt())
                             push(static_cast<double>(v.asInt()));
+                        else if (v.isBigInt())
+                            push(v.asDouble());
                         else if (v.isDouble())
                             push(v);
                         else if (v.isBool())
@@ -1572,6 +1587,8 @@ InterpretResult VM::run() {
                     case 1: { // int
                         if (v.isInt())
                             push(v);
+                        else if (v.isBigInt())
+                            push(v);  // already an integer: `let x: int = 2^70` keeps it exact
                         else if (v.isDouble())
                             push(static_cast<int64_t>(std::trunc(v.asDouble())));
                         else if (v.isBool())
@@ -1662,8 +1679,13 @@ InterpretResult VM::run() {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for -");
                 }
                 if (aVal.isInt() && bVal.isInt()) {
-                    // int64 - int64 stays an int (wraps on overflow, like C).
+                    // Inline minus inline: the difference of two values within
+                    // ±2^45 cannot overflow int64. Bigger results box.
                     push(Value(aVal.asInt() - bVal.asInt()));
+                    break;
+                }
+                if (!aVal.isDouble() && !bVal.isDouble()) {
+                    push(intSubExact(aVal, bVal));
                     break;
                 }
                 push(toDouble(aVal) - toDouble(bVal));
@@ -1676,8 +1698,13 @@ InterpretResult VM::run() {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for *");
                 }
                 if (aVal.isInt() && bVal.isInt()) {
-                    // int64 * int64 stays an int (wraps on overflow, like C).
-                    push(Value(aVal.asInt() * bVal.asInt()));
+                    // Inline * inline can exceed int64, so intMulExact widens to
+                    // 128 bits before multiplying and boxes the exact product.
+                    push(intMulExact(aVal, bVal));
+                    break;
+                }
+                if (!aVal.isDouble() && !bVal.isDouble()) {
+                    push(intMulExact(aVal, bVal));
                     break;
                 }
                 push(toDouble(aVal) * toDouble(bVal));
@@ -1715,6 +1742,10 @@ InterpretResult VM::run() {
                         break;
                     }
                 }
+                if (!aVal.isDouble() && !bVal.isDouble()) {
+                    push(intModExact(aVal, bVal));
+                    break;
+                }
                 push(std::fmod(toDouble(aVal), b));
                 break;
             }
@@ -1724,7 +1755,7 @@ InterpretResult VM::run() {
                 if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for <");
                 }
-                push(toDouble(aVal) < toDouble(bVal));
+                push(numericValuesCompare(aVal, bVal) < 0);
                 break;
             }
             case OpCode::OP_LESS_EQ_NN: {
@@ -1733,7 +1764,7 @@ InterpretResult VM::run() {
                 if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for <=");
                 }
-                push(toDouble(aVal) <= toDouble(bVal));
+                push(numericValuesCompare(aVal, bVal) <= 0);
                 break;
             }
             case OpCode::OP_GREATER_NN: {
@@ -1742,7 +1773,7 @@ InterpretResult VM::run() {
                 if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for >");
                 }
-                push(toDouble(aVal) > toDouble(bVal));
+                push(numericValuesCompare(aVal, bVal) > 0);
                 break;
             }
             case OpCode::OP_GREATER_EQ_NN: {
@@ -1751,7 +1782,7 @@ InterpretResult VM::run() {
                 if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for >=");
                 }
-                push(toDouble(aVal) >= toDouble(bVal));
+                push(numericValuesCompare(aVal, bVal) >= 0);
                 break;
             }
             // --- Comparison ---
@@ -1771,7 +1802,7 @@ InterpretResult VM::run() {
                 Value b = pop();
                 Value a = pop();
                 if (isNumeric(a) && isNumeric(b)) {
-                    push(toDouble(a) < toDouble(b));
+                    push(numericValuesCompare(a, b) < 0);
                 } else {
                     push(false);
                 }

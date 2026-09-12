@@ -64,9 +64,17 @@ struct FunctionPrototype : GcObject {
     std::vector<std::string> localNames;       ///< All local variable names in declaration order (for debugger).
 
     /// @brief Trace GC roots reachable from this object.
+    ///
+    /// The constant pool holds Values that can reference heap objects — a
+    /// GcString for every string literal, and a GcBigInt for every integer too
+    /// large to store inline.  A prototype can stay reachable without
+    /// executing (a closure parked in a global, say), so its constants must be
+    /// traced from here; otherwise a GC in that window frees a value the
+    /// bytecode still refers to.
+    ///
     /// @param wl Work list to append referenced GcObjects to.
     void trace(std::vector<GcObject*>& wl) override {
-        // FunctionPrototype doesn't directly reference other GcObjects.
+        for (const auto& c : chunk.constants) pushGcRefs(c, wl);
     }
 
     /// @brief Return the GC-tracked size of this object.

@@ -265,6 +265,10 @@ std::string SourceFormatter::visitLiteralExpr(const LiteralExpr& expr) {
         return out;
     }
     if (v.isInt()) return std::to_string(v.asInt());
+    // Big integers keep their exact digits: the formatter has to round-trip an
+    // oversized literal unchanged, and decimal is the only lossless way to write
+    // one back out.
+    if (v.isBigInt()) return v.asBigInt()->value.toDecimal();
     if (v.isDouble()) {
         // Format doubles compactly — avoid trailing zeros.
         std::stringstream ss;

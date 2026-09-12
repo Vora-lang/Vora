@@ -8,6 +8,7 @@
 #include "../gc/gc_heap.h"
 #include "../parser/parser.h"
 #include "../runtime/vora_function.h"
+#include "value_ops.h"
 
 namespace vora {
 // =========================================================================
@@ -21,7 +22,9 @@ void Compiler::visitLiteralExpr(const LiteralExpr& expr) {
         emitByte(v.asBool()
             ? static_cast<uint8_t>(OpCode::OP_TRUE)
             : static_cast<uint8_t>(OpCode::OP_FALSE));
-    } else if (v.isDouble() || v.isInt()) {
+    } else if (v.isDouble() || v.isInt() || v.isBigInt()) {
+        // BigInt literals load from the constant pool like any other constant;
+        // the pool is traced by the GC (see FunctionPrototype::trace).
         emitConstant(v);
     } else if (v.isGcString()) {
         const auto& str = v.asGcString()->value;
@@ -244,56 +247,55 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
         const auto& lv = leftLit->value;
         const auto& rv = rightLit->value;
         if (isNumeric(lv) && isNumeric(rv)) {
-            bool intOp = lv.isInt() && rv.isInt();
+            // Both operands are integers (inline or boxed) → fold exactly,
+            // using the same helpers the VM uses so a folded constant and the
+            // equivalent runtime computation can never disagree.
+            const bool intOp = !lv.isDouble() && !rv.isDouble();
             if (intOp) {
-                int64_t a = lv.asInt();
-                int64_t b = rv.asInt();
                 switch (expr.op.type) {
                     case TokenType::PLUS:
-                        // Check for signed overflow before folding
-                        if ((b > 0 && a > INT64_MAX - b) ||
-                            (b < 0 && a < INT64_MIN - b)) break;
-                        emitConstant(a + b); return;
+                        emitConstant(intAddExact(lv, rv)); return;
                     case TokenType::MINUS:
-                        if ((b < 0 && a > INT64_MAX + b) ||
-                            (b > 0 && a < INT64_MIN + b)) break;
-                        emitConstant(a - b); return;
+                        emitConstant(intSubExact(lv, rv)); return;
                     case TokenType::MULTIPLY:
-                        if (a != 0) {
-                            if (a > 0) {
-                                if (b > 0 && a > INT64_MAX / b) break;
-                                if (b < 0 && b < INT64_MIN / a) break;
-                            } else {
-                                if (b > 0 && a < INT64_MIN / b) break;
-                                if (b < 0 && a < INT64_MAX / b) break;
-                            }
-                        }
-                        emitConstant(a * b); return;
+                        emitConstant(intMulExact(lv, rv)); return;
                     case TokenType::DIVIDE:
-                        if (b == 0) break;
-                        // INT64_MIN / -1 overflows
-                        if (a == INT64_MIN && b == -1) break;
-                        emitConstant(static_cast<double>(a) / static_cast<double>(b)); return;
+                        // `/` yields a float. A zero divisor is left unfolded so
+                        // the runtime raises its usual error.
+                        if (toDouble(rv) == 0.0) break;
+                        emitConstant(toDouble(lv) / toDouble(rv)); return;
                     case TokenType::MODULO:
-                        if (b == 0) break;
-                        // INT64_MIN % -1 overflows
-                        if (a == INT64_MIN && b == -1) break;
-                        emitConstant(a % b); return;   // int64 % int64 stays an int
-                    case TokenType::AMPERSAND:
-                        emitConstant(a & b); return;
-                    case TokenType::PIPE:
-                        emitConstant(a | b); return;
-                    case TokenType::CARET:
-                        emitConstant(a ^ b); return;
-                    case TokenType::LESS_LESS:
-                        if (b < 0 || b >= 64) emitConstant(static_cast<int64_t>(0));
-                        else emitConstant(static_cast<int64_t>(static_cast<uint64_t>(a) << b));
-                        return;
-                    case TokenType::GREATER_GREATER:
-                        if (b < 0 || b >= 64) emitConstant(a < 0 ? static_cast<int64_t>(-1) : static_cast<int64_t>(0));
-                        else emitConstant(a >> b);
-                        return;
-                    default: break;
+                        // A boxed divisor is never zero, so only an inline zero
+                        // needs to be left for the runtime to reject.
+                        if (rv.isInt() && rv.asInt() == 0) break;
+                        emitConstant(intModExact(lv, rv)); return;
+                    default:
+                        break;
+                }
+                // Bitwise operators stay 64-bit for inline operands (the
+                // documented contract, including shift-count clamping). A
+                // BigInt operand is not folded here — it takes the arithmetic
+                // path at runtime instead.
+                if (lv.isInt() && rv.isInt()) {
+                    const int64_t a = lv.asInt();
+                    const int64_t b = rv.asInt();
+                    switch (expr.op.type) {
+                        case TokenType::AMPERSAND:
+                            emitConstant(a & b); return;
+                        case TokenType::PIPE:
+                            emitConstant(a | b); return;
+                        case TokenType::CARET:
+                            emitConstant(a ^ b); return;
+                        case TokenType::LESS_LESS:
+                            if (b < 0 || b >= 64) emitConstant(static_cast<int64_t>(0));
+                            else emitConstant(static_cast<int64_t>(static_cast<uint64_t>(a) << b));
+                            return;
+                        case TokenType::GREATER_GREATER:
+                            if (b < 0 || b >= 64) emitConstant(a < 0 ? static_cast<int64_t>(-1) : static_cast<int64_t>(0));
+                            else emitConstant(a >> b);
+                            return;
+                        default: break;
+                    }
                 }
             } else {
                 double a = toDouble(lv);
@@ -372,6 +374,8 @@ void Compiler::visitUnaryExpr(const UnaryExpr& expr) {
             isNumeric(lit->value)) {
             if (lit->value.isInt())
                 emitConstant(-lit->value.asInt());
+            else if (lit->value.isBigInt())
+                emitConstant(intNegateExact(lit->value));
             else
                 emitConstant(-lit->value.asDouble());
             return;
@@ -391,7 +395,8 @@ void Compiler::visitUnaryExpr(const UnaryExpr& expr) {
         }
         if (expr.op.type == TokenType::TILDE &&
             lit->value.isInt()) {
-            // ~int_literal → constant fold
+            // Only inline operands fold here; a boxed integer operand is left to
+            // the runtime, which applies the big-integer bitwise rules.
             emitConstant(~lit->value.asInt());
             return;
         }

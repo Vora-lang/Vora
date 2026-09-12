@@ -9,6 +9,94 @@
 namespace vora {
 
 // =========================================================================
+// Exact integer arithmetic
+//
+// Integers are a hybrid of inline Int and heap BigInt.  These helpers keep that
+// split invisible to the operators: each accepts either representation, computes
+// exactly, and returns a Value that is inline whenever the result fits — which
+// is what stops a value from acquiring two different identities (and so two
+// different dict keys) depending on how it was produced.
+//
+// Every helper requires both operands to be integers; callers must have checked
+// isNumeric() and excluded the double case first.
+// =========================================================================
+
+namespace {
+
+/// @brief Convert an integer Value (inline or boxed) to BigInt.
+BigInt toBigInt(const Value& v) {
+    if (v.isBigInt()) return v.asBigInt()->value;
+    return BigInt::fromInt64(v.asInt());
+}
+
+/// @brief Box a BigInt result, which demotes to inline when it fits.
+Value fromBigInt(BigInt b) {
+    if (b.fitsInt64() && b.toInt64() <= INT47_MAX && b.toInt64() >= INT47_MIN) {
+        return Value(b.toInt64());
+    }
+    return Value(GcHeap::instance().alloc<GcBigInt>(std::move(b)));
+}
+
+} // namespace
+
+Value intAddExact(const Value& a, const Value& b) {
+    if (a.isInt() && b.isInt()) {
+        // Both inline: each is within ±2^45, so the sum cannot overflow int64.
+        return Value(a.asInt() + b.asInt());
+    }
+    return fromBigInt(BigInt::add(toBigInt(a), toBigInt(b)));
+}
+
+Value intSubExact(const Value& a, const Value& b) {
+    if (a.isInt() && b.isInt()) {
+        return Value(a.asInt() - b.asInt());
+    }
+    return fromBigInt(BigInt::sub(toBigInt(a), toBigInt(b)));
+}
+
+Value intMulExact(const Value& a, const Value& b) {
+    if (a.isInt() && b.isInt()) {
+        // The product of two inline ints can exceed int64, so widen first —
+        // multiplying in int64 would be signed overflow (undefined behaviour).
+        const int64_t ai = a.asInt();
+        const int64_t bi = b.asInt();
+        if (ai == 0 || bi == 0) return Value(static_cast<int64_t>(0));
+        const __int128 product = static_cast<__int128>(ai) * static_cast<__int128>(bi);
+        if (product >= INT64_MIN && product <= INT64_MAX) {
+            return Value(static_cast<int64_t>(product));
+        }
+        return fromBigInt(BigInt::mul(BigInt::fromInt64(ai), BigInt::fromInt64(bi)));
+    }
+    return fromBigInt(BigInt::mul(toBigInt(a), toBigInt(b)));
+}
+
+Value intModExact(const Value& a, const Value& b) {
+    // Truncated remainder (sign follows the dividend), matching C `%` and so
+    // matching what Vora's inline-integer `%` already did.
+    if (a.isInt() && b.isInt()) {
+        const int64_t ai = a.asInt();
+        const int64_t bi = b.asInt();
+        if (ai == INT64_MIN && bi == -1) {
+            return Value(static_cast<int64_t>(0));
+        }
+        return Value(ai % bi);
+    }
+    BigInt q, r;
+    if (!BigInt::divModTrunc(toBigInt(a), toBigInt(b), q, r)) {
+        return Value(nullptr);
+    }
+    return fromBigInt(std::move(r));
+}
+
+Value intNegateExact(const Value& a) {
+    if (a.isInt()) {
+        // -(-2^45) is 2^45, which is out of inline range, so this can box.
+        return Value(-a.asInt());
+    }
+    return fromBigInt(BigInt::negate(toBigInt(a)));
+}
+
+// =========================================================================
 // isTruthy
 //
 // Python-style truthiness:
@@ -20,6 +108,7 @@ bool isTruthy(const Value& value) {
     if (value.isNull()) return false;
     if (value.isBool()) return value.asBool();
     if (value.isInt()) return value.asInt() != 0;
+    if (value.isBigInt()) return !value.asBigInt()->value.isZero();
     if (value.isDouble()) return value.asDouble() != 0.0;
     if (value.isGcString()) return !value.asGcString()->value.empty();
     if (value.isArray()) return !value.asArray()->elements.empty();
@@ -34,9 +123,10 @@ bool isTruthy(const Value& value) {
 // =========================================================================
 
 bool valuesEqual(const Value& a, const Value& b) {
-    // Cross-type numeric equality: 42 == 42.0
+    // Cross-type numeric equality: 42 == 42.0.  Exact, so that 2^70 and
+    // 2^70 + 1 never compare equal merely because both round to one double.
     if (isNumeric(a) && isNumeric(b))
-        return toDouble(a) == toDouble(b);
+        return numericValuesEqual(a, b);
 
     if (a.dispatchTag() != b.dispatchTag()) return false;
 
@@ -78,11 +168,7 @@ int valuesCompare(const Value& a, const Value& b) {
     if (!isNumeric(a) || !isNumeric(b)) {
         return 0;
     }
-    double da = toDouble(a);
-    double db = toDouble(b);
-    if (da < db) return -1;
-    if (da > db) return 1;
-    return 0;
+    return numericValuesCompare(a, b);
 }
 
 // =========================================================================
@@ -92,18 +178,11 @@ int valuesCompare(const Value& a, const Value& b) {
 Value addValues(const Value& a, const Value& b, bool& error) {
     error = false;
 
-    // int + int → int (with overflow detection); otherwise promote to double
+    // int + int → int (exact, boxing only when the sum leaves inline range);
+    // any float operand keeps the historical double result.
     if (isNumeric(a) && isNumeric(b)) {
-        if (a.isInt() && b.isInt()) {
-            int64_t av = a.asInt();
-            int64_t bv = b.asInt();
-            // Detect signed overflow: (av > 0 && bv > INT64_MAX - av) ||
-            //                       (av < 0 && bv < INT64_MIN - av)
-            if ((bv > 0 && av > INT64_MAX - bv) ||
-                (bv < 0 && av < INT64_MIN - bv)) {
-                return Value(static_cast<double>(av) + static_cast<double>(bv));
-            }
-            return Value(av + bv);
+        if (!a.isDouble() && !b.isDouble()) {
+            return intAddExact(a, b);
         }
         return Value(toDouble(a) + toDouble(b));
     }

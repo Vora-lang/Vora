@@ -107,6 +107,9 @@ static std::string constantToString(const Value& value) {
     if (value.isInt()) {
         return std::to_string(value.asInt());
     }
+    if (value.isBigInt()) {
+        return value.asBigInt()->value.toDecimal();
+    }
     if (value.isDouble()) {
         double d = value.asDouble();
         if (std::floor(d) == d) return std::to_string(static_cast<int64_t>(d));

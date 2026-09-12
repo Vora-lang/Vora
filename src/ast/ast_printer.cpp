@@ -43,6 +43,7 @@ static std::string literalToShortString(const Value& v) {
         case ValueTag::Null:   return "null";
         case ValueTag::Bool:   return v.asBool() ? "true" : "false";
         case ValueTag::Int:    return std::to_string(v.asInt());
+        case ValueTag::BigInt: return v.asBigInt()->value.toDecimal();
         case ValueTag::GcString: return v.asGcString()->value;
         case ValueTag::Array: {
             std::string out = "[";
