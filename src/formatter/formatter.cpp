@@ -1,6 +1,7 @@
 #include "formatter.h"
 
 #include "../lexer/token.h"
+#include "../lexer/lexer.h"
 #include "../runtime/value.h"
 
 #include <charconv>
@@ -11,6 +12,228 @@
 
 namespace vora {
 
+// Defined below, next to the other literal rendering.
+static std::string formatFloatLiteral(double d);
+
+// =========================================================================
+// Statement separation (ASI safety)
+//
+// Vora terminates statements by newline (ASI) when the next token cannot
+// continue the expression.  The formatter therefore drops redundant semicolons,
+// but that is only safe while the following statement cannot be absorbed:
+//
+//     let b1 = 0
+//     [a1, b1] = [10, 20]      // parsed as 0[a1, b1] = ... without a ';'
+//
+// so a separator is emitted exactly where ASI would not supply one.
+// =========================================================================
+
+/// @brief First character of the first line of code, skipping comments.
+static char firstCodeChar(const std::string& text) {
+    size_t i = 0;
+    while (i < text.size()) {
+        while (i < text.size() && (text[i] == ' ' || text[i] == '\t' ||
+                                   text[i] == '\n' || text[i] == '\r')) {
+            i++;
+        }
+        if (i + 1 < text.size() && text[i] == '/' &&
+            (text[i + 1] == '/' || text[i + 1] == '*')) {
+            if (text[i + 1] == '/') {
+                while (i < text.size() && text[i] != '\n') i++;
+            } else {
+                const size_t end = text.find("*/", i + 2);
+                i = (end == std::string::npos) ? text.size() : end + 2;
+            }
+            continue;
+        }
+        break;
+    }
+    return i < text.size() ? text[i] : '\0';
+}
+
+/// @brief True when @p next must be preceded by a ';' to keep it separate.
+///
+/// Any statement that begins with a token able to continue the previous
+/// expression would otherwise be absorbed into it by ASI.
+static bool needsStatementSeparator(const std::string& next) {
+    switch (firstCodeChar(next)) {
+        case '[':   // indexing / destructuring assignment
+        case '(':   // call on the previous value
+        case '.':   // property access
+        case '+':   // binary plus, or prefix ++
+        case '-':   // binary minus, or prefix --
+        case '*':
+        case '/':
+        case '%':
+        case '<':
+        case '>':
+        case '&':
+        case '|':
+        case '^':
+        case '!':
+        case '~':
+        case '?':
+            return true;
+        default:
+            return false;
+    }
+}
+// =========================================================================
+// Source literals
+//
+// valueToString() renders a value for *display*: a string comes out as its bare
+// content, with no quotes.  Emitting that into source is wrong.  A dict key or a
+// match pattern that was a string literal came back unquoted, so
+// `"never-matches-this" => 1` became `never-matches-this => 1` (an arithmetic
+// expression) and `{"a b": 1}` became `{a b: 1}`.  These helpers render a value
+// the way it has to appear in *source*.
+// =========================================================================
+
+/// @brief Render a string as a quoted, escaped source literal.
+static std::string quoteString(const std::string& text) {
+    std::string out(1, '"');
+    size_t i = 0;
+    while (i < text.size()) {
+        // An interpolation region is *code*, not string content: copy it through
+        // verbatim, tracking brace depth and skipping nested string literals so an
+        // inner quote or brace cannot end it early.  This mirrors the lexer, and it
+        // is why regions must not be escaped: escaping the inner quotes of
+        // `"${"inner ${x}"}"` produced text the lexer could not read back, which is
+        // what made the formatter emit an unparseable file for interpolated strings.
+        if (text[i] == '$' && i + 1 < text.size() && text[i + 1] == '{') {
+            size_t j = i + 2;
+            int depth = 1;
+            while (j < text.size() && depth > 0) {
+                const char c = text[j];
+                if (c == '"' || c == '\'') {
+                    j++;
+                    while (j < text.size()) {
+                        if (text[j] == '\\' && j + 1 < text.size()) { j += 2; continue; }
+                        if (text[j] == c) { j++; break; }
+                        j++;
+                    }
+                    continue;
+                }
+                if (c == '{') depth++;
+                else if (c == '}') depth--;
+                j++;
+            }
+            out += text.substr(i, j - i);
+            i = j;
+            continue;
+        }
+        // Ordinary content: escapes and quotes have to be put back.
+        const char c = text[i];
+        if (c == '\"') {
+            out += "\\\"";
+        } else if (c == '\\') {
+            out += "\\\\";
+        } else if (c == '\n') {
+            out += "\\n";
+        } else if (c == '\r') {
+            out += "\\r";
+        } else if (c == '\t') {
+            out += "\\t";
+        } else if (c == kEscapedDollar) {
+            out += "\\$";
+        } else {
+            out += c;
+        }
+        i++;
+    }
+    out += '"';
+    return out;
+}
+
+/// @brief True when a dict key can be written unquoted (`{k: 1}`).
+///
+/// A bare key must scan as a single identifier and must not be a reserved word:
+/// `{"if": 1}` has to keep its quotes because `if` cannot start an expression,
+/// and `{"a b": 1}` obviously cannot either.  Anything else is quoted, which is
+/// always equivalent since a bare key and a string key denote the same entry.
+static bool isBareDictKey(const std::string& name) {
+    if (name.empty() || Lexer::isReservedWord(name)) return false;
+    for (size_t i = 0; i < name.size(); i++) {
+        const unsigned char u = static_cast<unsigned char>(name[i]);
+        const bool ok = std::isalpha(u) != 0 || name[i] == '_' || u > 127 ||
+                        (i > 0 && std::isdigit(u) != 0);
+        if (!ok) return false;
+    }
+    return true;
+}
+
+/// @brief Render a constant value as it must appear in source.
+static std::string valueToSourceLiteral(const Value& v) {
+    if (v.isGcString()) return quoteString(v.asGcString()->value);
+    if (v.isBool()) return v.asBool() ? "true" : "false";
+    if (v.isNull()) return "null";
+    if (v.isInt()) return std::to_string(v.asInt());
+    if (v.isBigInt()) return v.asBigInt()->value.toDecimal();
+    if (v.isDouble()) return formatFloatLiteral(v.asDouble());
+    // Nothing else can appear as a literal in source; fall back to display.
+    return valueToString(v);
+}
+// =========================================================================
+// Token juxtaposition
+//
+// The formatter renders fragments and concatenates them.  Concatenation is
+// only safe when the result re-lexes into the same two tokens: `not` followed
+// directly by its operand produces `nota`, a single identifier, which silently
+// rewrites the program (and `-` before a negative operand produces `--5`,
+// which reads as a decrement).  Rather than patch individual call sites, the
+// rule below decides from the characters alone whether a space is required.
+// =========================================================================
+
+/// @brief True for characters that continue an identifier or a number.
+static bool isWordChar(char c) {
+    const unsigned char u = static_cast<unsigned char>(c);
+    return std::isalnum(u) != 0 || c == '_' || u > 127;
+}
+
+/// @brief True when the lexer would fuse @p a and @p b into one longer token.
+static bool isFusingPair(char a, char b) {
+    switch (a) {
+        case '?': return b == '?' || b == '.';
+        case '+': return b == '+' || b == '=';
+        case '-': return b == '-' || b == '=';
+        case '*': return b == '*' || b == '=';
+        // `//` and `/*` would start a comment.
+        case '/': return b == '/' || b == '*' || b == '=';
+        case '%': return b == '=';
+        case '=': return b == '=' || b == '>';
+        case '<': return b == '<' || b == '=';
+        case '>': return b == '>' || b == '=';
+        case '!': return b == '=';
+        case '&': return b == '&' || b == '=';
+        case '|': return b == '|' || b == '=';
+        case '^': return b == '=';
+        default:  return false;
+    }
+}
+
+/// @brief See SourceFormatter::juxtapositionFuses, which wraps this.
+static bool lexemesFuse(const std::string& left, const std::string& right) {
+    if (left.empty() || right.empty()) return false;
+    const char a = left.back();
+    const char b = right.front();
+    // Two word characters run together: `not`+`a` is `nota`, and `x`+`1` is `x1`.
+    if (isWordChar(a) && isWordChar(b)) return true;
+    // A number beside a '.' becomes one float literal (`1`+`.5`).
+    if (a == '.' && std::isdigit(static_cast<unsigned char>(b)) != 0) return true;
+    if (std::isdigit(static_cast<unsigned char>(a)) != 0 && b == '.') return true;
+    return isFusingPair(a, b);
+}
+
+bool SourceFormatter::juxtapositionFuses(const std::string& left, const std::string& right) {
+    return lexemesFuse(left, right);
+}
+
+/// @brief Juxtapose two fragments, inserting a space only where needed.
+static std::string fuseLexemes(const std::string& left, const std::string& right) {
+    return lexemesFuse(left, right)
+               ? left + " " + right
+               : left + right;
+}
 // =========================================================================
 // Float literal rendering
 // =========================================================================
@@ -305,12 +528,22 @@ std::string SourceFormatter::formatStmtWithComments(const Stmt& stmt) {
 std::string SourceFormatter::formatStatements(
     const std::vector<std::unique_ptr<Stmt>>& stmts
 ) {
+    // Render first so the separator decision can look ahead without formatting
+    // the next statement twice.
+    std::vector<std::string> rendered;
+    rendered.reserve(stmts.size());
+    for (const auto& stmt : stmts) {
+        rendered.push_back(formatStmtWithComments(*stmt));
+    }
     std::stringstream ss;
-    for (size_t i = 0; i < stmts.size(); ++i) {
+    for (size_t i = 0; i < rendered.size(); ++i) {
         if (i > 0) {
             ss << nl();
         }
-        ss << formatStmtWithComments(*stmts[i]);
+        ss << rendered[i];
+        if (i + 1 < rendered.size() && needsStatementSeparator(rendered[i + 1])) {
+            ss << ";";
+        }
     }
     return ss.str();
 }
@@ -322,7 +555,16 @@ std::string SourceFormatter::formatParams(const std::vector<ParamDecl>& params) 
         if (i > 0) {
             ss << ", ";
         }
-        ss << params[i].name;
+        // A rest parameter is spelled `...name`; dropping the marker turned
+        // `func f(a, ...rest)` into `func f(a, rest)`, which silently changes
+        // the function's arity and what `rest` receives.
+        if (params[i].pattern) {
+            ss << (params[i].isRest ? "..." : "");
+            ss << formatBindingPattern(*params[i].pattern);
+        } else {
+            ss << (params[i].isRest ? "..." : "");
+            ss << params[i].name;
+        }
         if (params[i].defaultValue) {
             ss << " = " << formatExpr(*params[i].defaultValue, 0);
         }
@@ -339,34 +581,9 @@ std::string SourceFormatter::visitLiteralExpr(const LiteralExpr& expr) {
     const auto& v = expr.value;
     if (v.isNull()) return "null";
     if (v.isBool()) return v.asBool() ? "true" : "false";
-    if (v.isGcString()) {
-        // Output as a quoted string literal. The value stored is the
-        // decoded string content (no surrounding quotes), so we add them.
-        // Simple escaping: backslash + double-quote.
-        std::string out = "\"";
-        for (size_t i = 0; i < v.asGcString()->value.size(); i++) {
-            char c = v.asGcString()->value[i];
-            if (c == '"') {
-                out += "\\\"";
-            } else if (c == '\\') {
-                out += "\\\\";
-            } else if (c == '\n') {
-                out += "\\n";
-            } else if (c == '\r') {
-                out += "\\r";
-            } else if (c == '\t') {
-                out += "\\t";
-            } else if (c == kEscapedDollar) {
-                // Escaped dollar survives as `\$` so the output parses back
-                // to the same value (otherwise `${` would re-interpolate).
-                out += "\\$";
-            } else {
-                out += c;
-            }
-        }
-        out += "\"";
-        return out;
-    }
+    // A quoted string literal: the stored value is the decoded content, so the
+    // quotes and escapes have to be put back (see quoteString).
+    if (v.isGcString()) return quoteString(v.asGcString()->value);
     if (v.isInt()) return std::to_string(v.asInt());
     // Big integers keep their exact digits: the formatter has to round-trip an
     // oversized literal unchanged, and decimal is the only lossless way to write
@@ -403,11 +620,10 @@ std::string SourceFormatter::visitGroupingExpr(const GroupingExpr& expr) {
 }
 
 std::string SourceFormatter::visitUnaryExpr(const UnaryExpr& expr) {
-    std::stringstream ss;
-    ss << expr.op.lexeme;
-    // No space after ! or - unary operator
-    ss << formatExpr(*expr.right, PREC_UNARY);
-    return ss.str();
+    // Usually no space (`-x`, `!x`), but one is required when juxtaposition
+    // would fuse: `not` before its operand (`not a`), or `-` before a negative
+    // operand (`- -x`, since `--x` would lex as a decrement).
+    return fuseLexemes(expr.op.lexeme, formatExpr(*expr.right, PREC_UNARY));
 }
 
 std::string SourceFormatter::visitVariableExpr(const VariableExpr& expr) {
@@ -473,14 +689,21 @@ std::string SourceFormatter::visitDictExpr(const DictExpr& expr) {
         if (i > 0) {
             ss << ", ";
         }
-        // Dict keys are identifiers (VariableExpr) or string literals —
-        // both represent plain string keys, so output without quotes.
+        // `{k: 1}` stores a bare identifier, `{"k": 1}` a string literal, and
+        // `{[expr]: 1}` anything else.  Only the first may be written unquoted:
+        // writing a string key bare silently changes the key, and writing a
+        // computed key bare turns an evaluated key into a literal one.
+        // A string key is written bare only when that is equivalent: a bare key
+        // has to scan as one non-reserved identifier, so `{k: 1}` keeps its
+        // spelling while `{"a b": 1}` and `{"if": 1}` keep their quotes.
+        // Any other key expression is emitted as-is — `{[x]: 1}` stores an array
+        // key and formatExpr already produces the brackets.
         const Expr* key = expr.pairs[i].first.get();
-        if (auto* lit = dynamic_cast<const LiteralExpr*>(key)) {
-            if (lit->value.isGcString()) {
+        if (const auto* lit = dynamic_cast<const LiteralExpr*>(key)) {
+            if (lit->value.isGcString() && isBareDictKey(lit->value.asGcString()->value)) {
                 ss << lit->value.asGcString()->value;
             } else {
-                ss << formatExpr(*key, 0);
+                ss << valueToSourceLiteral(lit->value);
             }
         } else {
             ss << formatExpr(*key, 0);
@@ -542,11 +765,9 @@ std::string SourceFormatter::visitIncDecExpr(const IncDecExpr& expr) {
     std::stringstream ss;
 
     if (expr.isPrefix) {
-        ss << expr.op.lexeme;
-        ss << formatExpr(*expr.target, PREC_UNARY);
+        ss << fuseLexemes(expr.op.lexeme, formatExpr(*expr.target, PREC_UNARY));
     } else {
-        ss << formatExpr(*expr.target, PREC_UNARY);
-        ss << expr.op.lexeme;
+        ss << fuseLexemes(formatExpr(*expr.target, PREC_UNARY), expr.op.lexeme);
     }
     return ss.str();
 }
@@ -591,11 +812,11 @@ std::string SourceFormatter::visitMatchExpr(const MatchExpr& expr) {
             if (p.kind == PatternKind::Wildcard) {
                 ss << "_";
             } else if (p.kind == PatternKind::Literal) {
-                ss << valueToString(p.literal);
+                ss << valueToSourceLiteral(p.literal);
             } else if (p.kind == PatternKind::Range) {
-                ss << valueToString(p.rangeLow);
+                ss << valueToSourceLiteral(p.rangeLow);
                 ss << (p.rangeInclusive ? "..=" : "..");
-                ss << valueToString(p.rangeHigh);
+                ss << valueToSourceLiteral(p.rangeHigh);
             }
         }
 
@@ -609,6 +830,10 @@ std::string SourceFormatter::visitMatchExpr(const MatchExpr& expr) {
             for (size_t si = 0; si < stmts.size(); si++) {
                 ss << nl();
                 ss << formatStmtWithComments(*stmts[si]);
+                if (si + 1 < stmts.size()) {
+                    const std::string next = formatStmtWithComments(*stmts[si + 1]);
+                    if (needsStatementSeparator(next)) ss << ";";
+                }
             }
             decIndent();
             ss << nl() << "}";
@@ -630,6 +855,7 @@ std::string SourceFormatter::visitMatchExpr(const MatchExpr& expr) {
 
 std::string SourceFormatter::visitFuncExpr(const FuncExpr& expr) {
     std::stringstream ss;
+    if (expr.isAsync) ss << "async ";
     ss << "func";
     ss << formatParams(expr.params);
     ss << " ";
@@ -641,6 +867,8 @@ std::string SourceFormatter::visitFuncExpr(const FuncExpr& expr) {
     for (size_t i = 0; i < stmts.size(); i++) {
         ss << formatStmtWithComments(*stmts[i]);
         if (i + 1 < stmts.size()) {
+            const std::string next = formatStmtWithComments(*stmts[i + 1]);
+            if (needsStatementSeparator(next)) ss << ";";
             ss << nl();
         }
     }
@@ -763,7 +991,10 @@ std::string SourceFormatter::formatBindingPattern(const BindingPattern& pattern)
                 if (i > 0) result += ", ";
                 const auto& prop = obj.properties[i];
                 if (prop.isShorthand) {
-                    result += prop.key;
+                    // `{y = 5}` is shorthand *with* a default: the default lives
+                    // on the sub-pattern, so printing only the key dropped it and
+                    // silently changed what the destructuring binds.
+                    result += formatBindingPattern(*prop.pattern);
                 } else {
                     result += prop.key + ": " + formatBindingPattern(*prop.pattern);
                 }
@@ -942,6 +1173,10 @@ std::string SourceFormatter::visitCForStmt(const CForStmt& stmt) {
 
 std::string SourceFormatter::visitFuncStmt(const FuncStmt& stmt) {
     std::stringstream ss;
+    // `async` must be reproduced: without it the body's `await` becomes illegal
+    // and the program stops compiling.  The class-body parser has no async form,
+    // so `isStatic` and `isAsync` cannot both be set here.
+    if (stmt.isAsync) ss << "async ";
     if (stmt.isStatic) ss << "this.";
     ss << "func " << stmt.name;
     ss << formatParams(stmt.params);

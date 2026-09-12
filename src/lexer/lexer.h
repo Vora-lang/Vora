@@ -51,6 +51,17 @@ namespace vora {
  */
 class Lexer {
 public:
+    /// @brief True when @p text is a reserved word rather than an identifier.
+    ///
+    /// Needed by anything that must decide whether a name can be written
+    /// unquoted in source — the formatter, for a dict key such as `{k: 1}`,
+    /// where `{"if": 1}` must keep its quotes because `if` is not an
+    /// identifier.
+    /// @param text Candidate name.
+    /// @return true when the lexer would scan @p text as a keyword.
+    static bool isReservedWord(const std::string& text) {
+        return keywords.find(text) != keywords.end();
+    }
     /// @brief Return every comment seen while scanning, in source order.
     /// @return Const reference to the collected trivia.
     const std::vector<Comment>& comments() const { return comments_; }
@@ -112,6 +123,7 @@ private:
 private:
     /// @brief Lookup table mapping keyword strings to their TokenType values.
     static const std::unordered_map<std::string, TokenType> keywords;
+
 
 private:
     /**

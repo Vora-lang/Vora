@@ -279,6 +279,23 @@ private:
     /// @param leading True when it occupies its own line(s), false when it
     ///                trails a statement on the same line.
     /// @return The rendered comment, already indented.
+public:
+    /// @brief True when writing @p left immediately before @p right would be
+    ///        re-lexed into a different token sequence.
+    ///
+    /// The rule is character-based, so it holds for any fragment pair rather
+    /// than for a list of known-bad cases: word characters fuse into one
+    /// identifier (`not`+`a`), a number beside a '.' fuses into one float
+    /// literal, and operator pairs that the lexer accepts as a longer operator
+    /// (`--`, `**`, `//`, `=>`, ...) fuse likewise.
+    ///
+    /// @param left  Fragment emitted first.
+    /// @param right Fragment emitted immediately after.
+    /// @return true when a separating space is required.
+    static bool juxtapositionFuses(const std::string& left, const std::string& right);
+
+private:
+
     std::string formatComment(const Comment& comment, bool leading);
 
     /// @brief Render a statement together with its attached comment trivia.

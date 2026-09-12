@@ -567,3 +567,88 @@ TEST_CASE("fmt_keeps_comment_text_verbatim") {
     const std::string out = fmt("// let x = 1  +  2   <- untouched\nlet a = 1");
     CHECK(out.find("// let x = 1  +  2   <- untouched") != std::string::npos);
 }
+
+// ============================================================================
+// Fidelity regressions
+//
+// Each of these classes used to make `vora fmt -w` emit something that either
+// did not parse or silently meant something else. The rule is that the output
+// must always re-lex into the same program.
+// ============================================================================
+
+TEST_CASE("fmt_does_not_fuse_adjacent_tokens") {
+    // `not` is a word: juxtaposing it with its operand produced `nota`, an
+    // identifier, which silently rewrote the program.
+    CHECK(trimmed(fmt("print(not a)")) == "print(not a)");
+    // Two minuses would lex as a decrement.
+    CHECK(trimmed(fmt("print(- -5)")) == "print(- -5)");
+    // The tight forms must stay tight.
+    CHECK(trimmed(fmt("print(-x)")) == "print(-x)");
+    CHECK(trimmed(fmt("print(!x)")) == "print(!x)");
+    CHECK(trimmed(fmt("print(~x)")) == "print(~x)");
+    CHECK(trimmed(fmt("print(x++)")) == "print(x++)");
+    CHECK(trimmed(fmt("print(++x)")) == "print(++x)");
+}
+
+TEST_CASE("fmt_juxtaposition_rule") {
+    // The rule is character-based, so it covers pairs no test enumerates.
+    CHECK(SourceFormatter::juxtapositionFuses("not", "a"));
+    CHECK(SourceFormatter::juxtapositionFuses("await", "x"));
+    CHECK(SourceFormatter::juxtapositionFuses("-", "-5"));
+    CHECK(SourceFormatter::juxtapositionFuses("+", "+x"));
+    CHECK(SourceFormatter::juxtapositionFuses("<", "<x"));
+    CHECK(SourceFormatter::juxtapositionFuses("1", "e5"));
+    CHECK(SourceFormatter::juxtapositionFuses("1", ".5"));
+    CHECK(SourceFormatter::juxtapositionFuses("/", "/x"));
+    CHECK(SourceFormatter::juxtapositionFuses("/", "*x"));
+    // Safe pairs must not gain a space.
+    CHECK_FALSE(SourceFormatter::juxtapositionFuses("-", "x"));
+    CHECK_FALSE(SourceFormatter::juxtapositionFuses("!", "x"));
+    CHECK_FALSE(SourceFormatter::juxtapositionFuses("f", "("));
+    CHECK_FALSE(SourceFormatter::juxtapositionFuses("x", ")"));
+    CHECK_FALSE(SourceFormatter::juxtapositionFuses("a", ","));
+}
+
+TEST_CASE("fmt_keeps_async_and_rest_and_param_patterns") {
+    // Dropping `async` made the body's `await` illegal.
+    const std::string f = fmt("async func f(a, ...rest) { return await 1 }");
+    CHECK(f.find("async func f") != std::string::npos);
+    CHECK(f.find("...rest") != std::string::npos);
+    // Dropping the pattern left an empty parameter.
+    const std::string g = fmt("func g([x, y]) { return x }");
+    CHECK(g.find("[x, y]") != std::string::npos);
+    // Shorthand destructuring keeps its default.
+    const std::string h = fmt("let {x, y = 1} = obj");
+    CHECK(h.find("{x, y = 1}") != std::string::npos);
+}
+
+TEST_CASE("fmt_keeps_string_keys_and_patterns_quoted") {
+    // A string in a name-like position used to be emitted as display text, so
+    // it lost its quotes.
+    CHECK(trimmed(fmt("let d = {\"a b\": 1}")) == "let d = {\"a b\": 1}");
+    CHECK(trimmed(fmt("let d = {\"if\": 1}")) == "let d = {\"if\": 1}");
+    // A bare identifier key keeps its unquoted spelling.
+    CHECK(trimmed(fmt("let d = {k: 1}")) == "let d = {k: 1}");
+    // `match` string patterns are literals, not arithmetic.
+    const std::string m = fmt("let r = match v { \"never-matches-this\" => 1, _ => 2 }");
+    CHECK(m.find("\"never-matches-this\"") != std::string::npos);
+}
+
+TEST_CASE("fmt_keeps_interpolation_regions_intact") {
+    // An interpolation region is code: escaping its inner quotes produced a
+    // file the lexer could not read back.
+    const std::string out = fmt("print(\"${\"inner ${x}\"}\")");
+    CHECK(out.find("${\"inner ${x}\"}") != std::string::npos);
+    CHECK(out.find("\\\"inner") == std::string::npos);
+    CHECK(isIdempotent("print(\"${\"inner ${x}\"}\")"));
+}
+
+TEST_CASE("fmt_separates_statements_asi_would_merge") {
+    // Without a ';' this reparsed as `let b = 0[a] = ...`.
+    const std::string out = fmt("let b = 0;" + std::string(1, char(10)) + "[a, b] = [1, 2]");
+    CHECK(out.find("let b = 0;") != std::string::npos);
+    // A statement that cannot be absorbed needs no separator.
+    const std::string plain = fmt("let a = 1;" + std::string(1, char(10)) + "let b = 2");
+    CHECK(plain.find("let a = 1;") == std::string::npos);
+    CHECK(isIdempotent("let b = 0;" + std::string(1, char(10)) + "[a, b] = [1, 2]"));
+}
