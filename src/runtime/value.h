@@ -941,6 +941,26 @@ inline double toDouble(const Value& v) {
 int numericValuesCompare(const Value& a, const Value& b);
 
 /**
+ * @brief Three-way comparison with an inline fast path for two inline ints.
+ *
+ * Two inline ints compare exactly in int64, so the common case — loop bounds,
+ * indices, counters — avoids both a function call and any floating-point
+ * conversion.  Everything else defers to numericValuesCompare().
+ *
+ * @param a Left operand.  Must be numeric.
+ * @param b Right operand.  Must be numeric.
+ * @return -1, 0 or 1.
+ */
+inline int compareNumericFast(const Value& a, const Value& b) {
+    if (a.isInt() && b.isInt()) {
+        const int64_t ai = a.asInt();
+        const int64_t bi = b.asInt();
+        return ai < bi ? -1 : (ai > bi ? 1 : 0);
+    }
+    return numericValuesCompare(a, b);
+}
+
+/**
  * @brief Exact numeric equality of two numeric Values.
  *
  * Follows the language's by-value numeric rule (`42 == 42.0` is true) but

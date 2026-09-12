@@ -189,6 +189,13 @@ Value addValues(const Value& a, const Value& b, bool& error) {
     // int + int → int (exact, boxing only when the sum leaves inline range);
     // any float operand keeps the historical double result.
     if (isNumeric(a) && isNumeric(b)) {
+        if (a.isInt() && b.isInt()) {
+            // Hottest path in the language: two inline ints. Their sum cannot
+            // overflow int64 (each is within ±2^45), and Value() boxes it only
+            // if it leaves the inline range. Kept inline — routing this through
+            // intAddExact measurably slowed down tight arithmetic loops.
+            return Value(a.asInt() + b.asInt());
+        }
         if (!a.isDouble() && !b.isDouble()) {
             return intAddExact(a, b);
         }

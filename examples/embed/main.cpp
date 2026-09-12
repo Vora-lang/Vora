@@ -84,10 +84,24 @@ static int runString(VM& vm, const std::string& source,
 }
 
 // ── Helper: Value → number ─────────────────────────────────────────────
+// asDouble() handles all three numeric representations (including a boxed big
+// integer, where the conversion may round).  Returning 0.0 for anything else
+// is deliberate: a non-number reaching here is a caller bug, and the demo
+// prints it rather than hiding it.
 static double toNumber(const Value& v) {
-    if (v.isDouble()) return v.asDouble();
-    if (v.isInt()) return static_cast<double>(v.asInt());
+    if (v.isNumeric()) return v.asDouble();
     return 0.0;
+}
+
+// ── Helper: print an integer of any magnitude ──────────────────────────
+// This is the embedding contract for integers: isInt()/isBigInt() to detect
+// one, toInt64Exact() when it fits, valueToString() for arbitrary precision.
+static std::string integerToString(const Value& v) {
+    int64_t small = 0;
+    if (v.toInt64Exact(small)) {
+        return std::to_string(small) + " (fits int64)";
+    }
+    return valueToString(v) + " (beyond int64, exact digits)";
 }
 
 // ── 分隔线 ─────────────────────────────────────────────────────────────
@@ -133,7 +147,7 @@ static void demo2_native_functions() {
 
     vm.defineNative("cpp_greet", 1,
         [](const std::vector<Value>& args) -> Value {
-            auto& s = args[0].asGcString();
+            const auto s = args[0].asGcString();
             return GcHeap::instance().alloc<GcString>(
                 "Hello, " + s->value + "! (from C++)"
             );
@@ -358,6 +372,62 @@ public:
     bool hadError() const override { return hadError_; }
 };
 
+// 演示 9: 任意精度整数 — 嵌入方如何安全取用整数
+static void demo9_big_integers() {
+    sep("演示 9: 任意精度整数（混合表示）");
+
+    VM vm;
+    registerBuiltins(vm);
+
+    // Vora 侧：小整数内联，大整数自动装箱；两者对脚本都是 int
+    const char* source = R"(
+        let small = 42
+        let edge  = 35184372088831
+        let big   = 123456789012345678901234567890
+        let grown = edge * edge
+        let back  = 35184372088832 - 1
+    )";
+    if (runString(vm, source, "bigint demo") != 0) return;
+
+    struct Row { const char* name; const char* note; };
+    const Row rows[] = {
+        {"small", "内联（快路径）"},
+        {"edge",  "内联上界 2^45-1"},
+        {"big",   "装箱，30 位十进制"},
+        {"grown", "2^45-1 的平方，装箱"},
+        {"back",  "降级回内联"},
+    };
+    for (const auto& r : rows) {
+        Value v = vm.getGlobal(r.name);
+        const char* repr = v.isBigInt() ? "GcBigInt" : (v.isInt() ? "inline Int" : "other");
+        std::cout << "  " << r.name << " = " << integerToString(v)
+                  << "   [" << repr << "]  " << r.note << "\n";
+        if (!v.isInt() && !v.isBigInt()) {
+            std::cout << "    [!] 期望整数，但既不是 inline Int 也不是 GcBigInt\n";
+        }
+    }
+
+    // 两个表示在数值上必须相等：这是「一个整数一个身份」的保证
+    Value grownRoot = vm.getGlobal("grown");
+    Value backValue = vm.getGlobal("back");
+    std::cout << "  back == 2^45-1  → "
+              << (numericValuesEqual(backValue, Value(static_cast<int64_t>(35184372088831))) ? "true" : "false")
+              << "\n";
+    std::cout << "  type() 对两者都是 int → "
+              << (vm.getGlobal("grown").isInt() || vm.getGlobal("grown").isBigInt() ? "true" : "false")
+              << "\n";
+
+    // 反例：对装箱整数调用 asInt() 在 Release 下抛 RuntimeError，而不是
+    // 静默截断。这里捕获它，演示嵌入方应该如何防御。
+    try {
+        (void)grownRoot.asInt();
+        std::cout << "  [!] asInt() 竟然没有报错 — 不应发生\n";
+    } catch (const RuntimeError& e) {
+        std::cout << "  asInt() on a boxed int threw RuntimeError: " << e.what() << "\n";
+        std::cout << "    → 正确做法: 先用 toInt64Exact()，放不下再走 valueToString()\n";
+    }
+}
+
 static void demo8_custom_error_reporter() {
     sep("演示 8: 自定义 ErrorReporter — 收集错误到 C++");
 
@@ -403,7 +473,8 @@ int main() {
     demo6_objects_and_methods();
     demo7_repl_style();
     demo8_custom_error_reporter();
+    demo9_big_integers();
 
-    sep("全部 8 个演示完成!");
+    sep("全部 9 个演示完成!");
     return 0;
 }

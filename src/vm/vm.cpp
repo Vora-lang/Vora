@@ -85,6 +85,19 @@ static bool bitwiseShiftCount(const Value& v, size_t& out) {
     return true;
 }
 
+// Multiply two int64 values, reporting overflow rather than invoking UB.
+//
+// The 128-bit widening multiply is deliberate: it lowers to two `imul`
+// instructions with no call, whereas both `__builtin_mul_overflow` (which GCC
+// may lower to a `__mulodi4` libcall) and an abs/limit pre-check measurably
+// slowed down tight multiply loops.
+static inline bool mulOverflows(int64_t a, int64_t b, int64_t& out) {
+    const __int128 product = static_cast<__int128>(a) * static_cast<__int128>(b);
+    if (product < INT64_MIN || product > INT64_MAX) return true;
+    out = static_cast<int64_t>(product);
+    return false;
+}
+
 // =========================================================================
 // C3 Linearization (Python-style MRO)
 // =========================================================================
@@ -1728,8 +1741,26 @@ InterpretResult VM::run() {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for *");
                 }
                 if (aVal.isInt() && bVal.isInt()) {
-                    // Inline * inline can exceed int64, so intMulExact widens to
-                    // 128 bits before multiplying and boxes the exact product.
+                    const int64_t ai = aVal.asInt();
+                    const int64_t bi = bVal.asInt();
+                    // Both are inline ints, so |each| <= 2^45. If either
+                    // magnitude is <= 2^18 the product is below 2^63 and a plain
+                    // multiply is exact — which covers the overwhelmingly common
+                    // `x * <small constant>` shape without paying for an
+                    // overflow check at all.
+                    if ((ai >= -262144 && ai <= 262144) ||
+                        (bi >= -262144 && bi <= 262144)) {
+                        push(Value(ai * bi));
+                        break;
+                    }
+                    int64_t product = 0;
+                    // Otherwise the product can leave int64: check rather than
+                    // rely on wraparound (the previous code multiplied in int64
+                    // unguarded, which was undefined on overflow).
+                    if (!mulOverflows(ai, bi, product)) {
+                        push(Value(product));
+                        break;
+                    }
                     push(intMulExact(aVal, bVal));
                     break;
                 }
@@ -1785,7 +1816,7 @@ InterpretResult VM::run() {
                 if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for <");
                 }
-                push(numericValuesCompare(aVal, bVal) < 0);
+                push(compareNumericFast(aVal, bVal) < 0);
                 break;
             }
             case OpCode::OP_LESS_EQ_NN: {
@@ -1794,7 +1825,7 @@ InterpretResult VM::run() {
                 if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for <=");
                 }
-                push(numericValuesCompare(aVal, bVal) <= 0);
+                push(compareNumericFast(aVal, bVal) <= 0);
                 break;
             }
             case OpCode::OP_GREATER_NN: {
@@ -1803,7 +1834,7 @@ InterpretResult VM::run() {
                 if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for >");
                 }
-                push(numericValuesCompare(aVal, bVal) > 0);
+                push(compareNumericFast(aVal, bVal) > 0);
                 break;
             }
             case OpCode::OP_GREATER_EQ_NN: {
@@ -1812,7 +1843,7 @@ InterpretResult VM::run() {
                 if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for >=");
                 }
-                push(numericValuesCompare(aVal, bVal) >= 0);
+                push(compareNumericFast(aVal, bVal) >= 0);
                 break;
             }
             // --- Comparison ---
@@ -1832,7 +1863,7 @@ InterpretResult VM::run() {
                 Value b = pop();
                 Value a = pop();
                 if (isNumeric(a) && isNumeric(b)) {
-                    push(numericValuesCompare(a, b) < 0);
+                    push(compareNumericFast(a, b) < 0);
                 } else {
                     push(false);
                 }
