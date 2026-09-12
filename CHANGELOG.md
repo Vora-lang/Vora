@@ -260,6 +260,37 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   brace-aware scan; previously a syntax dead-end.
 
 ### Fixed
+- **`vora fmt` silently corrupted float literals and could emit unparseable
+  output** (pre-existing; the formatter destroyed user source on every run).
+  The formatter printed doubles with the default stream precision, which has two
+  consequences: any value with more than six significant digits was rewritten
+  (`1234.5678` became `1234.57`, `3.141592653589793` became `3.14159`), and
+  larger or smaller magnitudes came out in exponent notation
+  (`123456789.123456789` became `1.23457e+08`, `0.0000001` became `1e-07`,
+  `35184372088832.0` became `3.51844e+13`). The Vora lexer has **no** exponent
+  form — it scans `digit+ [ "." digit+ ]` — so such a line re-lexed as
+  `1.23457`, `e`, `+`, `08`, which ASI then split into two statements. When a
+  variable named `e` happened to be in scope, `let h = 1.23457e+08` silently
+  became `let h = 1.23457` **plus** `e + 8` and evaluated to a different number
+  with no diagnostic. A third defect compounded it: integral floats lost their
+  decimal point (`42.0` -> `42`), so the value came back as an **int**.
+  Floats are now rendered with `std::to_chars(chars_format::fixed)`, which emits
+  the shortest decimal that round-trips, and a `.` is always appended when the
+  result would otherwise be read as an integer. Output is therefore lossless and
+  re-parseable. Exponent notation was deliberately **not** added to the language:
+  that would be a grammar change and is out of scope here (see below).
+  Verified by a property test that renders thousands of doubles — including
+  DBL_MAX, DBL_MIN, negative zero and pseudo-random bit patterns — and asserts
+  the emitted text contains no exponent, keeps a `.`, and `stod`s back to a
+  bit-identical double, plus explicit cases for precision, integral floats and
+  big-integer literals. Corpus effect: round-trip failures drop 25 -> 23 of 160
+  files (both fixes are float-caused); formatter idempotence 149 -> 150. The
+  remaining failures are pre-existing formatter limitations in other areas
+  (approximately: `await`/`async`, the `not` operator's missing separator,
+  string escapes and match patterns, named/rest/default parameter ordering,
+  spread, relative module paths, destructuring defaults, `${` interpolation)
+  and are unchanged by this fix.
+  Tests: `tests/unit/test_formatter.cpp`, `tests/formatter/test_fmt_roundtrip.va`.
 - **Comprehensions only worked where the value stack was empty**
   (pre-existing; documented as implemented since v0.27): both desugars kept
   their working state — result container, iterator, loop variable,

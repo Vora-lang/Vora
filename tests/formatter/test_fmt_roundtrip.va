@@ -12,6 +12,56 @@ let f = false
 let nothing = null
 print(n, pi, s, t, f, nothing)
 
+// Float literals: the formatter must reproduce them losslessly, without
+// exponent notation (the lexer has none), and without dropping the decimal
+// point (which would silently turn a float into an int).
+//
+// Expectations below are deliberately computed at RUNTIME rather than written
+// as a second literal: a literal expectation would be rewritten by the
+// formatter exactly like the value under test, so symmetric corruption could
+// pass unnoticed. A division is immune to that.
+let numPrecise = 1234.5678
+assert(numPrecise == 12345678.0 / 10000.0, "1234.5678 survives formatting exactly")
+
+let numPi = 3.141592653589793
+assert(numPi == 3141592653589793.0 / 1000000000000000.0, "pi keeps all 16 digits")
+
+let numFp = 0.30000000000000004
+assert(numFp == 0.1 + 0.2, "the 0.1+0.2 result survives exactly")
+
+let numTiny = 0.0000001
+assert(numTiny == 1.0 / 10000000.0, "1e-7 written in full survives")
+
+// 9 significant digits. The ratio's mantissa (123456789) is below 2^53, so the
+// division is exact and usable as an independent expectation.
+let numNine = 1234.56789
+assert(numNine == 123456789.0 / 100000.0, "9 significant digits survive")
+// A large value with a long fraction. Its mantissa is not exactly representable,
+// so compare against a range that only the right double falls in.
+let numBig = 123456789.123456789
+assert(numBig > 123456789.1234567 and numBig < 123456789.1234568, "a long fraction survives")
+
+let numFar = 35184372088832.0
+assert(numFar == 35184372088832.0 / 1.0, "a large float literal survives")
+assert(type(numFar) == "float", "a large integral float stays a float")
+
+// Integral floats must keep their type: without the trailing ".0" these would
+// re-parse as integers.
+let numIntLike = 42.0
+assert(numIntLike == 42.0 / 1.0, "42.0 keeps its value")
+assert(type(numIntLike) == "float", "42.0 stays a float")
+assert(type(0.0) == "float", "0.0 stays a float")
+assert(type(2.0) == "float", "2.0 stays a float")
+
+// Negative zero. Its sign is NOT observable from a script: `/` raises on a zero
+// divisor, and the constant pool deduplicates doubles by value (and -0.0 == 0.0),
+// so 0.0 and -0.0 can share one constant. The formatter's "-0.0" output is
+// therefore pinned in the C++ unit test instead (fmt_float_integral_values_stay_floats).
+let numNegZero = -0.0
+assert(numNegZero == 0.0, "-0.0 parses and compares equal to 0.0")
+
+print(numPrecise, numPi, numFp, numTiny, numNine, numBig, numFar, numIntLike, numNegZero)
+
 // Big integers: the formatter must re-emit oversized literals with their exact
 // digits, so a formatted file still evaluates to the same values.
 let bigLit = 123456789012345678901234567890

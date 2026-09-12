@@ -3,9 +3,68 @@
 #include "../lexer/token.h"
 #include "../runtime/value.h"
 
+#include <charconv>
+#include <cmath>
 #include <sstream>
+#include <string>
+#include <system_error>
 
 namespace vora {
+
+// =========================================================================
+// Float literal rendering
+// =========================================================================
+
+/**
+ * @brief Render a double as a Vora float literal that is lossless and re-parseable.
+ *
+ * Two properties matter, and the previous implementation had neither:
+ *
+ *   1. **Lossless.** The value must survive a format → parse round trip
+ *      bit-for-bit. `std::to_chars` with `chars_format::fixed` and no precision
+ *      emits the *shortest* decimal that round-trips, so `1234.5678` stays
+ *      `1234.5678` instead of collapsing to six significant digits.
+ *
+ *   2. **Re-parseable, and still a float.** The lexer accepts only
+ *      `digit+ [ "." digit+ ]`, so exponent notation is unusable — emitting
+ *      `1.23457e+08` produced a token stream of `1.23457`, `e`, `+`, `08`,
+ *      which ASI then split into two statements. When a variable named `e`
+ *      happened to be in scope that silently evaluated to a *different number*.
+ *      Fixed notation avoids this, and because a lexeme without a `.` parses as
+ *      an **int**, a decimal point is always appended — otherwise `42.0`
+ *      round-tripped to the integer `42`, silently changing the type.
+ *
+ * Infinities and NaNs have no Vora literal spelling and cannot arise from a
+ * literal either (an out-of-range float literal fails at parse time), so the
+ * fallback below is defensive only.
+ *
+ * @param d The double to render.
+ * @return A decimal literal with a `.`, parseable back to exactly @p d.
+ */
+static std::string formatFloatLiteral(double d) {
+    if (std::isnan(d)) return "0.0 / 0.0";          // not a Vora literal; see above
+    if (std::isinf(d)) return d < 0 ? "-1.0 / 0.0" : "1.0 / 0.0";
+
+    // 512 bytes is comfortable: the longest fixed form is ~1.8e308 (309 digits)
+    // or the smallest subnormal (~330 characters).
+    char buf[512];
+    auto res = std::to_chars(buf, buf + sizeof(buf), d, std::chars_format::fixed);
+    std::string out;
+    if (res.ec == std::errc()) {
+        out.assign(buf, res.ptr);
+    } else {
+        // Should be unreachable given the buffer size; fall back to scientific
+        // rather than returning something truncated or empty.
+        char big[512];
+        auto r2 = std::to_chars(big, big + sizeof(big), d, std::chars_format::scientific);
+        out.assign(big, r2.ptr);
+    }
+
+    // A lexeme with no '.' is an integer literal, which would silently change
+    // the value's type on the next parse.
+    if (out.find('.') == std::string::npos) out += ".0";
+    return out;
+}
 
 // =========================================================================
 // Precedence constants (mirrors parser's getPrecedence table)
@@ -269,20 +328,7 @@ std::string SourceFormatter::visitLiteralExpr(const LiteralExpr& expr) {
     // oversized literal unchanged, and decimal is the only lossless way to write
     // one back out.
     if (v.isBigInt()) return v.asBigInt()->value.toDecimal();
-    if (v.isDouble()) {
-        // Format doubles compactly — avoid trailing zeros.
-        std::stringstream ss;
-        ss << v.asDouble();
-        std::string s = ss.str();
-        // If it has a decimal point and no exponent, strip trailing zeros
-        if (s.find('.') != std::string::npos &&
-            s.find('e') == std::string::npos &&
-            s.find('E') == std::string::npos) {
-            while (s.back() == '0') s.pop_back();
-            if (s.back() == '.') s.pop_back();
-        }
-        return s;
-    }
+    if (v.isDouble()) return formatFloatLiteral(v.asDouble());
     // All other Value types (GcPtr<Array>, GcPtr<Dict>, etc.)
     // should not appear as literal expressions at format time.
     return "<value>";

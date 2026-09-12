@@ -9,7 +9,14 @@
 #include "formatter/formatter.h"
 #include "ast/program.h"
 
+#include <cfloat>
+#include <cmath>
+#include <cstdint>
+#include <charconv>
+#include <cstring>
+#include <system_error>
 #include <sstream>
+#include <string>
 
 using namespace vora;
 
@@ -24,6 +31,55 @@ static std::string fmt(const std::string& src) {
     REQUIRE(prog != nullptr);
     SourceFormatter formatter;
     return formatter.format(prog.get());
+}
+
+// Trim surrounding whitespace (fmt() emits a trailing newline).
+static std::string trimmed(const std::string& s) {
+    const size_t b = s.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) return std::string();
+    const size_t e = s.find_last_not_of(" \t\r\n");
+    return s.substr(b, e - b + 1);
+}
+
+// Extract just the literal the formatter emitted for the RHS of `let a = ...`.
+// Checking the whole formatted source would be wrong: the keyword `let`
+// contains an `e`, which would defeat a search for exponent notation.
+static std::string literalFromSource(const std::string& src) {
+    const std::string out = fmt(src);
+    const size_t eq = out.find('=');
+    REQUIRE(eq != std::string::npos);
+    return trimmed(out.substr(eq + 1));
+}
+
+// Render a double through the formatter and return the literal it produced.
+//
+// The input literal is built with `to_chars(fixed)` rather than `ostream`,
+// because the default stream format switches to scientific notation for large
+// and small magnitudes — which is not valid Vora input at all, so the source
+// would fail to lex instead of exercising the formatter.
+static std::string formattedLiteral(double d) {
+    char buf[512];
+    auto res = std::to_chars(buf, buf + sizeof(buf), d, std::chars_format::fixed);
+    REQUIRE(res.ec == std::errc());
+    std::string text = "let a = " + std::string(buf, res.ptr);
+    if (text.find('.') == std::string::npos) text += ".0";
+    return literalFromSource(text);
+}
+
+// Properties every emitted float literal must have:
+//   1. it contains no exponent (the lexer only accepts digit+ [ "." digit+ ])
+//   2. it contains a '.' (otherwise it would re-parse as an *integer*)
+//   3. std::stod on it returns a bit-identical double (lossless round trip)
+static void checkFloatLiteralRoundTrip(double d) {
+    const std::string lit = formattedLiteral(d);
+    CHECK(lit.find('e') == std::string::npos);
+    CHECK(lit.find('E') == std::string::npos);
+    CHECK(lit.find('.') != std::string::npos);
+    const double back = std::stod(lit);
+    uint64_t a = 0, b = 0;
+    std::memcpy(&a, &d, sizeof(a));
+    std::memcpy(&b, &back, sizeof(b));
+    CHECK(a == b);
 }
 
 // Helper: format twice and verify idempotency.
@@ -329,4 +385,109 @@ TEST_CASE("fmt_super_expr") {
     // super in object constructor — just verify it compiles/round-trips
     std::string out = fmt("class A() { this.x = 1 }");
     CHECK_FALSE(out.empty());
+}
+
+// ============================================================================
+// Float literal rendering — lossless and re-parseable
+//
+// The formatter used to print doubles with the default stream precision, which
+// silently rewrote any value with more than six significant digits
+// (1234.5678 -> 1234.57) and emitted exponent notation the lexer cannot read
+// (1.23457e+08). It also dropped the trailing ".0" from integral floats, which
+// re-parsed them as *integers*.
+// ============================================================================
+
+TEST_CASE("fmt_float_precision_is_lossless") {
+    CHECK(trimmed(fmt("let a = 1234.5678")) == "let a = 1234.5678");
+    CHECK(trimmed(fmt("let a = 3.141592653589793")) == "let a = 3.141592653589793");
+    CHECK(trimmed(fmt("let a = 0.30000000000000004")) == "let a = 0.30000000000000004");
+    CHECK(trimmed(fmt("let a = 2.2250738585072014")) == "let a = 2.2250738585072014");
+    CHECK(trimmed(fmt("let a = 100000.5")) == "let a = 100000.5");
+    CHECK(trimmed(fmt("let a = 0.0000001")) == "let a = 0.0000001");
+}
+
+TEST_CASE("fmt_float_integral_values_stay_floats") {
+    // Without the appended ".0" these re-parse as integers, silently changing
+    // the value's type.
+    CHECK(trimmed(fmt("let a = 42.0")) == "let a = 42.0");
+    CHECK(trimmed(fmt("let a = 2.0")) == "let a = 2.0");
+    CHECK(trimmed(fmt("let a = 0.0")) == "let a = 0.0");
+    CHECK(trimmed(fmt("let a = 35184372088832.0")) == "let a = 35184372088832.0");
+    CHECK(trimmed(fmt("let a = -0.0")) == "let a = -0.0");
+    // Insignificant trailing zeros are not part of the shortest form.
+    CHECK(trimmed(fmt("let a = 1.50")) == "let a = 1.5");
+}
+
+TEST_CASE("fmt_float_never_emits_exponent_notation") {
+    // These previously became 1.23457e+08 / 1e-07 / 3.51844e+13. Because the
+    // lexer has no exponent form, ASI then split such a line into two
+    // statements — and when a variable named `e` was in scope it silently
+    // evaluated to a different number instead of failing.
+    const char* sources[] = {
+        "let a = 123456789.123456789",
+        "let a = 0.0000001",
+        "let a = 35184372088832.0",
+        "let a = 1000000.0",
+        "let a = 123456789012345.0",
+    };
+    for (const char* src : sources) {
+        const std::string lit = literalFromSource(src);
+        CHECK(lit.find('e') == std::string::npos);
+        CHECK(lit.find('E') == std::string::npos);
+        CHECK(lit.find('.') != std::string::npos);
+    }
+}
+
+TEST_CASE("fmt_float_property_round_trips_bitwise") {
+    const double fixedCases[] = {
+        0.0, -0.0, 1.0, -1.0, 0.5, 42.0, 1234.5678, 3.141592653589793,
+        0.30000000000000004, 1e-7, 1e10, 35184372088832.0,
+        1.7976931348623157e308,   // DBL_MAX
+        2.2250738585072014e-308,  // DBL_MIN
+        1e-300, 1e300, 9007199254740992.0,
+    };
+    for (double d : fixedCases) checkFloatLiteralRoundTrip(d);
+
+    // Sweep assorted magnitudes. Subnormals are excluded deliberately: Vora
+    // cannot parse them at all (stod reports underflow), so they can never
+    // reach the formatter from a literal.
+    int swept = 0;
+    for (int e = -300; e <= 300; e += 7) {
+        for (int mant = 1; mant <= 9; ++mant) {
+            const std::string spec = std::to_string(mant) + "e" + std::to_string(e);
+            const double d = std::strtod(spec.c_str(), nullptr);
+            if (d == 0.0 || !std::isfinite(d) || std::fpclassify(d) == FP_SUBNORMAL) continue;
+            checkFloatLiteralRoundTrip(d);
+            swept++;
+        }
+    }
+    CHECK(swept > 300);
+
+    // Pseudo-random bit patterns: exercises huge, tiny and awkward mantissas as
+    // raw doubles rather than tidy decimal values. Deterministic, so a failure
+    // is reproducible.
+    uint64_t state = 0x9E3779B97F4A7C15ULL;
+    int checkedRandom = 0;
+    for (int i = 0; i < 4000; ++i) {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        double d = 0.0;
+        const uint64_t bits = state;
+        std::memcpy(&d, &bits, sizeof(d));
+        // inf/NaN have no Vora literal spelling; subnormals cannot be parsed.
+        if (!std::isfinite(d) || std::fpclassify(d) == FP_SUBNORMAL) continue;
+        checkFloatLiteralRoundTrip(d);
+        checkedRandom++;
+    }
+    CHECK(checkedRandom > 2000);
+}
+
+TEST_CASE("fmt_bigint_literal_is_lossless") {
+    // Oversized integers must keep every digit: decimal is the only lossless
+    // spelling, and the formatter must not route them through a double.
+    CHECK(trimmed(fmt("let a = 123456789012345678901234567890"))
+          == "let a = 123456789012345678901234567890");
+    CHECK(trimmed(fmt("let a = -18446744073709551616"))
+          == "let a = -18446744073709551616");
+    CHECK(trimmed(fmt("let a = 35184372088832")) == "let a = 35184372088832");
+    CHECK(trimmed(fmt("let a = 9223372036854775807")) == "let a = 9223372036854775807");
 }
