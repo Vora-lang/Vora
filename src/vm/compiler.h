@@ -239,6 +239,16 @@ public:
     /// @param case_ The match case AST node containing the pattern and body.
     void compileMatchCaseBody(const struct MatchCase& case_);
 
+    /// @brief Emit the test for one match pattern, leaving a bool on the stack.
+    ///
+    /// Consumes the scrutinee (re-read from its temp global) and pushes a
+    /// boolean. Used once per alternative so that an or-pattern (`1 | 2 | 3`)
+    /// tests every alternative rather than only the first.
+    /// @param pattern  The pattern to test.
+    /// @param tempSlot Global slot holding the scrutinee.
+    void emitMatchPatternCondition(const struct MatchPattern& pattern,
+                                   int tempSlot);
+
     /// @brief Compile a function expression (lambda / anonymous function).
     /// @param expr The function expression node.
     void visitFuncExpr(const FuncExpr& expr) override;

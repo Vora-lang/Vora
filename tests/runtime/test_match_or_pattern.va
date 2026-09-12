@@ -1,0 +1,67 @@
+// =========================================================================
+// test_match_or_pattern.va — or-patterns must test EVERY alternative
+//
+// Regression test: the compiler used to consult only `patterns[0]`, so
+// `1 | 2 =>` matched only on 1 and silently took the fallback for 2. The
+// parser had always produced the full alternative list, and the only
+// existing coverage was parser-level (AST shape), which is why the gap
+// survived. Every case below fails if only the first alternative is used.
+// =========================================================================
+
+// --- literal alternation: the second / third alternative must match ---
+assert(match 1 { 1 | 2 => "M", _ => "fallback" } == "M", "first alternative (control)")
+assert(match 2 { 1 | 2 => "M", _ => "fallback" } == "M", "second alternative")
+assert(match 3 { 1 | 2 | 3 => "M", _ => "fallback" } == "M", "third alternative")
+assert(match 5 { 1 | 2 | 3 | 4 | 5 => "M", _ => "fallback" } == "M", "fifth alternative")
+assert(match 2 { 2 | 1 => "M", _ => "fallback" } == "M", "first alternative, reversed order")
+
+// --- a non-member still falls through ---
+assert(match 9 { 1 | 2 => "M", _ => "fallback" } == "fallback", "non-member falls through")
+assert(match 4 { 1 | 2 | 3 => "M", _ => "fallback" } == "fallback", "non-member, three alternatives")
+
+// --- range alternation ---
+assert(match 2 { 1..=3 | 5..=6 => "M", _ => "fallback" } == "M", "range alt 1")
+assert(match 5 { 1..=3 | 5..=6 => "M", _ => "fallback" } == "M", "range alt 2")
+assert(match 6 { 1..=3 | 5..=6 => "M", _ => "fallback" } == "M", "range alt 2 (upper bound)")
+assert(match 4 { 1..=3 | 5..=6 => "M", _ => "fallback" } == "fallback", "range gap falls through")
+assert(match 5 { 1..3 | 5..7 => "M", _ => "fallback" } == "M", "exclusive range alt")
+
+// --- or-pattern in an arm that is not first ---
+assert(match 99 { 1 => "one", 98 | 99 | 100 => "high", _ => "other" } == "high",
+       "or-pattern in a later arm")
+
+// --- or-pattern combined with the no-match error ---
+func tryMatch(v) {
+    try {
+        let r = match v { 1 | 2 => "M" }
+        return "no throw"
+    } catch (e) {
+        return "threw"
+    }
+}
+assert(tryMatch(1) == "no throw", "covered value does not throw")
+assert(tryMatch(2) == "no throw", "second alternative does not throw")
+assert(tryMatch(7) == "threw", "uncovered value throws")
+
+// --- string and boolean alternations ---
+assert(match "b" { "a" | "b" => "M", _ => "fallback" } == "M", "string alternation")
+assert(match false { true | false => "M", _ => "fallback" } == "M", "bool alternation")
+
+// --- mixed pattern kinds are a parse error, so a wildcard cannot be
+//     combined with a literal; a separate `_` arm is the way to do that ---
+assert(match 42 { 1 | 2 => "M", _ => "fallback" } == "fallback",
+       "wildcard must be its own arm, not an or-alternative")
+
+// --- repeated use in a loop stays consistent (no drift from the extra
+//     per-alternative branch the or-test introduces) ---
+let hits = 0
+let i = 0
+while (i < 100) {
+    if (match i % 4 { 1 | 2 | 3 => "in", _ => "out" } == "in") {
+        hits = hits + 1
+    }
+    i = i + 1
+}
+assert(hits == 75, "or-pattern in a loop over 100 iterations, 3 of 4 in range")
+
+print("All match or-pattern tests passed!")

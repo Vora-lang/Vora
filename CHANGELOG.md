@@ -170,6 +170,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   brace-aware scan; previously a syntax dead-end.
 
 ### Fixed
+- **Or-patterns only honoured their first alternative** (pre-existing,
+  **syntactically valid but semantically invisible**): for a match arm like
+  `1 | 2 | 3 => ...`, the compiler tested only `patterns[0]`, so `match 2
+  { 1 | 2 => "a", _ => "b" }` evaluated to `"b"`. The parser had always
+  produced the full alternative list, so the feature looked implemented —
+  and the only existing coverage was parser-level (AST shape), which cannot
+  see this. `USER_GUIDE`'s own match example (`3 | 4 => "small"`) was wrong
+  for the same reason. The compiler now tests every alternative and
+  short-circuits on the first hit (`Compiler::emitMatchPatternCondition`,
+  one test per alternative). Found while implementing the no-match error
+  above, in the same function.
+  Tests: `tests/runtime/test_match_or_pattern.va` (20 assertions; verified
+  red before the fix, failing at the "second alternative" case).
 - **A `finally` could not see the locals the exit had just discarded**
   (`c8211c6`, pre-existing, **syntactically valid but semantically invisible**):
   break/continue popped the locals they abandoned and *then* jumped to the

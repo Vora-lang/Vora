@@ -1292,33 +1292,38 @@ void Compiler::visitMatchExpr(const MatchExpr& expr) {
             break;
         }
 
-        // Push scrutinee for comparison (stored in global temp)
-        emitGetGlobal(tempSlot);
-
-        if (case_.patterns[0].kind == PatternKind::Literal) {
-            emitConstant(case_.patterns[0].literal);
-            emitByte(static_cast<uint8_t>(OpCode::OP_EQUAL));
-        } else if (case_.patterns[0].kind == PatternKind::Range) {
-            const auto& pat = case_.patterns[0];
-            emitConstant(pat.rangeLow);
-            emitByte(static_cast<uint8_t>(OpCode::OP_GREATER_EQ_NN));
-            size_t rangeLowFail = emitJump(OpCode::OP_JUMP_IF_FALSE);
+        // Compute "does the scrutinee match ANY alternative?" with a
+        // short-circuit OR over the case's patterns. An or-pattern such as
+        // `1 | 2 | 3 =>` must match on any alternative; using only
+        // patterns[0] silently ignored the rest.
+        //
+        // Layout per alternative:
+        //     <condition>              ; bool on TOS
+        //     JUMP_IF_FALSE -> next    ; peek: try the next alternative
+        //     POP                      ; drop the truthy condition
+        //     JUMP -> matched
+        //   next:
+        //     POP                      ; drop the falsy condition
+        std::vector<size_t> matchedJumps;
+        for (const auto& pat : case_.patterns) {
+            emitMatchPatternCondition(pat, tempSlot);
+            size_t alternativeFailed = emitJump(OpCode::OP_JUMP_IF_FALSE);
             emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-            emitGetGlobal(tempSlot);
-            emitConstant(pat.rangeHigh);
-            if (pat.rangeInclusive) {
-                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_EQ_NN));
-            } else {
-                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN));
-            }
-            size_t rangeDone = emitJump(OpCode::OP_JUMP);
-            patchJump(rangeLowFail);
+            matchedJumps.push_back(emitJump(OpCode::OP_JUMP));
+            patchJump(alternativeFailed);
             emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-            emitByte(static_cast<uint8_t>(OpCode::OP_FALSE));
-            patchJump(rangeDone);
-        } else {
-            emitByte(static_cast<uint8_t>(OpCode::OP_TRUE));
         }
+
+        // No alternative matched.
+        emitByte(static_cast<uint8_t>(OpCode::OP_FALSE));
+        size_t overMatched = emitJump(OpCode::OP_JUMP);
+
+        // Some alternative matched: land here with a truthy condition.
+        for (size_t jump : matchedJumps) {
+            patchJump(jump);
+        }
+        emitByte(static_cast<uint8_t>(OpCode::OP_TRUE));
+        patchJump(overMatched);
 
         // TOS = bool condition
         size_t caseFailJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
@@ -1352,6 +1357,49 @@ void Compiler::visitMatchExpr(const MatchExpr& expr) {
     for (auto j : endJumps) {
         patchJump(j);
     }
+}
+
+void Compiler::emitMatchPatternCondition(const MatchPattern& pattern,
+                                         int tempSlot) {
+    switch (pattern.kind) {
+        case PatternKind::Literal:
+            emitGetGlobal(tempSlot);
+            emitConstant(pattern.literal);
+            emitByte(static_cast<uint8_t>(OpCode::OP_EQUAL));
+            return;
+
+        case PatternKind::Range: {
+            // low <= v && (v <= high | v < high), short-circuiting so a
+            // failed lower bound does not evaluate the upper one.
+            emitGetGlobal(tempSlot);
+            emitConstant(pattern.rangeLow);
+            emitByte(static_cast<uint8_t>(OpCode::OP_GREATER_EQ_NN));
+            size_t rangeLowFail = emitJump(OpCode::OP_JUMP_IF_FALSE);
+            emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+            emitGetGlobal(tempSlot);
+            emitConstant(pattern.rangeHigh);
+            if (pattern.rangeInclusive) {
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_EQ_NN));
+            } else {
+                emitByte(static_cast<uint8_t>(OpCode::OP_LESS_NN));
+            }
+            size_t rangeDone = emitJump(OpCode::OP_JUMP);
+            patchJump(rangeLowFail);
+            emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+            emitByte(static_cast<uint8_t>(OpCode::OP_FALSE));
+            patchJump(rangeDone);
+            return;
+        }
+
+        case PatternKind::Wildcard:
+            // Catch-all. Wildcard cases are handled before this point (the
+            // whole arm matches unconditionally), so reaching here means the
+            // pattern was produced by error recovery; treat it as matching.
+            emitByte(static_cast<uint8_t>(OpCode::OP_TRUE));
+            return;
+    }
+    // Unknown kind: fail the test rather than silently matching.
+    emitByte(static_cast<uint8_t>(OpCode::OP_FALSE));
 }
 
 void Compiler::compileMatchCaseBody(const MatchCase& case_) {
