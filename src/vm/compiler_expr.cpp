@@ -644,360 +644,385 @@ void Compiler::visitSpreadExpr(const SpreadExpr& expr) {
 }
 
 void Compiler::visitListCompExpr(const ListCompExpr& expr) {
-    currentLine = expr.leftBracket.line;
-    currentColumn = expr.leftBracket.column;
-    // Desugar list comprehension using the iter()/next() iterator protocol:
+    // Desugar into a synthesized zero-argument function that builds the array
+    // in its own frame and returns it, then call it.
     //
-    //   [resultExpr for var in iterable if condition]
-    // becomes:
-    //   {
-    //     let _lcN = []                    // result array
-    //     {
-    //       let _iter = iter(iterable)
-    //       while (true) {
-    //         try {
-    //           let var = next(_iter)
-    //           if condition:              // optional
-    //             _lcN = _lcN + [resultExpr]
-    //         } catch (_exn) {
-    //           if (_exn == "StopIteration") break
-    //           else throw _exn
-    //         }
-    //       }
+    // Why a separate frame: the desugar keeps its working state (result array,
+    // iterator, loop variable, StopIteration binding) in locals, and locals are
+    // addressed as frameBase+slot. In expression position the enclosing frame
+    // already holds operands on the stack - a call's callee, earlier arguments,
+    // a dict key, an earlier array element - which occupy exactly those slots.
+    // Emitting the desugar inline therefore only worked when nothing else was on
+    // the stack: `print([x for x in xs])`, `{k: [x for x in xs]}` and
+    // `[9, [x for x in xs]]` all threw
+    // "next() requires an iterator or generator". A fresh frame makes the
+    // desugar independent of the surrounding expression.
+    //
+    // Generated body:
+    //   let _lcN = []                  // result array, slot 0
+    //   let _iter = iter(iterable)
+    //   while (true) {
+    //     try {
+    //       let var = next(_iter)
+    //       if condition: _lcN = _lcN + [resultExpr]
+    //     } catch (_exn) {
+    //       if (_exn == "StopIteration") break
+    //       else throw _exn
     //     }
-    //     // _lcN stays on stack as expression value
     //   }
+    //   return _lcN
+    Compiler fn(errorReporter_);
+    fn.enclosing = this;
+    fn.chunk.source = chunk.source;
 
-    // ── Wrapping scope (so addLocal works even at function level) ──
-    beginScope();
+    fn.currentLine = expr.leftBracket.line;
+    fn.currentColumn = expr.leftBracket.column;
 
-    // ── Step 1: Create empty result array ──
+    // Wrapping scope so addLocal has a scope to attach to.
+    fn.beginScope();
+
+    // ── Step 1: result array ──
     std::string resultName = "_lc" + std::to_string(listCompCounter++);
-    emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 0);  // push []
-    addLocal(resultName);
-    int resultSlot = resolveLocal(resultName);
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 0);
+    fn.addLocal(resultName);
+    int resultSlot = fn.resolveLocal(resultName);
 
-    // ── Step 2: For-in scope ──
-    beginScope();
+    // ── Step 2: for-in scope ──
+    fn.beginScope();
 
     // let _iter = iter(iterable)
-    int iterBuiltinSlot = resolveGlobal("iter");
-    emitGetGlobal(iterBuiltinSlot);
-    expr.iterable->accept(*this);
-    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
-    addLocal("_iter");
-    int iterLocalSlot = resolveLocal("_iter");
+    fn.emitGetGlobal(fn.resolveGlobal("iter"));
+    expr.iterable->accept(fn);
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+    fn.addLocal("_iter");
+    int iterLocalSlot = fn.resolveLocal("_iter");
 
     // ── Step 3: while (true) loop ──
-    size_t loopStart = chunk.code.size();
-    // continueTarget = loopStart, extraLocalsToPopOnBreak = 1 (_iter)
-    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0, tryNesting, finallyNesting});
+    size_t loopStart = fn.chunk.code.size();
+    // continueTarget == loopStart; extraLocalsToPopOnBreak == 1 (_iter)
+    fn.loopStack.push_back({loopStart, loopStart, {}, {}, fn.scopeDepth, 1, 0,
+                            fn.tryNesting, fn.finallyNesting});
 
     // ── Step 4: OP_PUSH_CATCH ──
-    emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
-    emitByte(static_cast<uint8_t>(currentLocalCount()));
-    size_t pushCatchPlaceholder = chunk.code.size();
-    emitByte(0xFF);
-    emitByte(0xFF);
-
-    tryNesting++;
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
+    fn.emitByte(static_cast<uint8_t>(fn.currentLocalCount()));
+    size_t pushCatchPlaceholder = fn.chunk.code.size();
+    fn.emitByte(0xFF);
+    fn.emitByte(0xFF);
+    fn.tryNesting++;
 
     // ── Step 5: var = next(_iter) ──
-    int nextBuiltinSlot = resolveGlobal("next");
-    emitGetGlobal(nextBuiltinSlot);
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iterLocalSlot));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+    fn.emitGetGlobal(fn.resolveGlobal("next"));
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                 static_cast<uint8_t>(iterLocalSlot));
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
 
-    beginScope();
-    addLocal(expr.variable);
+    fn.beginScope();
+    fn.addLocal(expr.variable);
 
     // ── Step 6: Optional if condition ──
     size_t skipAppendJump = 0;
-    size_t skipConditionPopJump = 0;
     if (expr.condition) {
-        expr.condition->accept(*this);
-        skipAppendJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
-        emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // pop condition when true
+        expr.condition->accept(fn);
+        skipAppendJump = fn.emitJump(OpCode::OP_JUMP_IF_FALSE);
+        fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // pop condition when true
     }
 
-    // ── Step 7: Append to result ──
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(resultSlot));
+    // ── Step 7: Append [resultExpr] to the result array ──
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                 static_cast<uint8_t>(resultSlot));
     std::string tmpName = "_lx" + std::to_string(listCompCounter++);
-    addLocal(tmpName);
-
-    expr.resultExpr->accept(*this);
-
-    emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 1);
-    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
-              static_cast<uint8_t>(resultSlot));
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-
-    if (locals.empty() || locals.back().name != tmpName) {
+    fn.addLocal(tmpName);
+    expr.resultExpr->accept(fn);
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_ARRAY), 1);
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                 static_cast<uint8_t>(resultSlot));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    // Drop the compile-time temp: its value was consumed by OP_SET_LOCAL.
+    if (fn.locals.empty() || fn.locals.back().name != tmpName) {
         error("Internal compiler error: list comprehension temp local mismatch");
-        return;
+    } else {
+        fn.scopeLocalCounts.back()--;
+        fn.locals.pop_back();
     }
-    scopeLocalCounts.back()--;
-    locals.pop_back();
 
     if (expr.condition) {
-        skipConditionPopJump = emitJump(OpCode::OP_JUMP);
-        patchJump(skipAppendJump);
-        emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-        patchJump(skipConditionPopJump);
+        size_t skipConditionPopJump = fn.emitJump(OpCode::OP_JUMP);
+        fn.patchJump(skipAppendJump);
+        fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+        fn.patchJump(skipConditionPopJump);
     }
 
-    // ── Step 8: End body scope (pops loop variable) ──
-    endScope();
+    // ── Step 8: End body scope (pops the loop variable) ──
+    fn.endScope();
+    fn.tryNesting--;
 
-    tryNesting--;
+    // Normal exit: pop catch handler, skip the catch block
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+    size_t skipCatchJump = fn.emitJump(OpCode::OP_JUMP);
 
-    // Normal exit: pop catch handler, skip catch block
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
-    size_t skipCatchJump = emitJump(OpCode::OP_JUMP);
-
-    // ── Step 9: Catch handler (StopIteration → break) ──
-    size_t catchTarget = chunk.code.size();
+    // ── Step 9: Catch handler (StopIteration -> break, else re-throw) ──
+    size_t catchTarget = fn.chunk.code.size();
     size_t catchJumpSize = catchTarget - pushCatchPlaceholder - 2;
     if (catchJumpSize > UINT16_MAX) catchJumpSize = UINT16_MAX;
-    chunk.writeAt(pushCatchPlaceholder,
-                  static_cast<uint8_t>(catchJumpSize & 0xFF));
-    chunk.writeAt(pushCatchPlaceholder + 1,
-                  static_cast<uint8_t>((catchJumpSize >> 8) & 0xFF));
+    fn.chunk.writeAt(pushCatchPlaceholder,
+                     static_cast<uint8_t>(catchJumpSize & 0xFF));
+    fn.chunk.writeAt(pushCatchPlaceholder + 1,
+                     static_cast<uint8_t>((catchJumpSize >> 8) & 0xFF));
 
-    emitByte(static_cast<uint8_t>(OpCode::OP_CLEAR_EXCEPTION));
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_CLEAR_EXCEPTION));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
 
-    beginScope();
-    addLocal("_exn");
+    fn.beginScope();
+    fn.addLocal("_exn");
 
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(resolveLocal("_exn")));
-    emitConstant(GcHeap::instance().alloc<GcString>("StopIteration"));
-    emitByte(static_cast<uint8_t>(OpCode::OP_EQUAL));
-    size_t notStopIterJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-    visitBreakStmt(BreakStmt(expr.leftBracket));  // break uses leftBracket token for location
-    patchJump(notStopIterJump);
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(resolveLocal("_exn")));
-    emitByte(static_cast<uint8_t>(OpCode::OP_THROW));
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                 static_cast<uint8_t>(fn.resolveLocal("_exn")));
+    fn.emitConstant(GcHeap::instance().alloc<GcString>("StopIteration"));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_EQUAL));
+    size_t notStopIterJump = fn.emitJump(OpCode::OP_JUMP_IF_FALSE);
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    fn.visitBreakStmt(BreakStmt(expr.leftBracket));
+    fn.patchJump(notStopIterJump);
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                 static_cast<uint8_t>(fn.resolveLocal("_exn")));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_THROW));
 
-    endScope();
+    fn.endScope();
 
-    patchJump(skipCatchJump);
+    fn.patchJump(skipCatchJump);
 
     // ── Step 10: Loop back ──
-    emitLoop(loopStart);
+    fn.emitLoop(loopStart);
 
-    // Patch break jumps
-    std::vector<size_t> savedBreakJumps = std::move(loopStack.back().breakJumps);
-    loopStack.pop_back();
+    std::vector<size_t> savedBreakJumps = std::move(fn.loopStack.back().breakJumps);
+    fn.loopStack.pop_back();
 
-    // ── Step 11: End for-in scope (pops _iter) ──
-    endScope();
+    // ── Step 11: End the for-in scope (drops _iter) ──
+    fn.endScope();
 
     for (size_t jumpOffset : savedBreakJumps) {
-        patchJump(jumpOffset);
+        fn.patchJump(jumpOffset);
     }
 
-    // ── Step 12: Manual wrapper cleanup (leave _lcN on stack) ──
-    int wrapperCount = scopeLocalCounts.back();
-    scopeLocalCounts.pop_back();
-    for (int i = 0; i < wrapperCount; i++) {
-        locals.pop_back();
-    }
-    scopeDepth--;
+    // ── Step 12: return the accumulated array ──
+    // No endScope after this: frame teardown discards the locals, and emitting
+    // pops here would pop the very value being returned.
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                 static_cast<uint8_t>(resultSlot));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
+
+    // ── Build the prototype and call it ──
+    auto capturedUpvalues = fn.upvalues;
+    FunctionPrototype proto;
+    proto.name = "<listcomp>";
+    proto.arity = 0;
+    proto.requiredArity = 0;
+    proto.hasRest = false;
+    proto.upvalues = std::move(fn.upvalues);
+    proto.chunk = std::move(fn.chunk);
+    proto.isGenerator = false;
+    proto.isAsync = false;
+
+    size_t protoIndex = addFunctionPrototype(std::move(proto));
+    emitClosure(protoIndex, capturedUpvalues);
+    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 0);
 }
 
 void Compiler::visitDictCompExpr(const DictCompExpr& expr) {
-    currentLine = expr.leftBrace.line;
-    currentColumn = expr.leftBrace.column;
-    // Desugar dict comprehension into a for-in loop that accumulates results:
+    // Same treatment as visitListCompExpr: compile the desugar into its own
+    // zero-argument function and call it. The dict desugar keeps the result
+    // dict, the iterator, the loop variable, three merge temporaries and the
+    // StopIteration binding in locals, and locals are addressed as
+    // frameBase+slot, so an inline desugar collides with whatever operands the
+    // surrounding expression already pushed (`print({k: v for ...})` threw
+    // "next() requires an iterator or generator"). A fresh frame is immune.
     //
-    //   {keyExpr: valueExpr for var in iterable if condition}
-    // becomes:
-    //   {
-    //     let _dcN = {}                    // result dict (OP_DICT 0)
-    //     let _iter = iterable
-    //     let _i = 0
-    //     let _len = _vora_len(_iter)
-    //     while (_i < _len) {
-    //       let var = _iter[_i]
-    //       if condition:
-    //         _dcN = _dcN + {keyExpr: valueExpr}   // one-pair dict + OP_ADD merge
-    //       _i += 1
+    // Generated body:
+    //   let _dcN = {}                                  // slot 0
+    //   let _iter = iter(iterable)
+    //   while (true) {
+    //     try {
+    //       let var = next(_iter)
+    //       if condition: _dcN = _dcN + {keyExpr: valueExpr}
+    //     } catch (_exn) {
+    //       if (_exn == "StopIteration") break
+    //       else throw _exn
     //     }
-    //     // _dcN stays on stack as expression value
     //   }
-    //
-    // Bug #1 fix: wrapping beginScope() ensures scopeLocalCounts is non-empty.
-    // Bug #2 fix: unconditional OP_JUMP over false-path OP_POP.
-    // Bug #3 fix: _dx temp local tracks the OP_GET_LOCAL result on the stack.
+    //   return _dcN
+    Compiler fn(errorReporter_);
+    fn.enclosing = this;
+    fn.chunk.source = chunk.source;
 
-    // ── Wrapping scope (Bug #1: so addLocal works even at scopeDepth == 0) ──
-    beginScope();
+    fn.currentLine = expr.leftBrace.line;
+    fn.currentColumn = expr.leftBrace.column;
+
+    // Wrapping scope so addLocal has a scope to attach to.
+    fn.beginScope();
 
     // ── Step 1: Create empty result dict ──
     std::string resultName = "_dc" + std::to_string(dictCompCounter++);
-    emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 0);  // push {}
-    addLocal(resultName);
-    int resultSlot = resolveLocal(resultName);
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 0);  // push {}
+    fn.addLocal(resultName);
+    int resultSlot = fn.resolveLocal(resultName);
 
     // ── Step 2: For-in scope ──
-    beginScope();
+    fn.beginScope();
 
     // let _iter = iter(iterable)
-    int iterBuiltinSlot = resolveGlobal("iter");
-    emitGetGlobal(iterBuiltinSlot);
-    expr.iterable->accept(*this);
-    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
-    addLocal("_iter");
-    int iterLocalSlot = resolveLocal("_iter");
+    fn.emitGetGlobal(fn.resolveGlobal("iter"));
+    expr.iterable->accept(fn);
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+    fn.addLocal("_iter");
+    int iterLocalSlot = fn.resolveLocal("_iter");
 
     // ── Step 3: while (true) loop ──
-    size_t loopStart = chunk.code.size();
-    loopStack.push_back({loopStart, loopStart, {}, {}, scopeDepth, 1, 0, tryNesting, finallyNesting});
+    size_t loopStart = fn.chunk.code.size();
+    fn.loopStack.push_back({loopStart, loopStart, {}, {}, fn.scopeDepth, 1, 0,
+                            fn.tryNesting, fn.finallyNesting});
 
     // ── Step 4: OP_PUSH_CATCH ──
-    emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
-    emitByte(static_cast<uint8_t>(currentLocalCount()));
-    size_t pushCatchPlaceholder = chunk.code.size();
-    emitByte(0xFF);
-    emitByte(0xFF);
-
-    tryNesting++;
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_PUSH_CATCH));
+    fn.emitByte(static_cast<uint8_t>(fn.currentLocalCount()));
+    size_t pushCatchPlaceholder = fn.chunk.code.size();
+    fn.emitByte(0xFF);
+    fn.emitByte(0xFF);
+    fn.tryNesting++;
 
     // ── Step 5: var = next(_iter) ──
-    int nextBuiltinSlot = resolveGlobal("next");
-    emitGetGlobal(nextBuiltinSlot);
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(iterLocalSlot));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
+    fn.emitGetGlobal(fn.resolveGlobal("next"));
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                 static_cast<uint8_t>(iterLocalSlot));
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 1);
 
-    beginScope();
-    addLocal(expr.variable);
+    fn.beginScope();
+    fn.addLocal(expr.variable);
 
     // ── Step 6: Optional if condition ──
     size_t skipAppendJump = 0;
-    size_t skipConditionPopJump = 0;
     if (expr.condition) {
-        expr.condition->accept(*this);
-        skipAppendJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
-        emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // pop condition when true
+        expr.condition->accept(fn);
+        skipAppendJump = fn.emitJump(OpCode::OP_JUMP_IF_FALSE);
+        fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP));  // pop condition when true
     }
 
     // ── Step 7: Merge one-pair dict: _dcN = _dcN + {keyExpr: valueExpr} ──
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(resultSlot));
+    // The three temporaries name the values currently on top of the frame's
+    // operand stack so the merge can address them without extra shuffling.
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                 static_cast<uint8_t>(resultSlot));
     std::string dxName = "_dx" + std::to_string(dictCompCounter++);
-    addLocal(dxName);
+    fn.addLocal(dxName);
 
-    expr.keyExpr->accept(*this);
+    expr.keyExpr->accept(fn);
     std::string dkName = "_dk" + std::to_string(dictCompCounter++);
-    addLocal(dkName);
+    fn.addLocal(dkName);
 
-    expr.valueExpr->accept(*this);
+    expr.valueExpr->accept(fn);
     std::string dvName = "_dv" + std::to_string(dictCompCounter++);
-    addLocal(dvName);
+    fn.addLocal(dvName);
 
-    emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 1);
-    emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
-              static_cast<uint8_t>(resultSlot));
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_DICT), 1);
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_SET_LOCAL),
+                 static_cast<uint8_t>(resultSlot));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
 
-    if (locals.empty() || locals.back().name != dvName) {
-        error("Internal compiler error: dict comprehension temp local mismatch (_dv)");
-        return;
+    // Drop the three compile-time temporaries (innermost first).
+    for (const std::string& expected : {dvName, dkName, dxName}) {
+        if (fn.locals.empty() || fn.locals.back().name != expected) {
+            error("Internal compiler error: dict comprehension temp local mismatch");
+            break;
+        }
+        fn.scopeLocalCounts.back()--;
+        fn.locals.pop_back();
     }
-    scopeLocalCounts.back()--;
-    locals.pop_back();  // _dv
-    if (locals.empty() || locals.back().name != dkName) {
-        error("Internal compiler error: dict comprehension temp local mismatch (_dk)");
-        return;
-    }
-    scopeLocalCounts.back()--;
-    locals.pop_back();  // _dk
-    if (locals.empty() || locals.back().name != dxName) {
-        error("Internal compiler error: dict comprehension temp local mismatch (_dx)");
-        return;
-    }
-    scopeLocalCounts.back()--;
-    locals.pop_back();  // _dx
 
     if (expr.condition) {
-        skipConditionPopJump = emitJump(OpCode::OP_JUMP);
-        patchJump(skipAppendJump);
-        emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-        patchJump(skipConditionPopJump);
+        size_t skipConditionPopJump = fn.emitJump(OpCode::OP_JUMP);
+        fn.patchJump(skipAppendJump);
+        fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+        fn.patchJump(skipConditionPopJump);
     }
 
     // ── Step 8: End body scope (pops loop variable) ──
-    endScope();
-
-    tryNesting--;
+    fn.endScope();
+    fn.tryNesting--;
 
     // Normal exit: pop catch handler, skip catch block
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
-    size_t skipCatchJump = emitJump(OpCode::OP_JUMP);
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+    size_t skipCatchJump = fn.emitJump(OpCode::OP_JUMP);
 
-    // ── Step 9: Catch handler (StopIteration → break) ──
-    size_t catchTarget = chunk.code.size();
+    // ── Step 9: Catch handler (StopIteration -> break, else re-throw) ──
+    size_t catchTarget = fn.chunk.code.size();
     size_t catchJumpSize = catchTarget - pushCatchPlaceholder - 2;
     if (catchJumpSize > UINT16_MAX) catchJumpSize = UINT16_MAX;
-    chunk.writeAt(pushCatchPlaceholder,
-                  static_cast<uint8_t>(catchJumpSize & 0xFF));
-    chunk.writeAt(pushCatchPlaceholder + 1,
-                  static_cast<uint8_t>((catchJumpSize >> 8) & 0xFF));
+    fn.chunk.writeAt(pushCatchPlaceholder,
+                     static_cast<uint8_t>(catchJumpSize & 0xFF));
+    fn.chunk.writeAt(pushCatchPlaceholder + 1,
+                     static_cast<uint8_t>((catchJumpSize >> 8) & 0xFF));
 
-    emitByte(static_cast<uint8_t>(OpCode::OP_CLEAR_EXCEPTION));
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_CLEAR_EXCEPTION));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP_CATCH));
 
-    beginScope();
-    addLocal("_exn");
+    fn.beginScope();
+    fn.addLocal("_exn");
 
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(resolveLocal("_exn")));
-    emitConstant(GcHeap::instance().alloc<GcString>("StopIteration"));
-    emitByte(static_cast<uint8_t>(OpCode::OP_EQUAL));
-    size_t notStopIterJump = emitJump(OpCode::OP_JUMP_IF_FALSE);
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-    visitBreakStmt(BreakStmt(expr.leftBrace));
-    patchJump(notStopIterJump);
-    emitByte(static_cast<uint8_t>(OpCode::OP_POP));
-    emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
-              static_cast<uint8_t>(resolveLocal("_exn")));
-    emitByte(static_cast<uint8_t>(OpCode::OP_THROW));
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                 static_cast<uint8_t>(fn.resolveLocal("_exn")));
+    fn.emitConstant(GcHeap::instance().alloc<GcString>("StopIteration"));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_EQUAL));
+    size_t notStopIterJump = fn.emitJump(OpCode::OP_JUMP_IF_FALSE);
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    fn.visitBreakStmt(BreakStmt(expr.leftBrace));
+    fn.patchJump(notStopIterJump);
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_POP));
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                 static_cast<uint8_t>(fn.resolveLocal("_exn")));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_THROW));
 
-    endScope();
+    fn.endScope();
 
-    patchJump(skipCatchJump);
+    fn.patchJump(skipCatchJump);
 
     // ── Step 10: Loop back ──
-    emitLoop(loopStart);
+    fn.emitLoop(loopStart);
 
-    // Patch break jumps
-    std::vector<size_t> savedBreakJumps = std::move(loopStack.back().breakJumps);
-    loopStack.pop_back();
+    std::vector<size_t> savedBreakJumps = std::move(fn.loopStack.back().breakJumps);
+    fn.loopStack.pop_back();
 
-    // ── Step 11: End for-in scope (pops _iter) ──
-    endScope();
+    // ── Step 11: End for-in scope (drops _iter) ──
+    fn.endScope();
 
     for (size_t jumpOffset : savedBreakJumps) {
-        patchJump(jumpOffset);
+        fn.patchJump(jumpOffset);
     }
 
-    // ── Step 12: Manual wrapper cleanup (leave _dcN on stack) ──
-    int wrapperCount = scopeLocalCounts.back();
-    scopeLocalCounts.pop_back();
-    for (int i = 0; i < wrapperCount; i++) {
-        locals.pop_back();
-    }
-    scopeDepth--;
+    // ── Step 12: return the accumulated dict ──
+    // No endScope after this: frame teardown discards the locals, and emitting
+    // pops here would pop the value being returned.
+    fn.emitBytes(static_cast<uint8_t>(OpCode::OP_GET_LOCAL),
+                 static_cast<uint8_t>(resultSlot));
+    fn.emitByte(static_cast<uint8_t>(OpCode::OP_RETURN));
+
+    // ── Build the prototype and call it ──
+    auto capturedUpvalues = fn.upvalues;
+    FunctionPrototype proto;
+    proto.name = "<dictcomp>";
+    proto.arity = 0;
+    proto.requiredArity = 0;
+    proto.hasRest = false;
+    proto.upvalues = std::move(fn.upvalues);
+    proto.chunk = std::move(fn.chunk);
+    proto.isGenerator = false;
+    proto.isAsync = false;
+
+    size_t protoIndex = addFunctionPrototype(std::move(proto));
+    emitClosure(protoIndex, capturedUpvalues);
+    emitBytes(static_cast<uint8_t>(OpCode::OP_CALL), 0);
 }
 
 void Compiler::visitArrayExpr(const ArrayExpr& expr) {

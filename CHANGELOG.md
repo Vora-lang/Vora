@@ -170,6 +170,28 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   brace-aware scan; previously a syntax dead-end.
 
 ### Fixed
+- **Comprehensions only worked where the value stack was empty**
+  (pre-existing; documented as implemented since v0.27): both desugars kept
+  their working state — result container, iterator, loop variable,
+  merge temporaries, StopIteration binding — in frame locals, and locals are
+  addressed as `frameBase + slot`. In any expression position where the
+  enclosing frame had already pushed operands (a call's callee and earlier
+  arguments, a dict key, an earlier array element) those slots were taken, so
+  the desugar read the wrong values and raised
+  `TypeError: next() requires an iterator or generator`. In practice
+  `print([x for x in xs])` — the most natural way to use a comprehension —
+  failed, as did `f(1, [x for x in xs])`, `{k: [x for x in xs]}`,
+  `[9, [x for x in xs]]` and `while (len([x for x in xs]) > 0)`. It worked only
+  in the shapes the examples happened to use: `let v = [...]`, `return [...]`,
+  a binary operand, an index target, or the first array element.
+  Both desugars now compile into their own synthesized zero-argument function
+  and call it, so the working state lives in a fresh frame and the surrounding
+  expression no longer matters.
+  Tests: `tests/runtime/test_comprehension_positions.va` (verified red before
+  the fix, failing at the first `print(len([...]))` case). Found by a runtime
+  audit of the features this cycle claims as implemented — examples 52/53
+  only ever exercise `let x = [...]`, which is why the old coverage looked
+  green.
 - **Or-patterns only honoured their first alternative** (pre-existing,
   **syntactically valid but semantically invisible**): for a match arm like
   `1 | 2 | 3 => ...`, the compiler tested only `patterns[0]`, so `match 2

@@ -1,0 +1,91 @@
+// =========================================================================
+// test_comprehension_positions.va — comprehensions must work in ANY
+// expression position, not only as a `let` initializer.
+//
+// Regression test: the desugars for `[expr for v in xs]` and
+// `{k: v for k in xs}` kept their working state (result container,
+// iterator, loop variable, temporaries) in frame locals, and locals are
+// addressed as frameBase+slot. Inside a call's argument list, a dict
+// value or a later array element the enclosing frame already had
+// operands in exactly those slots, so those positions threw
+// "TypeError: next() requires an iterator or generator". Both desugars now
+// compile into their own synthesized function frame.
+//
+// Every case below threw before the fix. The examples under examples/
+// only ever used the `let x = [...]` shape, which is why the old tests and
+// the "52/53 examples pass" claim never caught it.
+// =========================================================================
+
+// --- the most natural usage: pass the comprehension straight to a call ---
+print("direct print: " + toString(len([i for i in [1, 2, 3]])))
+assert(len([i for i in [1, 2, 3]]) == 3, "comprehension as len() argument")
+
+func identity(v) { return v }
+func second(a, b) { return len(b) }
+assert(len(identity([i for i in [1, 2]])) == 2, "comprehension as sole call argument")
+assert(second(1, [i for i in [1, 2]]) == 2, "comprehension as a later call argument")
+
+// --- dict value and later array element ---
+let withDict = {a: [i for i in [1, 2]]}
+assert(len(withDict.a) == 2, "comprehension as a dict value")
+assert(len(withDict) == 1, "the dict itself is intact")
+let arr = [9, [i for i in [1, 2]]]
+assert(len(arr) == 2, "array has both elements")
+assert(len(arr[1]) == 2, "comprehension as a later array element")
+
+// --- condition positions ---
+let guard = 0
+while (len([k for k in [1]]) > 0) {
+    guard = guard + 1
+    if (guard > 1) { break }
+}
+assert(guard == 2, "comprehension inside a while condition")
+if (len([i for i in [1, 2]]) == 2) { guard = 99 }
+assert(guard == 99, "comprehension inside an if condition")
+
+// --- string concatenation ---
+let n = 3
+assert("n=" + toString(len([i for i in range(n)])) == "n=3",
+       "comprehension inside concatenation")
+
+// --- dict comprehension in the same positions ---
+print("dict comp direct: " + toString(len({toString(i): i for i in [1, 2]})))
+assert(len({toString(i): i for i in [1, 2]}) == 2, "dict comp as len() argument")
+assert(len(identity({toString(i): i for i in [1, 2]})) == 2, "dict comp as call argument")
+let nested = {a: {toString(i): i for i in [1, 2]}}
+assert(len(nested.a) == 2, "dict comp as a dict value")
+
+// --- positions that already worked must keep working ---
+let assigned = [i * 2 for i in [1, 2, 3]]
+assert(len(assigned) == 3 and assigned[2] == 6, "let initializer still works")
+func returnsComp() { return [i for i in [1, 2]] }
+assert(len(returnsComp()) == 2, "return value still works")
+assert(len([i for i in [1, 2]] + [3]) == 3, "binary operand still works")
+assert([i for i in [1, 2]][0] == 1, "index target still works")
+let matrix = [[j for j in [1, 2]] for i in [1, 2]]
+assert(len(matrix) == 2 and len(matrix[1]) == 2, "nested comprehension still works")
+
+// --- filters and non-array iterables ---
+assert(len([i for i in [1, 2, 3, 4] if i > 2]) == 2, "filtered comprehension as argument")
+assert(len([c for c in "abc"]) == 3, "string iterable as argument")
+assert(len({toString(i): i for i in range(4) if i > 1}) == 2, "filtered dict comp as argument")
+
+// --- closure capture: the synthesized frame must still see outer names ---
+let factor = 3
+assert([i * factor for i in [1, 2]][1] == 6, "captures an enclosing variable")
+func withLocal() {
+    let base = 10
+    return len([i + base for i in [1, 2]])
+}
+assert(withLocal() == 2, "captures an enclosing function local as an upvalue")
+
+// --- repeated evaluation must not drift (frame per evaluation) ---
+let total = 0
+let round = 0
+while (round < 50) {
+    total = total + len([i for i in [1, 2, 3]])
+    round = round + 1
+}
+assert(total == 150, "50 rounds of argument-position comprehension")
+
+print("All comprehension position tests passed!")

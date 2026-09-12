@@ -34,7 +34,7 @@
 | `class` OOP（C3 MRO、`super`、`this`、构造、方法） | ✅ | |
 | `import` / `export` / `from ... import` | ✅ | 路径含 `-` 时在缺 alias 下编译期报清晰错误（P0 #4）；显式 `as` alias 或 `from ... import` 不受影响 |
 | `match` 表达式（含 or-pattern `1 \| 2 \| 3 =>`） | ✅ | P1-B 后 lexer 产 `TokenType::PIPE`，parser `matchExpression()` 循环累计 alternation |
-| 推导式 `for x in xs yield x*2` | ✅ | v0.27 起 compiler_expr.cpp 走 iter()/next 脱糖，52/53 examples 全跑通 |
+| 推导式 `for x in xs yield x*2` | ✅ | v0.27 起 compiler_expr.cpp 走 iter()/next 脱糖。**2026-09 修正**：脱糖原先内联在外层帧，只有栈为空的位置（如 `let x = [...]`）可用，`print([x for x in xs])` 等会抛错；现改为编译进合成函数帧。验证见 `tests/runtime/test_comprehension_positions.va` |
 | 类型注解 `:int/:float/:bool/:str` | ✅ | 自动运行时转换 |
 
 ### 标准库（9 个模块）
@@ -162,6 +162,13 @@ P2 项处置（v0.30 冻结前裁定，详见 `docs/18-v0.30-冻结计划.md`）
       （`match 2 { 1 | 2 => "a", _ => "b" }` 曾得到 `"b"`）。已改为逐备选求条件并短路或；
       `tests/runtime/test_match_or_pattern.va` 锁定。**解析器层测试无法发现此类缺陷**，
       故该类特性今后必须配运行时测试。
+  [X] 推导式在「栈上已有值」的表达式位置全部抛错 —— 脱糖用外层帧的 locals 存中间状态，
+      而调用实参/字典值/后续数组元素已占用那些槽位，于是 `print([x for x in xs])`、
+      `{k: [x for x in xs]}`、`[9, [x for x in xs]]` 均抛 `next() requires an iterator or
+      generator`。已改为把脱糖编译进合成的零参函数帧，位置无关；
+      `tests/runtime/test_comprehension_positions.va` 锁定。
+      **教训**：examples 52/53 只覆盖 `let x = [...]` 一种形状，却被当作「已实现」的验证依据
+      —— 验收必须覆盖该特性的各种语法位置，不能只看示例能否跑通。
 ```
 
 ### Phase 2：补能力（2–3 月）
