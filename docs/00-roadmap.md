@@ -147,6 +147,15 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
 
 Phase 1 剩余（语法评审第 5 节"第三批"项，尚未纳入本清单，实测确认仍未解决）：
   [ ] 尾随逗号（`[1,2,]` / `{a:1,}` / `f(1,2,)` / 形参表，实测均报错；EBNF §5.4 已改正声明）
+
+P2 项处置（v0.30 冻结前裁定，详见 `docs/18-v0.30-冻结计划.md`）：
+  [X] 3.6 `Obj` → `class` 关键字改名（破坏性；见 CHANGELOG Breaking changes）
+  [X] 3.8 `match` 无匹配臂由静默返回 `null` 改为抛出可捕获的运行时错误（破坏性；
+      `tests/runtime/test_match_no_arm.va`）
+  [X] 3.9 `as` 的注释不再声称可用于类型转换
+  [ ] 3.5 `..`/`..=`：v1.0 不含 range/切片表达式，后期作为非破坏性新增补充
+  接受现状（v1.0 不改）：3.1 `Obj` 体内 func 位置敏感、3.2 解构 cover grammar、
+  3.3 `:` 四重重载、3.4 `for` 四重含义、3.7 `defer` 与 `finally` 并存
 ```
 
 ### Phase 2：补能力（2–3 月）

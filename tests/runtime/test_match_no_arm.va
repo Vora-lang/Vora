@@ -1,0 +1,87 @@
+// =========================================================================
+// test_match_no_arm.va — `match` with no matching arm now raises
+// (syntax-review 3.8)
+//
+// Previously an unmatched `match` silently produced `null`, which then
+// propagated far from its origin before anything failed. It now throws a
+// catchable runtime error naming the unmatched value.
+// =========================================================================
+
+// --- unmatched literal pattern throws, and the error names the value ---
+let caught = ""
+try {
+    let r = match 99 { 1 => "one", 2 => "two" }
+    assert(false, "should not reach the assignment")
+} catch (e) {
+    caught = e
+}
+assert(caught != "", "an unmatched match should throw")
+assert(caught == "no match arm matched the value: 99", "error names the integer value")
+
+// --- the error carries the value for every value kind ---
+func messageFor(v) {
+    try {
+        let r = match v { "never-matches-this" => 1 }
+        return "did not throw"
+    } catch (e) {
+        return e
+    }
+}
+assert(messageFor(7) == "no match arm matched the value: 7", "int value")
+assert(messageFor("hi") == "no match arm matched the value: hi", "string value")
+assert(messageFor(true) == "no match arm matched the value: true", "bool value")
+assert(messageFor(null) == "no match arm matched the value: null", "null value")
+assert(messageFor([1, 2]) == "no match arm matched the value: [1, 2]", "array value")
+
+// --- a wildcard arm still prevents the error ---
+assert(match 99 { 1 => "one", _ => "other" } == "other", "wildcard still matches")
+assert(match 99 { _ => "only" } == "only", "wildcard-only still matches")
+
+// --- fully covered matches are unaffected ---
+assert(match 1 { 1 => "one", 2 => "two" } == "one", "first arm")
+assert(match 2 { 1 => "one", 2 => "two" } == "two", "second arm")
+assert(match true { true => "yes", false => "no" } == "yes", "bool covered")
+assert(match false { true => "yes", false => "no" } == "no", "bool covered (other)")
+
+// --- an unmatched nested match propagates out ---
+let nested = ""
+try {
+    let r = match 1 { 1 => match 9 { 3 => "three" }, _ => "other" }
+} catch (e) {
+    nested = e
+}
+assert(nested == "no match arm matched the value: 9", "nested unmatched match throws")
+
+// --- rethrow / catch-and-continue still work after the new error ---
+let after = "unset"
+try {
+    let r = match 5 { 1 => "one" }
+} catch (e) {
+    after = "recovered"
+}
+assert(after == "recovered", "execution continues after catch")
+
+// --- the error is raised for a match in statement position too ---
+let stmtCaught = ""
+try {
+    match 42 { 1 => print("no") }
+} catch (e) {
+    stmtCaught = e
+}
+assert(stmtCaught == "no match arm matched the value: 42", "statement-position match throws")
+
+// --- defers in the enclosing function still run when the match fails ---
+let trace = ""
+func withDefer() {
+    defer trace = trace + "d"
+    let r = match 1 { 2 => "two" }
+    return r
+}
+try {
+    withDefer()
+} catch (e) {
+    trace = trace + "c"
+}
+assert(trace == "dc", "defer runs before the catch block")
+
+print("All match-no-arm tests passed!")

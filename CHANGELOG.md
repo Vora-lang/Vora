@@ -52,6 +52,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   declaration keyword. `std/` does not use the keyword at all.
   Note: the `Obj` spelling throughout the historical entries above is
   intentional — see the historical-spelling note.
+- **A `match` with no matching arm now raises instead of returning `null`**
+  (syntax-review #3.8). `match 99 { 1 => "one" }` used to evaluate to
+  `null`, which then propagated far from its origin before anything failed —
+  a silent-wrong-meaning defect of the kind design principle 7 forbids.
+  It now throws a catchable runtime error naming the unmatched value:
+  `no match arm matched the value: 99`, reported at the line of the `match`.
+  Migration: add a `_` arm (recommended — a wildcard always matched
+  before, so this is the idiomatic spelling of the old behaviour), or
+  handle the error with `try`/`catch` if the fallthrough is intentional.
+  Matches that already end in `_`, or whose arms cover the value, are
+  unaffected. Defers in the enclosing function still run, as with `throw`.
 
 ### Added
 - **Labeled `break` / `continue`** (Phase 1 closing item, syntax-review #2.8):

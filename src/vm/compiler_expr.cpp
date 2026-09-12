@@ -1331,7 +1331,21 @@ void Compiler::visitMatchExpr(const MatchExpr& expr) {
         emitByte(static_cast<uint8_t>(OpCode::OP_POP));
 
         if (isLast && !hasWildcard) {
-            emitByte(static_cast<uint8_t>(OpCode::OP_NULL));
+            // No arm matched. This used to silently produce `null`, which then
+            // propagated far from its origin before anything failed
+            // (syntax-review 3.8 — a silent-wrong-meaning defect). Raise a
+            // catchable runtime error instead, reporting the unmatched value.
+            // Running the frame's defers mirrors what `throw` does.
+            currentLine = expr.matchKeyword.line;
+            currentColumn = expr.matchKeyword.column;
+            emitDeferFlush();
+            emitConstant(GcHeap::instance().alloc<GcString>(
+                "no match arm matched the value: "));
+            emitGetGlobal(tempSlot);                              // the value
+            emitConstant(GcHeap::instance().alloc<GcString>(""));
+            emitByte(static_cast<uint8_t>(OpCode::OP_ADD));       // value -> string
+            emitByte(static_cast<uint8_t>(OpCode::OP_ADD));       // prefix + value
+            emitByte(static_cast<uint8_t>(OpCode::OP_THROW));
         }
     }
 
