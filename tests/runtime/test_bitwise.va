@@ -65,7 +65,12 @@ while (n != 0) {
 assert(count == 3, "popcount(13) should be 3")
 
 // --- '|' as match or-pattern still works alongside bitwise '|' ---
-let r = match 3 { 1 | 2 => "low", 3 | 4 => "mid", _ => "high" }
-assert(r == "mid", "match or-pattern 3 | 4 should hit with bitwise '|' present")
+// Uses a subject that is NOT the first alternative of its arm: an earlier
+// version of this test matched on the first alternative only, so it passed
+// even while the compiler ignored every later alternative.
+let r = match 4 { 1 | 2 => "low", 3 | 4 => "mid", _ => "high" }
+assert(r == "mid", "match or-pattern 3 | 4 should hit on the second alternative")
+let s = match 2 { 1 | 2 => "low", 3 | 4 => "mid", _ => "high" }
+assert(s == "low", "match or-pattern 1 | 2 should hit on the second alternative")
 
 print("All bitwise tests passed!")
