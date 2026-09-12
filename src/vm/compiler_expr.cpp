@@ -278,7 +278,7 @@ void Compiler::visitBinaryExpr(const BinaryExpr& expr) {
                         if (b == 0) break;
                         // INT64_MIN % -1 overflows
                         if (a == INT64_MIN && b == -1) break;
-                        emitConstant(static_cast<double>(std::fmod(static_cast<double>(a), static_cast<double>(b)))); return;
+                        emitConstant(a % b); return;   // int64 % int64 stays an int
                     case TokenType::AMPERSAND:
                         emitConstant(a & b); return;
                     case TokenType::PIPE:

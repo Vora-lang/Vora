@@ -1661,6 +1661,11 @@ InterpretResult VM::run() {
                 if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for -");
                 }
+                if (aVal.isInt() && bVal.isInt()) {
+                    // int64 - int64 stays an int (wraps on overflow, like C).
+                    push(Value(aVal.asInt() - bVal.asInt()));
+                    break;
+                }
                 push(toDouble(aVal) - toDouble(bVal));
                 break;
             }
@@ -1669,6 +1674,11 @@ InterpretResult VM::run() {
                 Value aVal = pop();
                 if (!isNumeric(aVal) || !isNumeric(bVal)) {
                     RUNTIME_ERROR_OR_THROW("Invalid operands for *");
+                }
+                if (aVal.isInt() && bVal.isInt()) {
+                    // int64 * int64 stays an int (wraps on overflow, like C).
+                    push(Value(aVal.asInt() * bVal.asInt()));
+                    break;
                 }
                 push(toDouble(aVal) * toDouble(bVal));
                 break;
@@ -1695,6 +1705,15 @@ InterpretResult VM::run() {
                 double b = toDouble(bVal);
                 if (b == 0) {
                     RUNTIME_ERROR_OR_THROW("Modulo by zero");
+                }
+                if (aVal.isInt() && bVal.isInt()) {
+                    const int64_t ai = aVal.asInt();
+                    const int64_t bi = bVal.asInt();
+                    // INT64_MIN % -1 overflows; fall through to the double path.
+                    if (!(ai == INT64_MIN && bi == -1)) {
+                        push(Value(ai % bi));
+                        break;
+                    }
                 }
                 push(std::fmod(toDouble(aVal), b));
                 break;
