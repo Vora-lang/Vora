@@ -120,6 +120,23 @@ public:
     std::unique_ptr<Program> parse();
 
     /**
+     * @brief Parse a standalone expression from source text.
+     *
+     * Used by the compiler to turn the text of a `${ ... }` interpolation
+     * region into an expression AST. The fragment is lexed and parsed in
+     * isolation (its source positions are relative to the fragment).
+     *
+     * @param source   Expression source text, without the surrounding `${ }`.
+     * @param reporter Sink for syntax errors; the caller normally passes the
+     *                 same reporter used for the enclosing compilation unit so
+     *                 errors surface to the user.
+     * @return The parsed expression, or nullptr if the fragment was empty or
+     *         could not be parsed (an error has been reported).
+     */
+    static std::unique_ptr<Expr> parseStandaloneExpression(const std::string& source,
+                                                           ErrorReporter& reporter);
+
+    /**
      * @brief Check whether any syntax errors were encountered.
      *
      * Call this after parse() to decide whether the AST is safe to

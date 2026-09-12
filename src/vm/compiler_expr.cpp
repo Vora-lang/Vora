@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "../gc/gc_heap.h"
+#include "../parser/parser.h"
 #include "../runtime/vora_function.h"
 
 namespace vora {
@@ -36,67 +37,106 @@ void Compiler::visitLiteralExpr(const LiteralExpr& expr) {
 }
 
 void Compiler::compileInterpolatedString(const std::string& str) {
-    // Parse ${...} patterns at compile time and emit bytecode for
-    // string building via concatenation.
+    // `${ ... }` regions hold full expressions. Each one is parsed at compile
+    // time and compiled in place, then stringified and concatenated into the
+    // result with OP_ADD, left to right.
     //
-    // For literal segments:     OP_CONSTANT
-    // For variable segments:    OP_GET_LOCAL/OP_GET_GLOBAL + stringify via ("" + value)
-    // For dotted segments:      OP_GET_LOCAL/OP_GET_GLOBAL + OP_GET_PROPERTY chain + stringify
-    // All segments concatenated with OP_ADD.
+    //   literal segment      -> OP_CONSTANT
+    //   expression segment   -> <compiled expression> + "" (value -> string)
+    //
+    // Stringification uses `value + ""`, which OP_ADD handles for int, float,
+    // string, bool, null, array and dict. Literal text arrives already
+    // unescaped by the lexer; `\$` comes through as kEscapedDollar, which
+    // emitConstant turns back into '$'.
+    //
+    // Note: parsing here means the compiler depends on the parser for this one
+    // job. The alternative — an InterpolatedStringExpr AST node — would have
+    // required touching ExprVisitor and all four of its implementors, and the
+    // formatter (which round-trips the raw string literal) would have needed
+    // its own reconstruction logic.
 
-    std::vector<std::string> parts;   // literal or variable name (with dots)
-    std::vector<bool> isLiteral;      // true = literal string, false = variable ref
+    struct Segment {
+        bool isLiteral = true;
+        std::string text;             ///< Literal text, when isLiteral.
+        std::unique_ptr<Expr> expr;   ///< Parsed expression, when !isLiteral.
+    };
+    std::vector<Segment> segments;
 
+    const size_t n = str.length();
     size_t i = 0;
-    while (i < str.length()) {
-        if (i + 1 < str.length() && str[i] == '$' && str[i + 1] == '{') {
-            i += 2;  // skip ${
-            std::string varName;
-            while (i < str.length() && str[i] != '}') {
-                varName += str[i];
-                i++;
+    while (i < n) {
+        if (i + 1 < n && str[i] == '$' && str[i + 1] == '{') {
+            const size_t start = i + 2;
+            size_t j = start;
+            int depth = 1;
+            while (j < n && depth > 0) {
+                char c = str[j];
+                if (c == '"' || c == '\'') {
+                    // Skip a nested string literal: braces inside it are not
+                    // part of the interpolation structure.
+                    const char quote = c;
+                    j++;
+                    while (j < n && str[j] != quote) {
+                        if (str[j] == '\\') j++;
+                        j++;
+                    }
+                    j++;  // closing quote of the nested literal
+                    continue;
+                }
+                if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                    if (depth == 0) break;
+                }
+                j++;
             }
-            if (i < str.length()) i++;  // skip }
-            parts.push_back(varName);
-            isLiteral.push_back(false);
-        } else {
-            std::string literal;
-            while (i < str.length()) {
-                if (i + 1 < str.length() && str[i] == '$' && str[i + 1] == '{') break;
-                literal += str[i];
-                i++;
+
+            const std::string fragment = str.substr(start, j - start);
+            i = (j < n) ? j + 1 : n;  // step past the closing '}'
+
+            Segment seg;
+            seg.isLiteral = false;
+            seg.expr = Parser::parseStandaloneExpression(fragment, errorReporter_);
+            if (!seg.expr) {
+                error("Invalid `${}` interpolation: expected an expression");
+                seg.expr = std::make_unique<LiteralExpr>(nullptr);
             }
-            parts.push_back(literal);
-            isLiteral.push_back(true);
+            segments.push_back(std::move(seg));
+            continue;
         }
+
+        // Literal run: everything up to the next real `${`.
+        std::string literal;
+        while (i < n) {
+            if (i + 1 < n && str[i] == '$' && str[i + 1] == '{') break;
+            literal += str[i];
+            i++;
+        }
+        Segment seg;
+        seg.isLiteral = true;
+        seg.text = std::move(literal);
+        segments.push_back(std::move(seg));
     }
 
-    if (parts.empty()) {
+    if (segments.empty()) {
         emitConstant(GcHeap::instance().alloc<GcString>(""));
         return;
     }
 
-    // Emit first part
-    if (isLiteral[0]) {
-        emitConstant(GcHeap::instance().alloc<GcString>(parts[0]));
-    } else {
-        compileVariableOrPropertyRef(parts[0]);
-        // Stringify: push "", then OP_ADD
-        emitConstant(GcHeap::instance().alloc<GcString>(""));
-        emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
-    }
-
-    // Emit remaining parts and concatenate
-    for (size_t j = 1; j < parts.size(); j++) {
-        if (isLiteral[j]) {
-            emitConstant(GcHeap::instance().alloc<GcString>(parts[j]));
+    for (size_t k = 0; k < segments.size(); k++) {
+        Segment& seg = segments[k];
+        if (seg.isLiteral) {
+            emitConstant(GcHeap::instance().alloc<GcString>(seg.text));
         } else {
-            compileVariableOrPropertyRef(parts[j]);
-            // Stringify non-literal values
+            seg.expr->accept(*this);
+            // Stringify: push "", then OP_ADD.
             emitConstant(GcHeap::instance().alloc<GcString>(""));
             emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
         }
-        emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+        if (k > 0) {
+            emitByte(static_cast<uint8_t>(OpCode::OP_ADD));
+        }
     }
 }
 

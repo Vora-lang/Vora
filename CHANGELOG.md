@@ -38,6 +38,25 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 > from the next release onward.
 
 ### Breaking changes
+- **String interpolation evaluates a real expression, and unknown names
+  raise** (syntax-review-adjacent; the EBNF and USER_GUIDE had always
+  claimed `${ expression }` but the compiler only substituted *names*).
+  `${n + 1}`, `${f(3)}`, `${a[1]}`, `${42}` and `${"ab".upper()}` used to be
+  emitted as literal text — no error, just the characters — and an unknown
+  name likewise fell back to printing itself, so a typo'd variable produced
+  plausible-looking output instead of failing. Interpolation now parses and
+  compiles the region as an expression, and an unknown name raises
+  `Undefined variable` (catchable); a malformed region is a compile error.
+  Migration: nothing to change for `${var}` / `${obj.prop}`, which work as
+  before. Code that relied on the silent text fallback (e.g. writing
+  `${...}` intending it to be printed verbatim) must escape it as `\${...}`.
+  The lexer also now skips nested string literals and braces inside a
+  region, so `"${f("x")}"` and `"${ {a: 1}.a }"` scan as one literal —
+  previously nested quotes broke the string.
+  Tests: `tests/runtime/test_interpolation.va`; the lexer test that asserted
+  the old "undefined var keeps original text" behaviour was updated to the
+  new contract. Suite: 411 unit / 1423 assertions, 93/93 script, 58/58
+  examples, formatter round-trip.
 - **The class-declaration keyword is `class`, not `Obj`** (syntax-review
   #3.6). Migration is a mechanical rename: `Obj Name(...) { }` becomes
   `class Name(...) { }`, including the inheritance form

@@ -5,11 +5,25 @@
 
 #include "../ast/stmt.h"
 #include "../gc/gc_heap.h"
+#include "../lexer/lexer.h"
 
 namespace vora {
 
 Parser::Parser(std::vector<Token> tokens, ErrorReporter& reporter)
     : tokens(std::move(tokens)), reporter_(reporter) {
+}
+
+std::unique_ptr<Expr> Parser::parseStandaloneExpression(const std::string& source,
+                                                        ErrorReporter& reporter) {
+    Lexer lexer(source, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.asiDepth_ = 0;
+    auto expr = parser.expression();
+    if (parser.peek().type != TokenType::END_OF_FILE) {
+        parser.error("Unexpected trailing input in expression");
+    }
+    return expr;
 }
 
 std::unique_ptr<Program> Parser::parse() {

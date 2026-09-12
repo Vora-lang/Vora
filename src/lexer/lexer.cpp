@@ -183,13 +183,52 @@ namespace vora {
     void Lexer::string(char delimiter) {
         std::string value;
 
-        while (peek() != delimiter && !isAtEnd()) {
+        // Depth of an open `${ ... }` interpolation region. While inside one the
+        // closing delimiter does not terminate the string, and nested string
+        // literals and braces are copied verbatim so that `"${f("x")}"` and
+        // `"${ {a: 1}.a }"` scan as a single string literal. The compiler parses
+        // the region's text as an expression afterwards.
+        int interpolationDepth = 0;
+
+        while (!isAtEnd()) {
+            if (interpolationDepth == 0 && peek() == delimiter) break;
+
             if (peek() == '\n') {
                 line++;
                 column = 1;
             }
 
             char c = advance();
+
+            if (interpolationDepth > 0) {
+                if (c == '"' || c == '\'') {
+                    // Nested string literal inside the interpolation: copy it
+                    // whole, so its quotes and any braces inside it are not
+                    // mistaken for the end of the region.
+                    value += c;
+                    while (!isAtEnd() && peek() != c) {
+                        if (peek() == '\n') {
+                            line++;
+                            column = 1;
+                        }
+                        char inner = advance();
+                        value += inner;
+                        if (inner == '\\' && !isAtEnd()) {
+                            value += advance();
+                        }
+                    }
+                    if (isAtEnd()) break;
+                    value += advance();  // closing quote of the nested literal
+                    continue;
+                }
+                if (c == '{') {
+                    interpolationDepth++;
+                } else if (c == '}') {
+                    interpolationDepth--;
+                }
+                value += c;
+                continue;
+            }
 
             if (c == '\\') {
                 if (isAtEnd()) {
@@ -218,9 +257,17 @@ namespace vora {
                         value += escaped;
                         break;
                 }
+            } else if (c == '$' && peek() == '{') {
+                value += c;
+                value += advance();  // '{'
+                interpolationDepth = 1;
             } else {
                 value += c;
             }
+        }
+
+        if (interpolationDepth > 0) {
+            error("Unterminated `${` interpolation in string");
         }
 
         if (isAtEnd()) {

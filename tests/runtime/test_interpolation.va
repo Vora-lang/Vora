@@ -1,0 +1,92 @@
+// =========================================================================
+// test_interpolation.va — `${ ... }` holds a real expression
+//
+// Before 2026-09 the compiler treated the text inside `${}` as a *name*: only
+// `${var}` and `${a.b.c}` worked, and anything else was silently emitted as
+// literal text (`"${n + 1}"` printed the characters `${n + 1}`). It now parses
+// and evaluates a full expression, and an unknown name raises instead of
+// degrading to text.
+//
+// The lexer also learned to skip nested string literals and braces inside an
+// interpolation region, so `"${f("x")}"` and `"${ {a: 1}.a }"` scan as one
+// string literal.
+//
+// Note on arithmetic: assertions here avoid pinning the *rendering* of
+// arithmetic results, because `x * 2` (variable operand, runtime fast-numeric
+// opcode) currently yields a float where the constant-folded `2 * 3` yields an
+// int — a separate pre-existing numeric inconsistency tracked outside this
+// test.
+// =========================================================================
+
+let x = 5
+let name = "Vora"
+let arr = [10, 20]
+
+// --- the forms that always worked ---
+assert("${x}" == "5", "plain variable")
+assert("${name}!" == "Vora!", "variable with trailing text")
+
+class Holder() { this.v = 7 }
+let h = Holder()
+assert("${h.v}" == "7", "property chain")
+
+// --- expressions are evaluated, not emitted as text ---
+// Only `+` is pinned exactly: `-`, `*`, `/` and `%` currently go through the
+// fast-numeric opcodes, which turn integer operands into floats
+// (`x - 1` interpolates as "4.000000"), a separate pre-existing numeric
+// inconsistency tracked outside this test.
+assert("${x + 1}" == "6", "arithmetic is evaluated, not literal")
+assert("${x + 1}" != "$" + "{x + 1}", "and certainly not left as text")
+assert("${arr[1]}" == "20", "index expression")
+assert("${42}" == "42", "numeric literal")
+assert("${true}" == "true", "boolean literal")
+assert("${null}" == "null", "null literal")
+assert("${[1, 2]}" == "[1, 2]", "array literal")
+assert("${ {b: 2}.b }" == "2", "braces inside the interpolation")
+
+// --- comparisons and ternaries yield strings we can pin exactly ---
+assert("${x > 3 ? "big" : "small"}" == "big", "ternary with nested quotes")
+assert("${x == 5}" == "true", "comparison")
+
+// --- calls, including nested string literals ---
+func count(v) { return len(v) }
+assert("${count([1, 2, 3])}" == "3", "function call")
+assert("${len("ab")}" == "2", "builtin call with a nested string literal")
+assert("${"ab".upper()}" == "AB", "method call on a nested string literal")
+assert("${"a-b".replace("-", "+")}" == "a+b", "method call with string arguments")
+assert("${name.length}" == "4", "property of a string")
+
+// --- several interpolations, and interpolation in any string position ---
+let sum = "${x}+${x}"
+assert(sum == "5+5", "multiple interpolations concatenate")
+let dict = {k: "v=${x}"}
+assert(dict.k == "v=5", "interpolation inside a dict value")
+assert("${"inner ${x}"}" == "inner 5", "interpolation inside a nested string")
+
+// --- escaping still wins ---
+// Build the expected literal `${x}` from parts so the right-hand side is not
+// itself interpolated.
+let dollar = "\$"
+let litX = dollar + "{" + "x" + "}"
+assert("\${x}" == litX, "escaped dollar stays literal")
+assert("${x} and \${x}" == "5 and " + litX, "escape and interpolation coexist")
+
+// --- an unknown name raises rather than printing itself ---
+let caught = ""
+try {
+    let bad = "${no_such_variable}"
+} catch (e) {
+    caught = e
+}
+assert(caught != "", "unknown name in interpolation raises")
+
+// --- repeated evaluation stays consistent ---
+let i = 0
+let seen = ""
+while (i < 5) {
+    seen = seen + "${i}"
+    i = i + 1
+}
+assert(seen == "01234", "interpolation inside a loop")
+
+print("All interpolation tests passed!")

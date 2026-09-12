@@ -16,11 +16,20 @@ assert("\t" == "\t", "tab escape")
 assert('x' == 'x', "single quoted char")
 assert('hello' == 'hello', "single quoted string")
 
-// String interpolation
+// String interpolation evaluates an expression
 let name = "Vora"
 assert("Hello ${name}!" == "Hello Vora!", "string interpolation")
+assert("${1 + 2}" == "3", "expression interpolation")
 
-// Empty interpolation fallback (undefined var keeps original text)
-assert("${undefined_var}" == "${undefined_var}", "undefined interpolation kept")
+// An unknown name inside `${}` now raises instead of silently keeping the
+// original text (that fallback was removed in 2026-09 when interpolation
+// became real expression evaluation — see CHANGELOG Breaking changes).
+let interpError = ""
+try {
+    let s = "${undefined_var}"
+} catch (e) {
+    interpError = e
+}
+assert(interpError != "", "undefined name in interpolation raises")
 
 print("Lexer string tests: PASS")
