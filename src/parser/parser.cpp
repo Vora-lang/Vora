@@ -563,11 +563,16 @@ std::unique_ptr<BindingPattern> Parser::parseArrayBinding() {
         do {
             if (match(TokenType::DOT_DOT_DOT)) {
                 rest = parseBindingPattern();
+                // A trailing comma may follow the rest element.
+                if (check(TokenType::COMMA) &&
+                    peekNext().type == TokenType::RIGHT_BRACKET) {
+                    advance();
+                }
                 break;  // rest is always last
             }
             auto elem = parseBindingPattern();
             elements.push_back(std::move(elem));
-        } while (match(TokenType::COMMA));
+        } while (matchCommaUnlessClosing(TokenType::RIGHT_BRACKET));
     }
 
     if (!match(TokenType::RIGHT_BRACKET)) {
@@ -588,6 +593,11 @@ std::unique_ptr<BindingPattern> Parser::parseObjectBinding() {
         do {
             if (match(TokenType::DOT_DOT_DOT)) {
                 rest = parseBindingPattern();
+                // A trailing comma may follow the rest element.
+                if (check(TokenType::COMMA) &&
+                    peekNext().type == TokenType::RIGHT_BRACE) {
+                    advance();
+                }
                 break;  // rest is always last
             }
 
@@ -612,7 +622,7 @@ std::unique_ptr<BindingPattern> Parser::parseObjectBinding() {
                     propName, std::move(nameToken), std::move(defaultValue));
                 properties.push_back({std::move(propName), std::move(idBinding), true});
             }
-        } while (match(TokenType::COMMA));
+        } while (matchCommaUnlessClosing(TokenType::RIGHT_BRACE));
     }
 
     if (!match(TokenType::RIGHT_BRACE)) {
@@ -1046,10 +1056,19 @@ std::unique_ptr<Stmt> Parser::funcStatement(bool isAsync) {
                 if (match(TokenType::EQUAL)) {
                     error("Rest parameter cannot have a default value");
                 }
-                if (check(TokenType::COMMA)) {
+                // A comma here is only a trailing comma, which is allowed:
+                // `func f(a, ...rest,)`.  A real parameter after the rest one
+                // is still rejected.
+                if (check(TokenType::COMMA) && peekNext().type != TokenType::RIGHT_PAREN) {
                     error("Rest parameter must be the last parameter");
                 }
                 params.emplace_back(std::move(paramName), nullptr, true);
+                // Terminal, but a trailing comma may still follow:
+                // `func f(a, ...rest,)`.
+                if (check(TokenType::COMMA) &&
+                    peekNext().type == TokenType::RIGHT_PAREN) {
+                    advance();
+                }
                 break;  // rest is always last — skip to ')'
             }
 
@@ -1098,7 +1117,7 @@ std::unique_ptr<Stmt> Parser::funcStatement(bool isAsync) {
 
             params.emplace_back(std::move(paramName), std::move(defaultValue));
         }
-        while (match(TokenType::COMMA));
+        while (matchCommaUnlessClosing(TokenType::RIGHT_PAREN));
     }
 
     if (!match(TokenType::RIGHT_PAREN)) {
@@ -1353,10 +1372,16 @@ std::unique_ptr<Expr> Parser::funcExpression(bool isAsync) {
                 if (match(TokenType::EQUAL)) {
                     return errorExpr("Rest parameter cannot have a default value");
                 }
-                if (check(TokenType::COMMA)) {
+                if (check(TokenType::COMMA) && peekNext().type != TokenType::RIGHT_PAREN) {
                     return errorExpr("Rest parameter must be the last parameter");
                 }
                 params.emplace_back(std::move(paramName), nullptr, true);
+                // Terminal, but a trailing comma may still follow:
+                // `func f(a, ...rest,)`.
+                if (check(TokenType::COMMA) &&
+                    peekNext().type == TokenType::RIGHT_PAREN) {
+                    advance();
+                }
                 break;  // rest is always last — skip to ')'
             }
 
@@ -1396,7 +1421,7 @@ std::unique_ptr<Expr> Parser::funcExpression(bool isAsync) {
 
             params.emplace_back(std::move(paramName), std::move(defaultValue));
         }
-        while (match(TokenType::COMMA));
+        while (matchCommaUnlessClosing(TokenType::RIGHT_PAREN));
     }
 
     if (!match(TokenType::RIGHT_PAREN)) {
@@ -1469,10 +1494,19 @@ std::unique_ptr<Stmt> Parser::classStatement() {
                 if (match(TokenType::EQUAL)) {
                     error("Rest parameter cannot have a default value");
                 }
-                if (check(TokenType::COMMA)) {
+                // A comma here is only a trailing comma, which is allowed:
+                // `func f(a, ...rest,)`.  A real parameter after the rest one
+                // is still rejected.
+                if (check(TokenType::COMMA) && peekNext().type != TokenType::RIGHT_PAREN) {
                     error("Rest parameter must be the last parameter");
                 }
                 params.emplace_back(std::move(paramName), nullptr, true);
+                // Terminal, but a trailing comma may still follow:
+                // `func f(a, ...rest,)`.
+                if (check(TokenType::COMMA) &&
+                    peekNext().type == TokenType::RIGHT_PAREN) {
+                    advance();
+                }
                 break;  // rest is always last — skip to ')'
             }
 
@@ -1522,7 +1556,7 @@ std::unique_ptr<Stmt> Parser::classStatement() {
 
             params.emplace_back(std::move(paramName), std::move(defaultValue));
         }
-        while (match(TokenType::COMMA));
+        while (matchCommaUnlessClosing(TokenType::RIGHT_PAREN));
     }
 
     if (!match(TokenType::RIGHT_PAREN)) {
@@ -2090,6 +2124,9 @@ std::unique_ptr<Expr> Parser::primary() {
         elements.push_back(std::move(first));
 
         while (match(TokenType::COMMA)) {
+            // A trailing comma before the closing delimiter is allowed:
+            // `[1, 2,]` / `{x: 1,}`.
+            if (check(TokenType::RIGHT_BRACKET)) break;
             auto element = expression();
 
             if (!element) {
@@ -2219,6 +2256,9 @@ std::unique_ptr<Expr> Parser::primary() {
         pairs.push_back({std::move(key), std::move(value)});
 
         while (match(TokenType::COMMA)) {
+            // A trailing comma before the closing delimiter is allowed:
+            // `[1, 2,]` / `{x: 1,}`.
+            if (check(TokenType::RIGHT_BRACE)) break;
             auto nextKey = expression();
             if (!nextKey) {
                 nextKey = std::make_unique<ErrorExpr>("Expected dict key", peek());
@@ -2330,7 +2370,7 @@ std::unique_ptr<Expr> Parser::finishCall(
                 argumentNames.push_back("");
             }
         }
-        while (match(TokenType::COMMA));
+        while (matchCommaUnlessClosing(TokenType::RIGHT_PAREN));
     }
 
     // Validate: positional arguments must precede named arguments.
@@ -2484,7 +2524,7 @@ std::unique_ptr<Expr> Parser::call() {
                             chain->arguments.push_back(std::move(arg));
                             chain->argumentNames.push_back("");
                         }
-                    } while (match(TokenType::COMMA));
+                    } while (matchCommaUnlessClosing(TokenType::RIGHT_PAREN));
                 }
                 if (!match(TokenType::RIGHT_PAREN)) {
                     error("Expected ')' after optional call arguments");
@@ -3009,4 +3049,15 @@ std::unique_ptr<Stmt> Parser::deferStatement() {
     return std::make_unique<DeferStmt>(std::move(expr), keyword);
 }
 
+bool Parser::matchCommaUnlessClosing(TokenType closing) {
+    if (!check(TokenType::COMMA)) return false;
+    // A comma directly before the delimiter is a trailing comma: consume it so
+    // the caller's loop ends cleanly, and report that no element follows.
+    if (peekNext().type == closing) {
+        advance();
+        return false;
+    }
+    advance();
+    return true;
+}
 }

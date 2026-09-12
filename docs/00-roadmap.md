@@ -146,8 +146,10 @@ LSP：    Vora-LSP 仓库独立维护（C++ 服务端，复用 vora_lib，VS Cod
     本次起改为引用标签。对 `tests/`、`examples/`、`std/` 全量 grep 无一处受影响。
     —— 设计过程中发现并修复 7 个既有静默缺陷，见 `CHANGELOG.md [Unreleased] → Fixed`。
 
-Phase 1 剩余（语法评审第 5 节"第三批"项，尚未纳入本清单，实测确认仍未解决）：
-  [ ] 尾随逗号（`[1,2,]` / `{a:1,}` / `f(1,2,)` / 形参表，实测均报错；EBNF §5.4 已改正声明）
+Phase 1 剩余：
+  [X] 尾随逗号（`[1,2,]` / `{a:1,}` / `f(1,2,)` / 形参表 / 解构，2026-09 已实现。
+      规则是「逗号后必须紧跟结束分隔符」，所以空元素仍报错；纯增量，不改变既有合法代码含义。
+      见 EBNF §5.4、`tests/runtime/test_trailing_comma.va`）
 
 P2 项处置（v0.30 冻结前裁定，详见 `docs/18-v0.30-冻结计划.md`）：
   [X] 3.6 `Obj` → `class` 关键字改名（破坏性；见 CHANGELOG Breaking changes）

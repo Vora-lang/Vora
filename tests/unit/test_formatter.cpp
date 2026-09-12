@@ -652,3 +652,18 @@ TEST_CASE("fmt_separates_statements_asi_would_merge") {
     CHECK(plain.find("let a = 1;") == std::string::npos);
     CHECK(isIdempotent("let b = 0;" + std::string(1, char(10)) + "[a, b] = [1, 2]"));
 }
+
+// ============================================================================
+// Trailing commas: the formatter emits the canonical (no trailing comma) form,
+// and the result must still parse and stay stable.
+// ============================================================================
+
+TEST_CASE("fmt_normalizes_trailing_commas") {
+    CHECK(trimmed(fmt("let a = [1, 2,]")) == "let a = [1, 2]");
+    CHECK(trimmed(fmt("let d = {x: 1,}")) == "let d = {x: 1}");
+    CHECK(trimmed(fmt("func f(a, b,) { return a }")) == "func f(a, b) {" + std::string(1, char(10)) + "    return a" + std::string(1, char(10)) + "}");
+    CHECK(isIdempotent("let a = [1, 2,]"));
+    CHECK(isIdempotent("let d = {x: 1,}"));
+    CHECK(isIdempotent("func f(a, b,) { return a }"));
+    CHECK(isIdempotent("let [p, q,] = arr"));
+}

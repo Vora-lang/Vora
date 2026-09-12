@@ -1,0 +1,77 @@
+// =========================================================================
+// test_trailing_comma.va — Optional trailing commas
+//
+// A comma-separated list may end with one extra comma before its closing
+// delimiter. The rule is "the comma must be followed by the delimiter", so an
+// empty element is still an error — those counterexamples live in
+// tests/unit/test_parser.cpp, since a script cannot assert its own parse failure.
+//
+// Run: vora tests/runtime/test_trailing_comma.va
+// =========================================================================
+
+print("=== Runtime: Trailing Comma Tests ===")
+
+// --- Array literal ---
+let arr = [1, 2, 3,]
+assert(len(arr) == 3, "trailing comma in an array literal")
+assert(arr[2] == 3, "array contents are unaffected")
+let single = [7,]
+assert(len(single) == 1, "single element with a trailing comma")
+
+// --- Dict literal ---
+let d = {a: 1, b: 2,}
+assert(len(d) == 2, "trailing comma in a dict literal")
+assert(d.b == 2, "dict contents are unaffected")
+let x = 1
+let y = 2
+let shorthand = {x, y,}
+assert(len(shorthand) == 2, "trailing comma after shorthand entries")
+assert(shorthand.x == 1, "shorthand values are unaffected")
+
+// --- Call arguments ---
+func add(a, b) { return a + b }
+assert(add(1, 2,) == 3, "trailing comma in call arguments")
+assert(add(1, 2,) == add(1, 2), "and it means the same as without")
+
+func spread1(a, b, c) { return a + b + c }
+assert(spread1(...[1, 2], 3,) == 6, "trailing comma alongside a spread")
+
+// --- Parameter list ---
+func params(a, b,) { return a + b }
+assert(params(1, 2) == 3, "trailing comma in a parameter list")
+
+func paramsDefault(a, b = 5,) { return a + b }
+assert(paramsDefault(1) == 6, "trailing comma with a default value")
+
+async func asyncParams(a, b,) { return a + b }
+assert(type(asyncParams(1, 2)) == "task", "trailing comma in an async parameter list")
+
+// --- Rest parameters and rest elements ---
+func restParams(a, ...rest,) { return a + len(rest) }
+assert(restParams(1, 2, 3) == 3, "trailing comma after a rest parameter")
+
+let [head, ...tail,] = [1, 2, 3]
+assert(head == 1 and len(tail) == 2, "trailing comma after a rest element")
+
+let {first, ...others,} = {first: 1, second: 2}
+assert(first == 1 and len(others) == 1, "trailing comma after an object rest element")
+
+// --- Destructuring ---
+let [p, q,] = [10, 20]
+assert(p == 10 and q == 20, "trailing comma in array destructuring")
+
+let obj = {m: 1, n: 2}
+let {m, n,} = obj
+assert(m == 1 and n == 2, "trailing comma in object destructuring")
+
+let {m: mm, n: nn,} = obj
+assert(mm == 1 and nn == 2, "trailing comma in renamed object destructuring")
+
+// --- Existing code is unaffected ---
+let plain = [1, 2, 3]
+assert(len(plain) == 3, "lists without a trailing comma still work")
+assert(add(1, 2) == 3, "calls without a trailing comma still work")
+assert(len([]) == 0, "an empty list is still empty")
+assert(len({}) == 0, "an empty dict is still empty")
+
+print("All trailing comma tests passed!")

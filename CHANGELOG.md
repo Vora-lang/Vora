@@ -141,6 +141,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   unaffected. Defers in the enclosing function still run, as with `throw`.
 
 ### Added
+- **Optional trailing commas.** A comma-separated list may end with one extra
+  comma before its closing delimiter: `[1, 2,]`, `{x: 1,}`, `f(1, 2,)`,
+  `func f(a, b,)`, `let [p, q,] = ...`, `let {x, y,} = obj`, and after a rest
+  element (`func f(a, ...rest,)`). The rule is that the comma must be followed
+  directly by the closing delimiter, so an *empty* element stays an error —
+  `[1,,]`, `[,1]`, `f(1,,)`, `func f(,a)` and `[1,,2]` are all still rejected,
+  as is a parameter after a rest parameter. Purely additive: no existing valid
+  program changes meaning. The formatter emits the canonical form without the
+  trailing comma, so formatting stays idempotent.
+  Tests: `tests/runtime/test_trailing_comma.va`, `tests/unit/test_parser.cpp`
+  (positives and counterexamples), `tests/unit/test_formatter.cpp`.
+  Docs: EBNF §5.4 and §5.2/§5.7 restore the optional trailing comma in the
+  productions; USER_GUIDE gains a section.
 - **Exponent notation in float literals** (`1e10`, `2.5e-3`, `1E+5`, `6.02e23`).
   `USER_GUIDE` and the EBNF had documented this since v0.27 and the parser
   already carried an `hasExp` branch, but the lexer never scanned an exponent:

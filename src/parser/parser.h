@@ -814,6 +814,17 @@ private:
     /// @brief Index of the next unclaimed comment in comments_.
     size_t commentCursor_ = 0;
 
+    /// @brief Consume a ',' unless it is a trailing comma before @p closing.
+    ///
+    /// Lets a comma-separated list end with a comma — `[1, 2,]`, `f(a, b,)`,
+    /// `func f(a, b,)`, `{x: 1,}`, `let [p, q,] = ...`.  The comma still has to
+    /// be followed by the closing delimiter, so `[1,,]` and `[,1]` remain
+    /// errors.
+    ///
+    /// @param closing Delimiter that ends the list.
+    /// @return true when another element follows and the loop should continue.
+    bool matchCommaUnlessClosing(TokenType closing);
+
     /// @brief Move every unclaimed comment starting before @p line into @p out.
     void takeCommentsBefore(int line, std::vector<Comment>& out);
     /// @brief Move every unclaimed comment starting on @p line into @p out.

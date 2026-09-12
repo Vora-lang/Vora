@@ -1640,3 +1640,123 @@ TEST_CASE("parser_exponent_literal_parses") {
     REQUIRE(prog != nullptr);
     CHECK_FALSE(reporter.hadError());
 }
+
+// ============================================================================
+// Trailing commas
+//
+// A comma-separated list may end with one extra comma, but only when the comma
+// is followed directly by the closing delimiter: an empty element stays an
+// error, which is what the counterexamples below pin down.
+// ============================================================================
+
+TEST_CASE("parser_trailing_comma_array") {
+    const std::string src = "let a = [1, 2,]";
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.setSource(src);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    CHECK_FALSE(reporter.hadError());
+}
+TEST_CASE("parser_trailing_comma_dict") {
+    const std::string src = "let d = {x: 1,}";
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.setSource(src);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    CHECK_FALSE(reporter.hadError());
+}
+TEST_CASE("parser_trailing_comma_call") {
+    const std::string src = "f(1, 2,)";
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.setSource(src);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    CHECK_FALSE(reporter.hadError());
+}
+TEST_CASE("parser_trailing_comma_params") {
+    const std::string src = "func f(a, b,) { return a }";
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.setSource(src);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    CHECK_FALSE(reporter.hadError());
+}
+TEST_CASE("parser_trailing_comma_array_binding") {
+    const std::string src = "let [p, q,] = arr";
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.setSource(src);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    CHECK_FALSE(reporter.hadError());
+}
+TEST_CASE("parser_trailing_comma_object_binding") {
+    const std::string src = "let {x, y,} = obj";
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.setSource(src);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    CHECK_FALSE(reporter.hadError());
+}
+TEST_CASE("parser_trailing_comma_after_rest") {
+    const std::string src = "func f(...rest,) { return rest }";
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.setSource(src);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    CHECK_FALSE(reporter.hadError());
+}
+TEST_CASE("parser_trailing_comma_single_element") {
+    const std::string src = "let a = [1,]";
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    parser.setSource(src);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    CHECK_FALSE(reporter.hadError());
+}
+
+TEST_CASE("parser_rejects_empty_elements_with_trailing_comma") {
+    // The counterexamples: a trailing comma must not be allowed to stand in for
+    // a missing element.
+    const char* bad[] = {
+        "let a = [1,,]",
+        "let a = [,1]",
+        "let a = [1,,2]",
+        "f(1,,)",
+        "func f(,a) { return a }",
+        "let d = {,x: 1}",
+        "let [p,,] = arr",
+    };
+    for (const char* src : bad) {
+        StderrErrorReporter reporter(src);
+        Lexer lexer(src, reporter);
+        auto tokens = lexer.scanTokens();
+        Parser parser(std::move(tokens), reporter);
+        parser.setSource(src);
+        parser.parse();
+        CHECK(reporter.hadError());
+    }
+}
