@@ -14,7 +14,80 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ---
 
-## [Unreleased]
+## [0.30.0] - 2026-09-12
+
+**The v0.30 syntax freeze.** The grammar is frozen with this release;
+`v0.30-syntax-freeze` is the first tag in the repository, so this section is the
+full list of what changed since `v0.27.0`. Two groups matter most:
+
+### 既有语义缺陷修复 (pre-existing defects fixed)
+
+These were not new features. Each was a case where Vora silently did the wrong
+thing, which design principle 7 forbids:
+
+- **Integers were silently clamped** to ±2^45 (`35184372088831`), so
+  `35184372088831 == 1152921504606846977` was true and a 20-digit decimal
+  literal became a *float*. See the first Breaking entry.
+- **`vora fmt -w` deleted every comment** in a file, and separately corrupted
+  float literals (`1234.5678` became `1234.57`, `0.0000001` became the
+  unparseable `1e-07`, and `42.0` came back as the integer `42`) and could
+  rewrite a program into a different one by fusing adjacent tokens
+  (`not a` became `nota`).
+- **Ten defects in control flow and comprehensions**, listed under Fixed:
+  comprehensions only worked where the value stack was empty; or-patterns
+  honoured only their first alternative; `break`/`continue` mishandled
+  `finally` and upvalues; `return` inside a `try` could be dropped.
+- **`match` with no matching arm returned `null`** instead of failing.
+- **String interpolation treated `${...}` as a name**, so `${n + 1}` printed the
+  characters instead of the value.
+
+### 大整数 (arbitrary-precision integers)
+
+`int` is now arbitrary precision, like Python 3, with the inline fast path
+unchanged: values within ±2^45 stay in the NaN-boxed payload, anything larger is
+a heap `GcBigInt`, and results demote back as soon as they fit — which is what
+keeps one integer to one hash/equality identity, so `Map`/`Set` keys cannot
+split. `+ - * %` and comparisons are exact; `/` and `**` still produce floats
+(`5 / 2 == 2.5`); `%` keeps C-style truncated signs; bitwise operators keep
+their 64-bit contract for inline operands and switch to Python-style infinite
+two's complement when an operand is a big integer. `asInt()` never truncates —
+it asserts in debug and throws a catchable `RuntimeError` in release — and the
+embedding ABI exposes `isBigInt()` / `fitsInt64()` / `toInt64Exact()` /
+`toString()` instead. Design: `docs/19-bignum-value-design.md`.
+
+### Formatter and language contract (freeze criterion)
+
+From this tag the formatter and the language make these guarantees, and the
+remaining gaps are listed as known limitations rather than left implicit:
+
+- the formatter **never emits output that cannot be parsed**;
+- the formatter **never silently changes meaning** (this covers the token-fusion,
+  dropped-syntax and unquoted-string defects fixed above);
+- purely presentational residue — the accumulation of redundant parentheses
+  around bitwise operands, and the non-verbatim relative module path — is
+  enumerated under "Known limitations" below.
+
+### Known limitations at the freeze
+
+- **Redundant parentheses accumulate around bitwise operands.** Formatting a
+  file containing `(6 & 3)` yields `(6 & (3))`, and a second pass adds another
+  layer. Parsing is unaffected and the behaviour is identical, so this is
+  presentational only; it does mean `vora fmt` is not idempotent for such files
+  (`tests/runtime/test_bitwise.va`, `tests/runtime/test_bigint.va`).
+- **A relative module path is not reproduced verbatim.** Formatting a file that
+  imports a relative module leaves the path in a different spelling, so the
+  formatted file behaves differently
+  (`examples/39_module_import_relative.va`,
+  `tests/interpreter/test_module_export.va`).
+- Anything else: a corpus-wide `fmt -w` then run comparison over the 162 tracked
+  `.va` files leaves 6 differing, of which four print wall-clock time or their
+  own argv path and are therefore not comparable, leaving exactly the two above.
+
+- **Deferred out of v1.0:** `..` / `..=` range and slice expressions stay
+  usable only inside `match` (syntax-review 3.5); adding them later is additive.
+  Syntax-review 3.9 (`as`) was a comment fix only. The remaining P2 items
+  (3.1 / 3.2 / 3.3 / 3.4 / 3.7) are accepted as-is and recorded in the EBNF's
+  "design trade-offs" section.
 
 > **Scope note (2026-09):** the P0/P1 fixes below were implemented across the
 > 2026-09 Phase 1 work. Part of that history was later rewritten into a single
@@ -787,6 +860,7 @@ of `ed722dd`.
 | `vora test`, `vora bench`, `vora check` CLI subcommands | NOT IMPLEMENTED | Only `run` / `fmt` / `eval` exist. |
 | DAP debugger server | NOT IMPLEMENTED | VM debug hooks exist; no DAP server either here or in Vora-LSP as of 2026-08. |
 
+[0.30.0]: #0300---2026-09-12
 [0.27.0]: #0270---2026-07
 [0.26.0]: #0260---2026-06
 [0.25.0]: #0250---2026-04
