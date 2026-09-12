@@ -143,13 +143,34 @@ public:
     /// @brief Multiply the magnitude by 2^@p bits, preserving the sign.
     static BigInt shiftLeftBits(const BigInt& a, size_t bits);
 
-    /**
-     * @brief Floor-divide by 2^@p bits, preserving the sign (arithmetic shift).
-     *
-     * Floor semantics — not truncation — so that `-1 >> 1` is `-1`, matching
-     * the sign-fill behavior of Vora's inline-integer `>>`.
-     */
+    /// @brief Floor-divide by 2^@p bits, preserving the sign (arithmetic shift).
+    ///
+    /// Floor semantics — not truncation — so that `-1 >> 1` is `-1`, matching
+    /// the sign-fill behavior of Vora's inline-integer `>>` and of Python.
     static BigInt shiftRightBits(const BigInt& a, size_t bits);
+
+    // --- Bitwise operations (infinite two's-complement, Python semantics) ---
+
+    /// @brief Which bitwise combination to apply.
+    enum class BitOp { And, Or, Xor };
+
+    /**
+     * @brief Combine two values bitwise under infinite two's-complement rules.
+     *
+     * There is no fixed width: a negative operand behaves as though it had an
+     * infinite run of leading 1 bits, so `-1 & x == x`, `-1 | x == -1`, and
+     * `-6 & 3 == 2` all hold for any magnitude.  This is Python's model, and it
+     * is why a shift by 100 bits is exact rather than clamped.
+     *
+     * @param a  Left operand.
+     * @param b  Right operand.
+     * @param op Which operation to apply.
+     * @return The exact result.
+     */
+    static BigInt bitwise(const BigInt& a, const BigInt& b, BitOp op);
+
+    /// @brief Bitwise complement: `~a == -a - 1` (Python semantics).
+    static BigInt invert(const BigInt& a);
 
 private:
     /// @brief Compare magnitudes only (ignores signs).

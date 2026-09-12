@@ -55,6 +55,36 @@ static bool bitwiseToInt64(const Value& v, int64_t& out) {
     return false;
 }
 
+// Bitwise operators are 64-bit for inline operands — a documented contract,
+// including shift-count clamping.  As soon as either operand is a boxed big
+// integer the operation switches to arbitrary-precision two's-complement
+// semantics, because a 64-bit answer would silently truncate.  See
+// docs/16-v1.0-grammar-ebnf.md §6.1.
+static bool bitwiseToBigInt(const Value& v, BigInt& out) {
+    if (v.isBigInt()) {
+        out = v.asBigInt()->value;
+        return true;
+    }
+    int64_t i = 0;
+    if (bitwiseToInt64(v, i)) {
+        out = BigInt::fromInt64(i);
+        return true;
+    }
+    return false;
+}
+
+// Extract a shift count from the big-integer path: it must be a non-negative
+// integer that fits int64, so an absurd or negative count is reported rather
+// than silently wrapped (as Python does).
+static bool bitwiseShiftCount(const Value& v, size_t& out) {
+    BigInt b;
+    if (!bitwiseToBigInt(v, b)) return false;
+    if (b.isNegative()) return false;
+    if (!b.fitsInt64()) return false;
+    out = static_cast<size_t>(b.toInt64());
+    return true;
+}
+
 // =========================================================================
 // C3 Linearization (Python-style MRO)
 // =========================================================================
@@ -1843,6 +1873,14 @@ InterpretResult VM::run() {
             case OpCode::OP_BITWISE_AND: {
                 Value b = pop();
                 Value a = pop();
+                if (a.isBigInt() || b.isBigInt()) {
+                    BigInt ab, bb;
+                    if (!bitwiseToBigInt(a, ab) || !bitwiseToBigInt(b, bb)) {
+                        RUNTIME_ERROR_OR_THROW("Bitwise & requires integer operands");
+                    }
+                    push(intValueFromBigInt(BigInt::bitwise(ab, bb, BigInt::BitOp::And)));
+                    break;
+                }
                 int64_t ai, bi;
                 if (!bitwiseToInt64(a, ai) || !bitwiseToInt64(b, bi)) {
                     RUNTIME_ERROR_OR_THROW("Bitwise & requires integer operands");
@@ -1853,6 +1891,14 @@ InterpretResult VM::run() {
             case OpCode::OP_BITWISE_OR: {
                 Value b = pop();
                 Value a = pop();
+                if (a.isBigInt() || b.isBigInt()) {
+                    BigInt ab, bb;
+                    if (!bitwiseToBigInt(a, ab) || !bitwiseToBigInt(b, bb)) {
+                        RUNTIME_ERROR_OR_THROW("Bitwise | requires integer operands");
+                    }
+                    push(intValueFromBigInt(BigInt::bitwise(ab, bb, BigInt::BitOp::Or)));
+                    break;
+                }
                 int64_t ai, bi;
                 if (!bitwiseToInt64(a, ai) || !bitwiseToInt64(b, bi)) {
                     RUNTIME_ERROR_OR_THROW("Bitwise | requires integer operands");
@@ -1863,6 +1909,14 @@ InterpretResult VM::run() {
             case OpCode::OP_BITWISE_XOR: {
                 Value b = pop();
                 Value a = pop();
+                if (a.isBigInt() || b.isBigInt()) {
+                    BigInt ab, bb;
+                    if (!bitwiseToBigInt(a, ab) || !bitwiseToBigInt(b, bb)) {
+                        RUNTIME_ERROR_OR_THROW("Bitwise ^ requires integer operands");
+                    }
+                    push(intValueFromBigInt(BigInt::bitwise(ab, bb, BigInt::BitOp::Xor)));
+                    break;
+                }
                 int64_t ai, bi;
                 if (!bitwiseToInt64(a, ai) || !bitwiseToInt64(b, bi)) {
                     RUNTIME_ERROR_OR_THROW("Bitwise ^ requires integer operands");
@@ -1872,6 +1926,10 @@ InterpretResult VM::run() {
             }
             case OpCode::OP_BITWISE_NOT: {
                 Value a = pop();
+                if (a.isBigInt()) {
+                    push(intValueFromBigInt(BigInt::invert(a.asBigInt()->value)));
+                    break;
+                }
                 int64_t ai;
                 if (!bitwiseToInt64(a, ai)) {
                     RUNTIME_ERROR_OR_THROW("Bitwise ~ requires an integer operand");
@@ -1882,6 +1940,30 @@ InterpretResult VM::run() {
             case OpCode::OP_SHIFT_LEFT: {
                 Value b = pop();  // shift count
                 Value a = pop();  // value
+                if (a.isBigInt() || b.isBigInt()) {
+                    BigInt ab;
+                    size_t count = 0;
+                    if (!bitwiseToBigInt(a, ab)) {
+                        RUNTIME_ERROR_OR_THROW("Shift << requires integer operands");
+                    }
+                    if (!bitwiseShiftCount(b, count)) {
+                        RUNTIME_ERROR_OR_THROW("Shift << count must be a non-negative integer that fits int64");
+                    }
+                    // Check the size *before* shifting: a count like 2^45 would
+                    // otherwise request terabytes and surface as a
+                    // std::bad_alloc rather than a reportable error. Shifting
+                    // zero is always fine.
+                    if (!ab.isZero() &&
+                        (count / 64) + ab.limbs.size() + 1 > kMaxBigIntLimbs) {
+                        RUNTIME_ERROR_OR_THROW("Shift << result exceeds the supported integer size");
+                    }
+                    BigInt res = BigInt::shiftLeftBits(ab, count);
+                    if (res.exceedsLimit()) {
+                        RUNTIME_ERROR_OR_THROW("Shift << result exceeds the supported integer size");
+                    }
+                    push(intValueFromBigInt(std::move(res)));
+                    break;
+                }
                 int64_t ai, bi;
                 if (!bitwiseToInt64(a, ai) || !bitwiseToInt64(b, bi)) {
                     RUNTIME_ERROR_OR_THROW("Shift << requires integer operands");
@@ -1896,6 +1978,19 @@ InterpretResult VM::run() {
             case OpCode::OP_SHIFT_RIGHT: {
                 Value b = pop();  // shift count
                 Value a = pop();  // value
+                if (a.isBigInt() || b.isBigInt()) {
+                    BigInt ab;
+                    size_t count = 0;
+                    if (!bitwiseToBigInt(a, ab)) {
+                        RUNTIME_ERROR_OR_THROW("Shift >> requires integer operands");
+                    }
+                    if (!bitwiseShiftCount(b, count)) {
+                        RUNTIME_ERROR_OR_THROW("Shift >> count must be a non-negative integer that fits int64");
+                    }
+                    // Floor semantics: a negative value rounds away from zero.
+                    push(intValueFromBigInt(BigInt::shiftRightBits(ab, count)));
+                    break;
+                }
                 int64_t ai, bi;
                 if (!bitwiseToInt64(a, ai) || !bitwiseToInt64(b, bi)) {
                     RUNTIME_ERROR_OR_THROW("Shift >> requires integer operands");

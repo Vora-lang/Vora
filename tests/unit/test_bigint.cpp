@@ -44,6 +44,26 @@ Value boxed(const std::string& dec) {
     return Value(GcHeap::instance().alloc<GcBigInt>(big(dec)));
 }
 
+/// @brief Compile and interpret a source string, returning the VM for
+///        inspection.  Mirrors the helper in test_vm.cpp.
+std::pair<InterpretResult, VM> runSource(const std::string& src) {
+    StderrErrorReporter reporter(src);
+    Lexer lexer(src, reporter);
+    auto tokens = lexer.scanTokens();
+    Parser parser(std::move(tokens), reporter);
+    auto prog = parser.parse();
+    REQUIRE(prog != nullptr);
+    Compiler compiler(reporter);
+    Chunk chunk = compiler.compile(prog.get());
+    REQUIRE_FALSE(compiler.hadError);
+    VM vm;
+    vm.errorReporter = &reporter;
+    vm.initGlobals(compiler.getGlobalNames());
+    registerBuiltins(vm);
+    InterpretResult result = vm.interpret(chunk);
+    return {result, std::move(vm)};
+}
+
 } // namespace
 
 // ============================================================================
@@ -263,6 +283,43 @@ TEST_CASE("value_asInt_on_bigint_never_truncates") {
 #endif
 }
 
+TEST_CASE("bigint_bitwise_is_infinite_twos_complement") {
+    // Python semantics: a negative operand behaves as if it had infinitely many
+    // leading 1 bits, so these hold at any magnitude.
+    const BigInt minus6 = BigInt::fromInt64(-6);
+    const BigInt three = BigInt::fromInt64(3);
+    CHECK(BigInt::bitwise(minus6, three, BigInt::BitOp::And).toDecimal() == "2");
+    CHECK(BigInt::bitwise(BigInt::fromInt64(-1), BigInt::fromInt64(255),
+                          BigInt::BitOp::And).toDecimal() == "255");
+    CHECK(BigInt::bitwise(BigInt::fromInt64(-1), big("18446744073709551616"),
+                          BigInt::BitOp::Or).toDecimal() == "-1");
+    CHECK(BigInt::bitwise(BigInt::fromInt64(0), BigInt::fromInt64(-1),
+                          BigInt::BitOp::Xor).toDecimal() == "-1");
+
+    // `~a == -a - 1`, exactly as in Python.
+    CHECK(BigInt::invert(BigInt::fromInt64(0)).toDecimal() == "-1");
+    CHECK(BigInt::invert(BigInt::fromInt64(-1)).toDecimal() == "0");
+    CHECK(BigInt::invert(BigInt::fromInt64(5)).toDecimal() == "-6");
+    CHECK(BigInt::invert(big("35184372088832")).toDecimal() == "-35184372088833");
+    CHECK(BigInt::invert(big("-123456789012345678901234567890")).toDecimal()
+          == "123456789012345678901234567889");
+
+    // A result inside the inline range is still a correct BigInt value.
+    CHECK(BigInt::bitwise(big("35184372088833"), big("35184372088833"),
+                          BigInt::BitOp::Xor).isZero());
+}
+
+TEST_CASE("bigint_shift_beyond_64_bits_is_exact") {
+    // The whole point of the big-integer path: no 64-bit truncation.
+    CHECK(BigInt::shiftLeftBits(BigInt::fromInt64(35184372088832), 40).toDecimal()
+          == "38685626227668133590597632");   // 2^85
+    CHECK(BigInt::shiftRightBits(big("38685626227668133590597632"), 40).toDecimal()
+          == "35184372088832");
+    // Consistency: shifting back and forth is the identity.
+    CHECK(BigInt::shiftRightBits(BigInt::shiftLeftBits(big("123456789012345678901234567890"), 137), 137)
+              .toDecimal() == "123456789012345678901234567890");
+}
+
 // ============================================================================
 // 3. Equality / hashing normalization across representations
 // ============================================================================
@@ -337,6 +394,36 @@ TEST_CASE("valuesEqual_dispatches_boxed_integers") {
     // Boxed vs an unrelated type is not equal.
     CHECK_FALSE(valuesEqual(a, Value(nullptr)));
     CHECK_FALSE(valuesEqual(a, Value(true)));
+}
+
+TEST_CASE("vm_bitwise_hybrid_boundary") {
+    // Inline operands keep the documented 64-bit contract, including shift
+    // clamping; a big operand switches to arbitrary precision.
+    auto [result, vm] = runSource(
+        "let clamped = 1 << 100;"          // inline: still clamps to 0
+        "let exact = 35184372088832 << 40;" // big operand: 2^85, exact
+        "let mask = -123456789012345678901234567890 & 255;"
+        "let inv = ~35184372088832;"
+        "let neg = -6 & 3;"
+        "clamped;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(vm.getGlobal("clamped").asInt() == 0);
+    CHECK(vm.getGlobal("exact").asBigInt()->value.toDecimal() == "38685626227668133590597632");
+    CHECK(vm.getGlobal("mask").asInt() == 46);
+    CHECK(vm.getGlobal("inv").asBigInt()->value.toDecimal() == "-35184372088833");
+    CHECK(vm.getGlobal("neg").asInt() == 2);
+}
+
+TEST_CASE("vm_absurd_big_shift_is_a_catchable_error") {
+    // Must be a reported error, not a std::bad_alloc from a terabyte request.
+    auto [result, vm] = runSource(
+        "let ok = 0;"
+        "try { let x = 35184372088832 << 35184372088832; } catch (e) { ok = 1; }"
+        "ok;"
+    );
+    REQUIRE(result == InterpretResult::OK);
+    CHECK(vm.getGlobal("ok").asInt() == 1);
 }
 
 // ============================================================================

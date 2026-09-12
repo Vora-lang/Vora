@@ -280,4 +280,47 @@ assert(caught2, "division by zero raises for a big int")
 // silently truncated number.  (Verified by tests/unit/test_bigint.cpp, since a
 // script cannot assert its own failure to compile.)
 
+// =========================================================================
+// 12. Bitwise with a big-integer operand: arbitrary precision
+//
+// The hybrid boundary is deliberate.  Inline ⊗ inline keeps the documented
+// 64-bit contract (notably shift-count clamping), while a big-integer operand
+// switches to infinite two's-complement semantics so a 64-bit answer cannot
+// silently truncate.  Both halves are asserted here.
+// =========================================================================
+
+// Inline ⊗ inline — still 64-bit, still clamped (unchanged contract).
+assert((6 & 3) == 2, "inline &")
+assert(1 << 64 == 0, "inline shift count still clamps")
+assert(1 << 100 == 0, "inline shift count >= 64 still clamps")
+
+// A big operand switches to arbitrary precision.
+assert((35184372088832 & 255) == 0, "2^45 & 255")
+assert((35184372088832 | 1) == 35184372088833, "2^45 | 1")
+assert(~35184372088832 == -35184372088833, "~2^45 == -2^45 - 1")
+assert((-6 & 3) == 2, "-6 & 3 == 2 with a big operand involved")
+assert((-1 | 35184372088832) == -1, "-1 | x == -1")
+assert((35184372088832 << 40) == 38685626227668133590597632, "2^45 << 40 == 2^85")
+assert((35184372088832 >> 40) == 32, "2^85 >> 40 == 32")
+assert((123456789012345678901234567890 ^ 987654321098765432109876543210)
+       == 1107223189742130572140985545784, "big ^ big")
+assert(~123456789012345678901234567890 == -123456789012345678901234567891, "~big")
+assert((-123456789012345678901234567890 & 255) == 46, "negative big & mask")
+// Floors toward negative infinity, like Python and like inline `>>`.
+assert((-1 >> 200) == -1, "-1 >> 200 == -1")
+assert((-3 >> 100) == -1, "-3 >> 100 == -1")
+// A big result demotes when it comes back into range.
+assert((35184372088832 & 35184372088832) == 35184372088832, "big & itself")
+assert((35184372088833 ^ 35184372088833) == 0, "big ^ itself == 0 (demotes to inline)")
+assert(type(35184372088833 ^ 35184372088833) == "int", "demoted bitwise result is an int")
+
+// A shift whose result would be unbounded is reported, not truncated.
+let shiftErr = false
+try {
+    let _x = 35184372088832 << 35184372088832
+} catch (e) {
+    shiftErr = true
+}
+assert(shiftErr, "an absurd big shift raises rather than truncating")
+
 print("All big integer tests passed!")

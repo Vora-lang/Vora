@@ -218,7 +218,9 @@ int64_t Value::asInt() const;   // 对 BigInt 无法返回精确值
    `%` 两侧都是整数时**精确取模**，符号随被除数（C 式截断，与既有内联 `%` 一致）。
 2. **BigInt 位运算**：**不拒绝，走 Python 式任意精度语义**（与 §10 原「首版拒绝」的建议相反）。
    为不改既有契约，采用**混合**边界：内联⊗内联仍是 int64 语义（含文档化的移位计数夹取），
-   任一操作数为 BigInt 时走任意精度。阶段 1 只做内联 64 位语义 + 结果精确化，BigInt 位运算后续阶段落地。
+   任一操作数为 BigInt 时走任意精度。**已实现**（`BigInt::bitwise` / `BigInt::invert`，
+   见 `tests/unit/test_bigint.cpp` 的无限二补码用例与 `tests/runtime/test_bigint.va` §12）。
+   §10 的「BigInt 位运算」不再是目标外项。
 3. **`asInt()` 对 BigInt**：**Debug 断言 + Release 抛 `RuntimeError`**，绝不返回截断值；
    新增 `fitsInt64()` / `toInt64Exact(int64_t&)` 供需要精确值的调用点。
 4. **嵌入 ABI**：暴露 **`isBigInt()` + `toString()`**（不暴露 limb 布局），

@@ -314,6 +314,56 @@ BigInt BigInt::shiftRightBits(const BigInt& a, size_t bits) {
     return mag;
 }
 
+BigInt BigInt::bitwise(const BigInt& a, const BigInt& b, BitOp op) {
+    // One extra limb beyond the wider operand gives room for the sign bit, so a
+    // result can never be misread as the wrong sign.  Standard formulation.
+    const size_t n = std::max(a.limbs.size(), b.limbs.size()) + 1;
+
+    // Two's-complement images, sign-extended to n limbs.
+    auto toTwos = [n](const BigInt& v) {
+        std::vector<uint64_t> out(n, 0);
+        for (size_t i = 0; i < v.limbs.size() && i < n; ++i) out[i] = v.limbs[i];
+        if (v.negative && !v.limbs.empty()) {
+            for (size_t i = 0; i < n; ++i) out[i] = ~out[i];
+            uint64_t carry = 1;
+            for (size_t i = 0; i < n && carry != 0; ++i) {
+                out[i] += 1;
+                if (out[i] != 0) carry = 0;
+            }
+        }
+        return out;
+    };
+
+    std::vector<uint64_t> x = toTwos(a);
+    const std::vector<uint64_t> y = toTwos(b);
+    for (size_t i = 0; i < n; ++i) {
+        switch (op) {
+            case BitOp::And: x[i] &= y[i]; break;
+            case BitOp::Or:  x[i] |= y[i]; break;
+            case BitOp::Xor: x[i] ^= y[i]; break;
+        }
+    }
+
+    BigInt out;
+    // A set top bit means the infinite two's-complement result is negative.
+    if (((x[n - 1] >> 63) & 1ULL) != 0) {
+        for (size_t i = 0; i < n; ++i) x[i] = ~x[i];
+        uint64_t carry = 1;
+        for (size_t i = 0; i < n && carry != 0; ++i) {
+            x[i] += 1;
+            if (x[i] != 0) carry = 0;
+        }
+        out.negative = true;
+    }
+    out.limbs = std::move(x);
+    out.normalize();
+    return out;
+}
+
+BigInt BigInt::invert(const BigInt& a) {
+    return sub(negate(a), fromInt64(1));
+}
+
 BigInt BigInt::fromDoubleTrunc(double d) {
     BigInt r;
     if (!(d != 0.0)) return r;  // also catches NaN

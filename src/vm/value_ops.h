@@ -125,4 +125,7 @@ Value intModExact(const Value& a, const Value& b);
 /// @brief Exact `-a` for an integer operand.
 Value intNegateExact(const Value& a);
 
+/// @brief Wrap an exact integer result, demoting to an inline Int when it fits.
+Value intValueFromBigInt(BigInt b);
+
 } // namespace vora

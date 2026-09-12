@@ -141,6 +141,20 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
   unaffected. Defers in the enclosing function still run, as with `throw`.
 
 ### Added
+- **Big integers participate in bitwise operators** (`& | ^ ~ << >>`), with
+  Python's infinite two's-complement semantics. Previously a boxed integer in a
+  bitwise expression raised, because the only implementation was the 64-bit one;
+  a 64-bit answer for a number like 2^70 would have been silently wrong.
+  The boundary is deliberate and documented (EBNF §6.1): **inline ⊗ inline keeps
+  the 64-bit contract unchanged**, including shift-count clamping
+  (`1 << 100 == 0`), while **a big-integer operand switches to exact
+  arbitrary-precision semantics** — `35184372088832 << 40 == 2^85`,
+  `~2^45 == -2^45 - 1`, `-1 | x == -1`, and `-6 & 3 == 2` at any magnitude.
+  `>>` floors (so `-1 >> 200 == -1`), matching both inline `>>` and Python.
+  A shift count that is negative, does not fit `int64`, or would exceed
+  `kMaxBigIntLimbs` raises a catchable error instead of truncating or
+  attempting an unbounded allocation. Results demote to inline when they fit.
+  Tests: `tests/runtime/test_bigint.va` §12, `tests/unit/test_bigint.cpp`.
 - **Labeled `break` / `continue`** (Phase 1 closing item, syntax-review #2.8):
   `name: <loop>` names a loop, and `break name` / `continue name` target it from
   any nesting depth, so nested loops no longer need boolean flags to exit:

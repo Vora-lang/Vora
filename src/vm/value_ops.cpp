@@ -29,14 +29,22 @@ BigInt toBigInt(const Value& v) {
     return BigInt::fromInt64(v.asInt());
 }
 
-/// @brief Box a BigInt result, which demotes to inline when it fits.
-Value fromBigInt(BigInt b) {
-    if (b.fitsInt64() && b.toInt64() <= INT47_MAX && b.toInt64() >= INT47_MIN) {
-        return Value(b.toInt64());
+} // namespace
+
+Value intValueFromBigInt(BigInt b) {
+    // Demote whenever the value is representable inline.  This is the single
+    // place that decides representation, and it is what keeps one integer to
+    // one identity no matter which operation produced it.
+    if (b.fitsInt64()) {
+        const int64_t v = b.toInt64();
+        if (v >= INT47_MIN && v <= INT47_MAX) return Value(v);
     }
     return Value(GcHeap::instance().alloc<GcBigInt>(std::move(b)));
 }
 
+namespace {
+/// @brief Alias used by the arithmetic helpers below.
+Value fromBigInt(BigInt b) { return intValueFromBigInt(std::move(b)); }
 } // namespace
 
 Value intAddExact(const Value& a, const Value& b) {
