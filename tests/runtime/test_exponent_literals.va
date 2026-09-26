@@ -59,6 +59,26 @@ let e10 = 5
 assert(1e10 == 10000000000.0, "a variable named e10 does not interfere")
 assert(e10 == 5, "a variable named e10 is still readable")
 
+// --- Subnormals: representable, and previously rejected anyway ------------
+// A C library reports a subnormal result through ERANGE (it calls that
+// underflow) while still returning the nearest representable value, and stod
+// turns ERANGE into an exception — so these literals were refused as "out of
+// range" even though they denote perfectly good doubles. They now parse, taking
+// the nearest representable value, exactly like every other inexact decimal.
+let tiniest = 5e-324
+assert(tiniest > 0.0, "5e-324 is the smallest positive subnormal, not zero")
+assert(type(tiniest) == "float", "a subnormal is a float")
+assert(4.9e-324 > 0.0, "4.9e-324 rounds up to the smallest subnormal")
+assert(4.9e-324 == tiniest, "so it equals 5e-324")
+assert(1e-323 > 0.0, "1e-323 is representable")
+assert(tiniest + tiniest == 1e-323, "two smallest subnormals add to 1e-323 exactly")
+assert(1e-310 > 0.0, "1e-310 is representable")
+assert(1e-310 / 1e-310 == 1.0, "a subnormal divided by itself is 1")
+assert(1e-310 * 1e10 > 0.0, "a subnormal scales back into range")
+assert(2.2250738585072014e-308 > 0.0, "the smallest normal double is representable")
+assert(1e-307 / 1e-307 == 1.0, "a tiny normal literal is unaffected")
+assert(0.1 + 0.2 != 0.3, "ordinary inexact decimals are unaffected")
+
 // --- Out-of-range is a compile error, not a crash -------------------------
 // `1e400` overflows double; verified in tests/unit/test_parser.cpp, since a
 // script cannot assert its own failure to compile.

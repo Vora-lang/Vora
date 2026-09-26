@@ -1,6 +1,8 @@
 #include "parser.h"
 
 #include <cctype>
+#include <cmath>
+#include <cstdlib>
 #include <stdexcept>
 
 #include "../ast/stmt.h"
@@ -1999,19 +2001,37 @@ std::unique_ptr<Expr> Parser::primary() {
         bool hasExp = (lexeme.find('e') != std::string::npos || lexeme.find('E') != std::string::npos);
 
         if (hasDot || hasExp) {
-            // Float literal. An exponent makes an out-of-range literal easy to
-            // write (1e400), and std::stod reports that by throwing; turn it
-            // into a compile error rather than letting it escape as an
-            // internal error.
-            try {
-                return std::make_unique<LiteralExpr>(std::stod(lexeme));
-            } catch (const std::out_of_range&) {
+            // Float literal, converted with strtod rather than stod.  stod turns
+            // any ERANGE into an exception, and a C library reports *subnormal*
+            // results that way too — it calls them underflow — even though it
+            // has already produced the nearest representable value.  Going
+            // through stod therefore rejected literals that are perfectly
+            // representable, e.g. 5e-324 (the smallest subnormal) and anything
+            // in between down to 1e-323.
+            //
+            // What is accepted: whatever conversion yields a finite value, which
+            // includes subnormals, and takes the nearest representable double.
+            // That is already the rule for every inexact decimal literal — 0.1
+            // is not representable either — so subnormals need no special case.
+            // What is rejected: a value that overflows to infinity, and a
+            // literal carrying a non-zero digit that underflows all the way to
+            // zero.  Neither denotes a number the source can be said to mean.
+            const char* text = lexeme.c_str();
+            char* end = nullptr;
+            double value = std::strtod(text, &end);
+            bool consumedWholeLexeme = (end != text) && (*end == '\0');
+            // Only the mantissa decides whether the literal denotes a non-zero
+            // number: `0e400` carries a 4, but it is an exponent, and the value
+            // it writes is plainly zero.
+            std::string mantissa = lexeme.substr(0, lexeme.find_first_of("eE"));
+            bool nonzeroMantissa = mantissa.find_first_of("123456789") != std::string::npos;
+
+            if (!consumedWholeLexeme || !std::isfinite(value) ||
+                (value == 0.0 && nonzeroMantissa)) {
                 error("Float literal out of range");
                 return std::make_unique<ErrorExpr>("Float literal out of range", previous());
-            } catch (const std::invalid_argument&) {
-                error("Invalid float literal");
-                return std::make_unique<ErrorExpr>("Invalid float literal", previous());
             }
+            return std::make_unique<LiteralExpr>(value);
         } else {
             // Integer literal — parsed exactly, at any length. Values beyond the
             // inline range become a boxed big integer rather than silently

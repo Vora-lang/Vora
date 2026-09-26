@@ -1760,3 +1760,51 @@ TEST_CASE("parser_rejects_empty_elements_with_trailing_comma") {
         CHECK(reporter.hadError());
     }
 }
+
+TEST_CASE("parser_subnormal_float_literals_are_accepted") {
+    // Regression: conversion went through std::stod, which throws on ERANGE, and
+    // a C library reports a *subnormal* result through ERANGE while still
+    // returning the nearest representable value. Representable literals like
+    // 5e-324 were therefore rejected as out of range.
+    CHECK_FALSE(parseHasError("let a = 5e-324;"));
+    CHECK_FALSE(parseHasError("let a = 4.9e-324;"));
+    CHECK_FALSE(parseHasError("let a = 1e-323;"));
+    CHECK_FALSE(parseHasError("let a = 1e-310;"));
+    CHECK_FALSE(parseHasError("let a = 1e-307;"));
+    CHECK_FALSE(parseHasError("let a = 2.2250738585072014e-308;"));
+    // Neither the subnormal range nor an exponent requires the `e` spelling.
+    CHECK_FALSE(parseHasError("let a = 0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001;"));
+    CHECK_FALSE(parseHasError("let a = 0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000049406564584124654;"));
+    // 1e-332 is *below* the subnormal range, so it really is out of range.
+    CHECK(parseHasError("let a = 0.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001;"));
+}
+
+TEST_CASE("parser_subnormal_literal_values") {
+    // Parsing is not enough — the literal has to denote the nearest
+    // representable value. The smallest positive subnormal is
+    // 4.9406564584124654e-324, and 1e-323 is exactly twice it.
+    auto prog = parse("let a = 0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000049406564584124654;");
+    REQUIRE(prog != nullptr);
+    auto* let = dynamic_cast<LetStmt*>(prog->statements[0].get());
+    REQUIRE(let != nullptr);
+    auto* lit = dynamic_cast<LiteralExpr*>(let->initializer.get());
+    REQUIRE(lit != nullptr);
+    CHECK(lit->value.asDouble() > 0.0);
+    CHECK(lit->value.asDouble() == 4.9406564584124654e-324);
+    CHECK(lit->value.asDouble() * 2.0 == 9.8813129168249309e-324);
+}
+
+TEST_CASE("parser_out_of_range_float_literals_still_error") {
+    // The two ways a literal can denote no number at all: it overflows to
+    // infinity, or a non-zero digit underflows all the way to zero.
+    CHECK(parseHasError("let a = 1e400;"));
+    CHECK(parseHasError("let a = -1e400;"));
+    CHECK(parseHasError("let a = 1e999999;"));
+    CHECK(parseHasError("let a = 1e-400;"));
+    CHECK(parseHasError("let a = -1e-400;"));
+    // Zero written any way is still zero, not an underflow.
+    CHECK_FALSE(parseHasError("let a = 0e400;"));
+    CHECK_FALSE(parseHasError("let a = 0.0e-400;"));
+    CHECK_FALSE(parseHasError("let a = 0e-400;"));
+}
+
