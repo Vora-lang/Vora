@@ -14,11 +14,80 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ---
 
+## [Unreleased]
+
+Post-freeze fixes. The freeze was deferred (see the note on `[0.30.0]`), so these
+land in `main` without a version bump. Each one is a case where Vora silently did
+the wrong thing, or refused something it should have accepted.
+
+### Fixed
+- **`jsonParse` destroyed integers outside `int64`** — in two separate ways, and
+  silently. Values from 2^63 to 2^64-1 came back *negated*, because the parser's
+  uint64 result was cast straight to int64 and the sign bit wrapped:
+  `jsonParse("9223372036854775808")` printed `-9223372036854775808`. Anything
+  larger had already become a double inside the parser, losing digits:
+  `jsonParse("123456789012345678901234567890")` printed
+  `123456789012345677877719597056.000000`. Integers are now rebuilt exactly from
+  the token text (JSON separates integers from reals syntactically), so both are
+  exact. Reals keep their double behaviour. `jsonStringify` is unchanged: an
+  integer within `int64` is a JSON number, anything larger its exact decimal
+  digits in a string.
+- **`vora fmt` was not idempotent around bitwise and shift operands** —
+  `(6 & 3)` became `(6 & (3))`, then `(6 & ((3)))`, one layer per run. The
+  formatter's precedence table had no entry for `|`, `^`, `&`, `<<`, `>>` or
+  `in`, so they fell through to the atom level and every right operand was
+  re-parenthesized forever. Corpus-wide, non-idempotent files went from 2 to 0.
+- **Subnormal float literals were rejected as out of range** — `5e-324` and
+  everything down to it failed to compile. A C library reports a subnormal result
+  through `ERANGE` while still returning the nearest representable value, and
+  `std::stod` turns that into an exception. Conversion now goes through `strtod`
+  and accepts any finite result, taking the nearest representable double — the
+  rule every other inexact decimal literal already followed.
+- **`hex` / `bin` / `oct` mis-rendered negative integers and refused large ones**
+  — `hex(-255)` gave `-0xffffffffffffff01`, the two's-complement bit pattern with
+  a minus sign glued on, which is a different number stated without complaint;
+  and any argument boxed as a big integer returned null, including
+  `hex(9223372036854775807)`, which only just exceeds the inline range. Both now
+  render exactly, at any magnitude.
+- **`0.0` and `-0.0` shared one constant-pool slot** — the pool de-duplicated
+  doubles by value, and `-0.0 == 0.0` is true, so whichever spelling was interned
+  first silently replaced the other. With `-0.0` declared first, a plain `0.0`
+  literal printed as `-0.000000`. The index is keyed by bit pattern now.
+- **`tests/bench/03-array-memory.va` failed with `std::bad_alloc`** — the script
+  appended with `arr += 1`, which is `arr = arr + 1` and therefore copied the
+  whole array every iteration: O(n²), about a terabyte of transient allocation at
+  its default size. It now uses the in-place `arr.add(1)` and completes in 0.7 s.
+  USER_GUIDE's compound-assignment section carries the measurement, since the
+  trap is easy to fall into.
+
+### Breaking changes
+- **`hex` / `bin` / `oct` render negatives differently.** The sign is written
+  once, in front of the magnitude's digits: `hex(-255)` is `"-0xff"` where it used
+  to be `"-0xffffffffffffff01"`. The old output was not the value written — it was
+  the 64-bit two's-complement pattern with a sign in front — so this is a fix, but
+  anything parsing that output has to change. Non-negative output is unchanged,
+  zero is unchanged, doubles still truncate toward zero, and a non-number still
+  returns null.
+
+### Known limitation found while doing the above, not fixed
+- **A function-local container that grows past ~512 KiB makes the VM
+  unreliable.** GC runs only at the three call opcodes, so a loop that allocates
+  without calling anything can never collect, and a collection that does run
+  while a local container grows can leave the frame corrupt. Reproduces on the
+  v0.30.0 binary, so it predates all of the above; the repro and the explanation
+  are in the Known limitations section below.
+
+---
+
 ## [0.30.0] - 2026-09-12
 
 **The v0.30 syntax freeze.** The grammar is frozen with this release;
 `v0.30-syntax-freeze` is the first tag in the repository, so this section is the
 full list of what changed since `v0.27.0`. Two groups matter most:
+
+> ⚠ **`v0.30-syntax-freeze` 标签为临时标记。** 语法冻结已推迟 —— 仍有六项语法待定要改，
+> 该标签只标记当时的状态；语法修订完成后将重新冻结并另打标签。本节其余内容
+> （契约、Known limitations）随之继续演化，以 `main` 为准。
 
 ### 既有语义缺陷修复 (pre-existing defects fixed)
 
@@ -67,21 +136,67 @@ remaining gaps are listed as known limitations rather than left implicit:
   around bitwise operands, and the non-verbatim relative module path — is
   enumerated under "Known limitations" below.
 
-### Known limitations at the freeze
+### Known limitations
 
-- **Redundant parentheses accumulate around bitwise operands.** Formatting a
-  file containing `(6 & 3)` yields `(6 & (3))`, and a second pass adds another
-  layer. Parsing is unaffected and the behaviour is identical, so this is
-  presentational only; it does mean `vora fmt` is not idempotent for such files
-  (`tests/runtime/test_bitwise.va`, `tests/runtime/test_bigint.va`).
-- **A relative module path is not reproduced verbatim.** Formatting a file that
-  imports a relative module leaves the path in a different spelling, so the
-  formatted file behaves differently
-  (`examples/39_module_import_relative.va`,
-  `tests/interpreter/test_module_export.va`).
-- Anything else: a corpus-wide `fmt -w` then run comparison over the 162 tracked
-  `.va` files leaves 6 differing, of which four print wall-clock time or their
-  own argv path and are therefore not comparable, leaving exactly the two above.
+Recorded at the v0.30.0 tag and kept current since: entries are removed as they
+are cleared, and anything withdrawn or still open says so. The freeze itself was
+deferred, so this list is a working record rather than a frozen contract.
+
+**Cleared**
+
+- ~~Redundant parentheses accumulate around bitwise operands~~ — **fixed.** The
+  formatter's precedence table had no entry for `|`, `^`, `&`, `<<`, `>>` or
+  `in`, so all six fell through to `PREC_PRIMARY`, the atom level; a binary
+  operator there demands strictly more precedence from its right operand than
+  anything can have, so every right operand was parenthesized again on every
+  pass (`(6 & 3)` → `(6 & (3))` → `(6 & ((3)))`). Given their real levels, `vora
+  fmt` is idempotent for them.
+- ~~A relative module path is not reproduced verbatim~~ — **withdrawn, it was a
+  measurement error, not a defect.** The path *is* reproduced verbatim. The
+  check that reported this wrote the formatted copy to a different directory,
+  where a relative import cannot resolve, so every file with a relative import
+  appeared to change behaviour. Formatted in place, `examples/
+  39_module_import_relative.va` and `tests/interpreter/test_module_export.va`
+  both behave identically; the formatter does add an explicit `as` alias to a
+  bare `import "path"`, which binds exactly the name the loader would have
+  derived.
+
+**Still open**
+
+- **A function-local container that grows past ~512 KiB makes the VM
+  unreliable.** Garbage collection runs only at `OP_CALL`, `OP_CALL_N` and
+  `OP_TAIL_CALL`, so a loop that allocates without calling anything can never
+  collect — and a collection that does run while a local container is growing
+  can leave the frame corrupt. Reproduces on the v0.30.0 binary, so it predates
+  everything above:
+
+      func build(n) {
+          let arr = []
+          let i = 0
+          while (i < n) { arr.add(1); i += 1 }
+          return len(arr)
+      }
+      print(build(20000))     // segfaults roughly three runs in four
+
+  The same cause shows up as a frame reported as `[368:368]` in a 20-line file,
+  and as "Invalid property name in constant pool" pointing at column 714. It
+  also makes `bigint_survives_gc_while_referenced_from_a_constant_pool`
+  (`tests/unit/test_bigint.cpp`) fail on a machine with less than about 8 GB
+  free: that test's script builds a 400,000-character string by concatenation —
+  about 8 GB of allocation in a loop that gets no opportunity to collect, so it
+  passes or fails depending on available memory rather than on correctness.
+  Fixing it means revisiting both the safe-point placement and the rooting, which
+  needs its own pass with GC tracing; it is not bundled into the post-freeze
+  fixes.
+
+**Measurement.** Idempotency and fmt-then-run behaviour are checked over every
+tracked `.va` file, formatting each file *in place beside itself* (relative
+imports resolve against the file's own directory, which is what the withdrawn
+entry above got wrong). Current state: 242 files, 0 non-idempotent, 2
+unparseable (`tests/ans/61-combination-sum.va` uses the reserved word `match` as
+a variable; `tests/interpreter/test_input.va` needs stdin), and 9 behaviour
+differences of which 8 print wall-clock time or their own argv path and are
+therefore not comparable — the ninth is the VM defect above.
 
 - **Deferred out of v1.0:** `..` / `..=` range and slice expressions stay
   usable only inside `match` (syntax-review 3.5); adding them later is additive.
