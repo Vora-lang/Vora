@@ -22,6 +22,7 @@
 
 #include "../gc/gc_heap.h"
 #include "nlohmann/json.hpp"  // nlohmann/json — JSON parsing engine
+#include "bigint.h"           // BigInt / GcBigInt — exact large JSON integers
 #include "native_function.h"
 #include "runtime_error.h"
 #include "value.h"
@@ -1179,7 +1180,165 @@ void registerMathBuiltins(VM& vm) {
 
 namespace {
 
+/// Convert a JSON integer token's written form into an exact Vora value.
+///
+/// Used for integers that do not fit int64/uint64, where a double would lose
+/// digits.  The digits are converted exactly and boxed as a GcBigInt when they
+/// exceed the inline payload, mirroring the integer-literal path in the parser.
+///
+/// @param text The token as written, optionally with a leading '-'.
+/// @param ok   Set false when the magnitude exceeds kMaxBigIntLimbs (~79k
+///             decimal digits), which is a resource limit rather than a
+///             representable-value limit.
+Value bigIntFromDecimalText(const std::string& text, bool& ok) {
+    ok = false;
+    const bool negative = !text.empty() && text[0] == '-';
+    const char* digits = text.c_str() + (negative ? 1 : 0);
+    const size_t count = text.size() - (negative ? 1 : 0);
+    if (count == 0) return nullptr;
+
+    BigInt b;
+    if (!BigInt::fromChars(digits, count, 10, b)) return nullptr;
+    if (negative) b = BigInt::negate(b);
+
+    ok = true;
+    if (b.fitsInt64()) return Value(b.toInt64());
+    return Value(GcHeap::instance().alloc<GcBigInt>(std::move(b)));
+}
+
+/// @brief True when a JSON number token was written as an integer.
+///
+/// JSON separates integers from reals syntactically (RFC 8259 §6), so the
+/// absence of '.', 'e' and 'E' identifies an integer token exactly rather than
+/// heuristically.  This matters because nlohmann reports every number it cannot
+/// hold in int64/uint64 through number_float(), and only the token text can tell
+/// a 20-digit integer apart from a written-out real.
+bool isJsonIntegerToken(const std::string& text) {
+    return text.find_first_of(".eE") == std::string::npos;
+}
+
+/// @brief Builds a Vora Value from a JSON token stream, keeping integers exact.
+///
+/// nlohmann's DOM converts any JSON number beyond uint64 into a double, which
+/// silently destroys it, and casts uint64 straight to int64, which turns
+/// 2^63..2^64-1 into negative numbers.  Its SAX layer reports the number's
+/// original text and its true unsigned value, so both cases can be kept exact
+/// here.  Values are held in C++ locals while parsing; that is safe because
+/// GcHeap::alloc never collects — collection only runs at VM safe points.
+class JsonValueSax : public nlohmann::json_sax<nlohmann::json> {
+public:
+    Value result;        ///< Root value, valid when the parse succeeds.
+    bool failed = false; ///< Set on a parse error or an unrepresentable number.
+
+    bool null() override { return push(Value(nullptr)); }
+
+    bool boolean(bool val) override { return push(Value(val)); }
+
+    bool number_integer(number_integer_t val) override {
+        return push(Value(static_cast<int64_t>(val)));
+    }
+
+    bool number_unsigned(number_unsigned_t val) override {
+        // Up to int64 it is an ordinary integer.  Above that the value is still
+        // an exact integer, so box it instead of letting the cast wrap it.
+        if (val <= static_cast<number_unsigned_t>(INT64_MAX)) {
+            return push(Value(static_cast<int64_t>(val)));
+        }
+        bool ok = false;
+        Value boxed = bigIntFromDecimalText(std::to_string(val), ok);
+        if (!ok) { failed = true; return false; }
+        return push(boxed);
+    }
+
+    bool number_float(number_float_t val, const string_t& written) override {
+        // An integer-shaped token here is an integer too large for uint64 that
+        // nlohmann degraded to a double.  Recover it exactly from its digits.
+        if (isJsonIntegerToken(written)) {
+            bool ok = false;
+            Value boxed = bigIntFromDecimalText(written, ok);
+            if (!ok) { failed = true; return false; }
+            return push(boxed);
+        }
+        return push(Value(static_cast<double>(val)));
+    }
+
+    bool string(string_t& val) override {
+        return push(GcHeap::instance().alloc<GcString>(val));
+    }
+
+    /// JSON has no binary type; there is nothing to build, but the event must
+    /// not abort the parse.
+    bool binary(binary_t&) override { return true; }
+
+    bool start_object(std::size_t) override {
+        if (failed) return false;
+        stack_.push_back({GcHeap::instance().alloc<Dict>(), true, {}});
+        return true;
+    }
+
+    bool key(string_t& val) override {
+        if (failed || stack_.empty()) return false;
+        stack_.back().key = val;
+        return true;
+    }
+
+    bool end_object() override { return popContainer(); }
+
+    bool start_array(std::size_t) override {
+        if (failed) return false;
+        stack_.push_back({GcHeap::instance().alloc<Array>(), false, {}});
+        return true;
+    }
+
+    bool end_array() override { return popContainer(); }
+
+    bool parse_error(std::size_t, const std::string&,
+                     const nlohmann::detail::exception&) override {
+        failed = true;
+        return false;  // must be false: parsing cannot continue
+    }
+
+private:
+    struct Frame {
+        Value container;    ///< The Array or Dict being filled.
+        bool isObject;      ///< True for an object, false for an array.
+        std::string key;    ///< Pending key for the next value in an object.
+    };
+
+    /// Attach a finished value to the enclosing container, or make it the root.
+    bool push(Value v) {
+        if (failed) return false;
+        if (stack_.empty()) {
+            result = v;
+            return true;
+        }
+        Frame& frame = stack_.back();
+        if (frame.isObject) {
+            frame.container.asDict()->pairs[frame.key] = v;
+        } else {
+            frame.container.asArray()->elements.push_back(v);
+        }
+        return true;
+    }
+
+    /// Finish the current container and attach it to its parent.
+    bool popContainer() {
+        if (failed || stack_.empty()) {
+            failed = true;
+            return false;
+        }
+        Value container = stack_.back().container;
+        stack_.pop_back();
+        return push(container);
+    }
+
+    std::vector<Frame> stack_;  ///< Open containers, outermost first.
+};
+
 /// Convert a nlohmann::json value to a Vora Value.
+///
+/// Kept for the DOM-based paths; jsonParse itself uses JsonValueSax so that
+/// integers beyond int64 survive.
 ///
 /// Mapping:
 ///   null          → nullptr
@@ -1286,18 +1445,21 @@ nlohmann::json valueToJson(const Value& val) {
 
 void registerJsonBuiltins(VM& vm) {
     /// jsonParse(str) — parse a JSON string into a Vora value.
-    /// Returns null on parse error (including empty string or non-string input).
+    /// Returns null on parse error (including empty string or non-string input),
+    /// and on an integer too large for a GcBigInt to hold.
+    ///
+    /// Parsed through JsonValueSax rather than the DOM so that integer tokens
+    /// beyond int64 keep their exact value instead of wrapping or degrading to a
+    /// double.
     vm.defineNative("jsonParse", 1,
         [](const std::vector<Value>& arguments) -> Value {
             if (!arguments[0].isGcString())
                 return nullptr;
             const auto& str = arguments[0].asGcString()->value;
-            try {
-                nlohmann::json j = nlohmann::json::parse(str);
-                return jsonToValue(j);
-            } catch (const nlohmann::json::parse_error&) {
-                return nullptr;
-            }
+            JsonValueSax sax;
+            if (!nlohmann::json::sax_parse(str, &sax)) return nullptr;
+            if (sax.failed) return nullptr;
+            return sax.result;
         });
 
     /// jsonStringify(value, indent?) — serialize a Vora value to a JSON string.

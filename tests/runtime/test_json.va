@@ -1,0 +1,122 @@
+// runtime/test_json.va — jsonParse / jsonStringify
+// Run: vora tests/runtime/test_json.va
+//
+// Regression tests for JSON integers beyond int64. jsonParse used to hand the
+// underlying parser's result straight to an int conversion, which wrapped
+// 2^63..2^64-1 into negative numbers, and anything larger had already been
+// degraded to a double by the parser itself, losing digits:
+//
+//     jsonParse("9223372036854775808")             // -9223372036854775808
+//     jsonParse("123456789012345678901234567890")  // 123456789012345677877719597056.0
+//
+// Both are silent wrong values. Integers are now rebuilt exactly from the token
+// text, while reals stay doubles — JSON distinguishes the two syntactically.
+
+print("=== Runtime: JSON Tests ===")
+
+// ---------------------------------------------------------------------------
+// int64 boundaries — the values that must stay exact
+// ---------------------------------------------------------------------------
+assert(toString(jsonParse("9223372036854775807")) == "9223372036854775807", "int64 max")
+assert(toString(jsonParse("-9223372036854775808")) == "-9223372036854775808", "int64 min")
+assert(toString(jsonParse("0")) == "0", "zero")
+assert(toString(jsonParse("-1")) == "-1", "negative one")
+
+// ---------------------------------------------------------------------------
+// Beyond int64: previously a silent sign flip (2^63 .. 2^64-1)
+// ---------------------------------------------------------------------------
+assert(toString(jsonParse("9223372036854775808")) == "9223372036854775808",
+       "2^63 keeps its sign and its digits")
+assert(toString(jsonParse("18446744073709551615")) == "18446744073709551615",
+       "uint64 max keeps its digits")
+assert(jsonParse("9223372036854775808") == 9223372036854775807 + 1,
+       "2^63 equals int64 max + 1, exactly")
+assert(jsonParse("9223372036854775808") > 0, "2^63 is positive")
+
+// ---------------------------------------------------------------------------
+// Beyond uint64: previously a double, losing digits
+// ---------------------------------------------------------------------------
+assert(toString(jsonParse("18446744073709551616")) == "18446744073709551616", "2^64 exact")
+assert(toString(jsonParse("123456789012345678901234567890")) ==
+       "123456789012345678901234567890", "30-digit integer exact")
+assert(toString(jsonParse("-123456789012345678901234567890")) ==
+       "-123456789012345678901234567890", "negative 30-digit integer exact")
+assert(toString(jsonParse("-9223372036854775809")) == "-9223372036854775809",
+       "one below int64 min exact")
+
+// Exactness is not only textual: arithmetic on the parsed value is exact too.
+assert(jsonParse("123456789012345678901234567890") + 1 ==
+       jsonParse("123456789012345678901234567891"), "big integer addition is exact")
+assert(jsonParse("123456789012345678901234567890") -
+       jsonParse("123456789012345678901234567890") == 0, "big integer subtraction is exact")
+
+// ---------------------------------------------------------------------------
+// These are integers, not floats
+// ---------------------------------------------------------------------------
+assert(type(jsonParse("2")) == "int", "small integer token is an int")
+assert(type(jsonParse("9223372036854775808")) == "int", "integer beyond int64 is an int")
+assert(type(jsonParse("123456789012345678901234567890")) == "int",
+       "integer beyond uint64 is still an int, not a float")
+assert(type(jsonParse("1.5")) == "float", "real token is a float")
+assert(type(jsonParse("1e30")) == "float", "exponent token is a float")
+
+// ---------------------------------------------------------------------------
+// Reals keep double behaviour: a written-out real is a real, never a big int
+// ---------------------------------------------------------------------------
+assert(jsonParse("1.5") == 1.5, "1.5")
+assert(jsonParse("-0.5") == -0.5, "-0.5")
+assert(type(jsonParse("100000000000000000000.0")) == "float",
+       "a real token spelled with .0 stays a float even past uint64")
+
+// ---------------------------------------------------------------------------
+// Structures
+// ---------------------------------------------------------------------------
+let arr = jsonParse("[1, 2, 3]")
+assert(len(arr) == 3, "array length")
+assert(arr[1] == 2, "array index")
+assert(len(jsonParse("[[]]")[0]) == 0, "empty nested array")
+assert(jsonParse("[[1,[2,[3]]]]")[0][1][1][0] == 3, "deep nesting")
+
+let obj = jsonParse("{\"a\": 1, \"b\": 2}")
+assert(obj["a"] == 1 and obj["b"] == 2, "object members")
+assert(jsonParse("{\"a\": 1, \"a\": 2}")["a"] == 2, "duplicate key: the last one wins")
+
+let nested = jsonParse("{\"n\": [9223372036854775808, 1.5, \"s\"]}")
+assert(toString(nested["n"][0]) == "9223372036854775808", "big integer nested in a document")
+assert(nested["n"][1] == 1.5, "float nested in a document")
+assert(nested["n"][2] == "s", "string nested in a document")
+
+// ---------------------------------------------------------------------------
+// Scalars and string escapes
+// ---------------------------------------------------------------------------
+assert(jsonParse("true") == true and jsonParse("false") == false, "booleans")
+assert(jsonParse("null") == null, "null")
+assert(jsonParse("\"hi\"") == "hi", "string")
+assert(jsonParse("\"a\\nb\"") == "a\nb", "escaped newline inside a JSON string")
+assert(jsonParse("\"a\\tb\"") == "a\tb", "escaped tab inside a JSON string")
+assert(jsonParse("\"\\u00e9\"") == "é", "unicode escape")
+
+// ---------------------------------------------------------------------------
+// Failure is reported as null rather than as a partial value
+// ---------------------------------------------------------------------------
+assert(jsonParse("") == null, "empty input")
+assert(jsonParse("{") == null, "truncated object")
+assert(jsonParse("[1,") == null, "truncated array")
+assert(jsonParse("nope") == null, "bare word")
+assert(jsonParse("{\"a\": }") == null, "missing value")
+assert(jsonParse(5) == null, "non-string input")
+
+// ---------------------------------------------------------------------------
+// jsonStringify: a JSON number carries an int64, so anything larger is emitted
+// as its exact decimal digits inside a string.
+// ---------------------------------------------------------------------------
+assert(jsonStringify(2) == "2", "small integer")
+assert(jsonStringify(9223372036854775807) == "9223372036854775807", "int64 max as a number")
+assert(jsonStringify(jsonParse("9223372036854775808")) == "\"9223372036854775808\"",
+       "2^63 is emitted as a decimal string")
+assert(jsonStringify([1, "a", true, null]) == "[1,\"a\",true,null]", "array form")
+assert(jsonStringify(jsonParse("[1,2,3]")) == "[1,2,3]", "in-range round trip is byte identical")
+assert(jsonParse(jsonStringify(4611686018427387904)) == 4611686018427387904,
+       "round trip of an integer that fits int64 but not the inline payload")
+
+print("Runtime JSON tests: PASS")
