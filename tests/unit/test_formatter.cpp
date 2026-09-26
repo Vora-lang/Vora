@@ -667,3 +667,61 @@ TEST_CASE("fmt_normalizes_trailing_commas") {
     CHECK(isIdempotent("func f(a, b,) { return a }"));
     CHECK(isIdempotent("let [p, q,] = arr"));
 }
+
+// ============================================================================
+// Operator coverage in the precedence table
+// ============================================================================
+
+TEST_CASE("fmt_idempotent_bitwise_and_shift") {
+    // Regression: |, ^, &, << and >> were missing from the formatter's
+    // precedence table, so they fell through to PREC_PRIMARY — the atom level,
+    // which is the *highest*. A binary operator there demands strictly more
+    // precedence from its right operand than anything can have, so every right
+    // operand was parenthesized again on each pass:
+    //
+    //     (6 & 3)  ->  (6 & (3))  ->  (6 & ((3)))  ->  ...
+    //
+    // These are the operators that were affected; each must format to itself.
+    CHECK(isIdempotent("let a = 6 & 3;"));
+    CHECK(isIdempotent("let a = 6 | 3;"));
+    CHECK(isIdempotent("let a = 6 ^ 3;"));
+    CHECK(isIdempotent("let a = ~6;"));
+    CHECK(isIdempotent("let a = 1 << 2;"));
+    CHECK(isIdempotent("let a = 1 >> 2;"));
+    CHECK(isIdempotent("let a = 1 | 2 & 3;"));
+    CHECK(isIdempotent("let a = (1 | 2) & 3;"));
+    CHECK(isIdempotent("let a = 1 | (2 & 3);"));
+    CHECK(isIdempotent("let a = 1 ^ 2 | 3 & 4;"));
+    CHECK(isIdempotent("let a = 1 << 2 + 3;"));
+    CHECK(isIdempotent("let a = (1 << 2) + 3;"));
+    CHECK(isIdempotent("let a = 1 + 2 << 3;"));
+    CHECK(isIdempotent("let a = 1 & 2 == 3;"));
+    CHECK(isIdempotent("let a = (1 & 2) == 3;"));
+    CHECK(isIdempotent("let a = a & b | c ^ d;"));
+    CHECK(isIdempotent("let a = x in xs;"));
+    CHECK(isIdempotent("let a = x in xs & ys;"));
+    CHECK(isIdempotent("let a = (x + 1) in xs;"));
+    CHECK(isIdempotent("let a = x in xs == true;"));
+}
+
+TEST_CASE("fmt_no_redundant_parens_on_bitwise_operands") {
+    // The same defect also *added* parens it did not need. Formatting once must
+    // not introduce any, and in particular must not double an existing pair.
+    auto once = [](const std::string& src) { return fmt(src); };
+    CHECK(once("let a = 6 & 3;").find("((") == std::string::npos);
+    CHECK(once("let a = 1 | 2 & 3;").find("((") == std::string::npos);
+    CHECK(once("let a = 1 << 2 + 3;").find("((") == std::string::npos);
+    // A single explicit pair is preserved as written, not multiplied.
+    CHECK(once("let a = 6 & 3;").find("(3)") == std::string::npos);
+    CHECK(once("let a = (6 & 3);").find("(6 & 3)") != std::string::npos);
+    CHECK(once("let a = (6 & 3);").find("((6") == std::string::npos);
+}
+
+TEST_CASE("fmt_preserves_needed_bitwise_parens") {
+    // The precedence fix must not *drop* a pair the shape needs: `|` is looser
+    // than `&`, so the grouping changes the value and has to survive.
+    CHECK(fmt("let a = (1 | 2) & 3;").find("(1 | 2)") != std::string::npos);
+    CHECK(fmt("let a = (1 << 2) + 3;").find("(1 << 2)") != std::string::npos);
+    CHECK(fmt("let a = (1 & 2) == 3;").find("(1 & 2)") != std::string::npos);
+}
+

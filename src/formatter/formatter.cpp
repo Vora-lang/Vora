@@ -302,16 +302,35 @@ static std::string formatFloatLiteral(double d) {
 // =========================================================================
 
 // PREC_NONE = 0 (not used as an operator precedence — indicates no context)
+//
+// The levels below use the same numbers as Parser::getPrecedence() so the two
+// tables can be compared line by line.  Every operator the parser knows must
+// appear here: an operator left out falls through to PREC_PRIMARY, which is the
+// *highest* level, and a binary operator at that level demands strictly more
+// precedence from its right operand than anything can have — so the operand is
+// parenthesized on every pass and the parentheses pile up.
+//
+// One deliberate deviation: the parser puts `?:` at level 1, alongside `||`,
+// while this table keeps it at level 2 next to `&&`.  The formatter treats a
+// ternary as binding slightly tighter than it does, which can only *omit* a
+// redundant pair; parentheses the shape actually needs are either implied by a
+// higher-precedence context or present in the source as a GroupingExpr, and
+// visitGroupingExpr always re-emits those.  Tightening it to 1 would change the
+// formatting of existing ternaries, so it is left as-is.
 enum {
-    PREC_ASSIGNMENT  = 1,   // =, +=, -=, etc., OR
+    PREC_ASSIGNMENT  = 1,   // =, +=, -=, ..., OR, ??
     PREC_AND_TERNARY = 2,   // &&, ?:
-    PREC_EQUALITY    = 3,   // ==, !=
-    PREC_COMPARISON  = 4,   // <, <=, >, >=
-    PREC_TERM        = 5,   // +, -
-    PREC_FACTOR      = 6,   // *, /, %
-    PREC_POWER       = 7,   // **
-    PREC_UNARY       = 8,   // !, -, ++, --
-    PREC_CALL        = 9,   // function call, index, property
+    PREC_BIT_OR      = 3,   // |
+    PREC_BIT_XOR     = 4,   // ^
+    PREC_BIT_AND     = 5,   // &
+    PREC_EQUALITY    = 6,   // ==, !=
+    PREC_COMPARISON  = 7,   // in, <, <=, >, >=
+    PREC_SHIFT       = 8,   // <<, >>
+    PREC_TERM        = 9,   // +, -
+    PREC_FACTOR      = 10,  // *, /, %
+    PREC_POWER       = 11,  // **
+    PREC_UNARY       = 12,  // !, -, ++, --
+    PREC_CALL        = 13,  // function call, index, property
     PREC_PRIMARY     = 100  // literal, variable, grouping, array, dict
 };
 
@@ -361,15 +380,32 @@ int SourceFormatter::tokenPrecedence(TokenType type) {
         case TokenType::QUESTION:
             return PREC_AND_TERNARY;
 
+        // Bitwise operators, loose to tight: | then ^ then &, all looser than
+        // == / != (the C and JS layout, documented in the EBNF §6).
+        case TokenType::PIPE:
+            return PREC_BIT_OR;
+
+        case TokenType::CARET:
+            return PREC_BIT_XOR;
+
+        case TokenType::AMPERSAND:
+            return PREC_BIT_AND;
+
         case TokenType::EQUAL_EQUAL:
         case TokenType::NOT_EQUAL:
             return PREC_EQUALITY;
 
+        case TokenType::IN:
         case TokenType::LESS:
         case TokenType::LESS_EQUAL:
         case TokenType::GREATER:
         case TokenType::GREATER_EQUAL:
             return PREC_COMPARISON;
+
+        // Shifts bind tighter than relational but looser than additive.
+        case TokenType::LESS_LESS:
+        case TokenType::GREATER_GREATER:
+            return PREC_SHIFT;
 
         case TokenType::PLUS:
         case TokenType::MINUS:
