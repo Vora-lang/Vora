@@ -8,6 +8,9 @@
 #include "vm/chunk.h"
 #include "vm/opcode.h"
 
+#include <cmath>
+#include <limits>
+
 using namespace vora;
 
 TEST_CASE("chunk_empty") {
@@ -167,3 +170,57 @@ TEST_CASE("chunk_writeConstant_emits_opcode_and_index") {
     CHECK(c.constants[0].isInt());
     CHECK(c.constants[0].asInt() == 42);
 }
+
+// ============================================================================
+// Double constant identity
+// ============================================================================
+
+TEST_CASE("chunk_double_constants_dedupe_by_bit_pattern") {
+    Chunk c;
+    const size_t zero = c.addConstant(Value(0.0));
+    const size_t negativeZero = c.addConstant(Value(-0.0));
+
+    // -0.0 == 0.0 is true, so keying the dedup index by value merged the two and
+    // gave the second one the first one's slot — which is how `0.0` could print
+    // as "-0.000000". They are distinct constants and must stay distinct.
+    CHECK(zero != negativeZero);
+    CHECK(c.constants.size() == 2);
+    REQUIRE(c.constants[zero].isDouble());
+    REQUIRE(c.constants[negativeZero].isDouble());
+    CHECK(c.constants[zero].asDouble() == 0.0);
+    CHECK(std::signbit(c.constants[zero].asDouble()) == false);
+    CHECK(std::signbit(c.constants[negativeZero].asDouble()) == true);
+
+    // Order must not matter: neither spelling may displace the other.
+    Chunk reversed;
+    const size_t rz = reversed.addConstant(Value(-0.0));
+    const size_t rp = reversed.addConstant(Value(0.0));
+    CHECK(rz != rp);
+    CHECK(std::signbit(reversed.constants[rz].asDouble()) == true);
+    CHECK(std::signbit(reversed.constants[rp].asDouble()) == false);
+}
+
+TEST_CASE("chunk_double_constants_still_dedupe_equal_values") {
+    // The bit-pattern key must not cost the dedup it was built for.
+    Chunk c;
+    const size_t a = c.addConstant(Value(1.5));
+    const size_t b = c.addConstant(Value(1.5));
+    CHECK(a == b);
+    CHECK(c.constants.size() == 1);
+    const size_t pi = c.addConstant(Value(3.141592653589793));
+    const size_t piAgain = c.addConstant(Value(3.141592653589793));
+    CHECK(pi == piAgain);
+    CHECK(c.constants.size() == 2);
+}
+
+TEST_CASE("chunk_nan_constants_are_not_deduplicated") {
+    // NaN != NaN, so NaN never matches an existing entry; each literal keeps its
+    // own constant, as it did before the key changed.
+    Chunk c;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const size_t a = c.addConstant(Value(nan));
+    const size_t b = c.addConstant(Value(nan));
+    CHECK(a != b);
+    CHECK(c.constants.size() == 2);
+}
+

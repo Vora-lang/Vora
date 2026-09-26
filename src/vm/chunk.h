@@ -240,11 +240,14 @@ private:
     /**
      * @brief Hash index for O(1) double constant deduplication.
      *
-     * Frequent in numeric-heavy code. NaN values are excluded — per IEEE 754,
-     * NaN != NaN, so a NaN can never match an existing entry and is always
-     * treated as a new constant.
+     * Frequent in numeric-heavy code. Keyed by the IEEE 754 bit pattern rather
+     * than by the value: -0.0 == 0.0 evaluates true, so a value-keyed map folds
+     * the two together and whichever is interned first silently replaces the
+     * other — a `0.0` literal could print as "-0.000000", and a `-0.0` literal
+     * could lose its sign. NaN values are still excluded, so every NaN literal
+     * remains a distinct constant exactly as before.
      */
-    std::unordered_map<double, size_t> doubleConstantIndices_;
+    std::unordered_map<uint64_t, size_t> doubleConstantIndices_;
 
     // RLE state — tracks the most recently written position to decide
     // whether to extend the current run or start a new one.

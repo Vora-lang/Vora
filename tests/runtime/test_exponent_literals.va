@@ -83,4 +83,21 @@ assert(0.1 + 0.2 != 0.3, "ordinary inexact decimals are unaffected")
 // `1e400` overflows double; verified in tests/unit/test_parser.cpp, since a
 // script cannot assert its own failure to compile.
 
+
+// --- Signed zero: both spellings survive as themselves --------------------
+// 0.0 and -0.0 compare equal, so a constant pool that de-duplicated doubles by
+// value merged them and swapped one for the other: with `-0.0` declared first,
+// a plain `0.0` literal printed as "-0.000000".
+let positiveZero = 0.0
+let negativeZero = -0.0
+assert(toString(positiveZero) == "0.000000", "0.0 prints without a sign")
+assert(toString(negativeZero) == "-0.000000", "-0.0 keeps its sign")
+assert(positiveZero == negativeZero, "they still compare equal, as IEEE 754 says")
+
+// The same values in the opposite declaration order.
+let negativeFirst = -0.0
+let positiveSecond = 0.0
+assert(toString(negativeFirst) == "-0.000000", "-0.0 first: keeps its sign")
+assert(toString(positiveSecond) == "0.000000", "0.0 second: still unsigned")
+
 print("All exponent literal tests passed!")

@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 
 namespace vora {
 
@@ -220,6 +221,17 @@ void Chunk::writeLineColumnRepeat(int line, int column, int count) {
     lastColumn = column;
 }
 
+/// @brief The IEEE 754 bit pattern of a double, as a deduplication key.
+///
+/// Constant-pool identity for a double has to follow the bits, not the value:
+/// -0.0 == 0.0 is true, so a map keyed by value folds them together and
+/// whichever is interned first silently replaces the other.
+static uint64_t doubleBits(double d) {
+    uint64_t bits = 0;
+    std::memcpy(&bits, &d, sizeof(bits));
+    return bits;
+}
+
 size_t Chunk::addConstant(Value value) {
     // O(1) hash lookup for string constants.
     if (value.isGcString()) {
@@ -234,12 +246,15 @@ size_t Chunk::addConstant(Value value) {
         if (it != intConstantIndices_.end()) return it->second;
     }
 
-    // O(1) hash lookup for double constants.
-    // NaN is excluded — NaN != NaN per IEEE 754, so it can never be a duplicate.
+    // O(1) hash lookup for double constants, keyed by bit pattern so that
+    // -0.0 and 0.0 stay separate constants (they compare equal, so a value key
+    // would merge them and hand one of them the other's slot).
+    // NaN is still excluded — NaN != NaN per IEEE 754, so it can never be a
+    // duplicate and each NaN literal stays its own constant.
     if (value.isDouble()) {
         double d = value.asDouble();
         if (!std::isnan(d)) {
-            auto it = doubleConstantIndices_.find(d);
+            auto it = doubleConstantIndices_.find(doubleBits(d));
             if (it != doubleConstantIndices_.end()) return it->second;
         }
     }
@@ -277,7 +292,7 @@ size_t Chunk::addConstant(Value value) {
     } else if (value.isDouble()) {
         double d = value.asDouble();
         if (!std::isnan(d)) {
-            doubleConstantIndices_[d] = idx;
+            doubleConstantIndices_[doubleBits(d)] = idx;
         }
     }
 
