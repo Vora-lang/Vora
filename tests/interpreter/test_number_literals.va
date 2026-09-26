@@ -44,3 +44,45 @@ assert(0xFFFF == 65535, "0xFFFF should be 65535")
 assert(bin(255) == "0b11111111", "bin(255) should be 8 bits")
 
 print("Hex/oct/bin literals + builtins: PASS")
+// === Arbitrary precision: values outside the inline range ==================
+// These all returned null: isInt() is false for a boxed integer, so hex/bin/oct
+// fell through to their "not a number" arm.
+assert(hex(9223372036854775807) == "0x7fffffffffffffff", "hex of int64 max")
+assert(hex(9223372036854775808) == "0x8000000000000000", "hex of 2^63")
+assert(bin(9223372036854775808) ==
+       "0b1000000000000000000000000000000000000000000000000000000000000000",
+       "bin of 2^63")
+assert(oct(9223372036854775808) == "0o1000000000000000000000", "oct of 2^63")
+
+let huge = 123456789012345678901234567890
+assert(hex(huge) == "0x18ee90ff6c373e0ee4e3f0ad2", "hex of a 30-digit integer")
+assert(oct(huge) == "0o143564417755415637016711617605322", "oct of a 30-digit integer")
+assert(bin(huge) ==
+       "0b1100011101110100100001111111101101100001101110011111000001110111001001110001111110000101011010010",
+       "bin of a 30-digit integer")
+
+// === Negatives: one sign, in front of the magnitude ========================
+// hex(-255) used to be "-0xffffffffffffff01" — the two's-complement bit pattern
+// with a minus sign glued on, which is a different number, silently.
+assert(hex(-255) == "-0xff", "hex of a negative")
+assert(oct(-255) == "-0o377", "oct of a negative")
+assert(bin(-255) == "-0b11111111", "bin of a negative")
+assert(hex(-9223372036854775808) == "-0x8000000000000000", "hex of int64 min")
+assert(hex(-huge) == "-0x18ee90ff6c373e0ee4e3f0ad2", "hex of a negative 30-digit integer")
+assert(bin(-9223372036854775808) ==
+       "-0b1000000000000000000000000000000000000000000000000000000000000000",
+       "bin of a negative power of two")
+
+// The sign is the only difference between the two renderings.
+assert(hex(-255) == "-" + hex(255), "sign and magnitude agree")
+assert(oct(-huge) == "-" + oct(huge), "sign and magnitude agree for a big value")
+
+// === Doubles and non-numbers keep their previous behaviour =================
+assert(hex(255.9) == "0xff", "a double truncates toward zero")
+assert(hex(-255.9) == "-0xff", "a negative double truncates toward zero")
+assert(hex(0.0) == "0x0", "a zero double")
+assert(hex("255") == null, "a string is not a number")
+assert(hex([]) == null, "an array is not a number")
+assert(hex(null) == null, "null is not a number")
+assert(bin("x") == null and oct(null) == null, "the same holds for bin and oct")
+

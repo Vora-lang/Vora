@@ -33,6 +33,63 @@
 
 namespace vora {
 
+namespace {
+
+/// @brief Render an integer in base 2, 8 or 16, exactly and at any magnitude.
+///
+/// Backs `bin`, `oct` and `hex`. The sign is written once, in front of the
+/// magnitude's digits, so `hex(-255)` is "-0xff" — Python's rule, and the only
+/// reading of a base-prefixed literal that round-trips. A double argument is
+/// truncated toward zero, as before.
+///
+/// Two defects this replaces: negative arguments were rendered from their
+/// two's-complement bit pattern with a minus sign glued on, so `hex(-255)` gave
+/// "-0xffffffffffffff01" — a different number, silently; and an argument boxed
+/// as a GcBigInt (any integer outside the inline range, including int64 max)
+/// fell through to null, since isInt() is false for a BigInt.
+///
+/// @param arg  The value to render.
+/// @param base 2, 8 or 16.
+/// @return The rendered string, or null when @p arg is not a number.
+Value integerToBaseString(const Value& arg, int base) {
+    BigInt magnitude;
+    if (arg.isBigInt()) {
+        magnitude = arg.asBigInt()->value;
+    } else if (arg.isInt()) {
+        magnitude = BigInt::fromInt64(arg.asInt());
+    } else if (arg.isDouble()) {
+        magnitude = BigInt::fromDoubleTrunc(arg.asDouble());
+    } else {
+        return nullptr;  // not a number
+    }
+
+    const bool negative = magnitude.isNegative();
+    if (negative) magnitude = BigInt::negate(magnitude);
+
+    const char* digitChars = "0123456789abcdef";
+    std::string digits;
+    if (magnitude.isZero()) {
+        digits = "0";
+    } else {
+        const BigInt radix = BigInt::fromInt64(base);
+        while (!magnitude.isZero()) {
+            BigInt quotient;
+            BigInt remainder;
+            if (!BigInt::divModTrunc(magnitude, radix, quotient, remainder)) break;
+            digits.insert(digits.begin(),
+                          digitChars[static_cast<size_t>(remainder.toInt64())]);
+            magnitude = quotient;
+        }
+    }
+
+    std::string result = negative ? "-" : "";
+    result += (base == 16) ? "0x" : (base == 8) ? "0o" : "0b";
+    result += digits;
+    return GcHeap::instance().alloc<GcString>(result);
+}
+
+} // namespace
+
 // ============================================================================
 // User-facing built-in native functions
 // ============================================================================
@@ -252,56 +309,17 @@ void registerBuiltins(VM& vm) {
 
     vm.defineNative("bin", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            int64_t n;
-            if (arguments[0].isInt())
-                n = arguments[0].asInt();
-            else if (arguments[0].isDouble())
-                n = static_cast<int64_t>(std::trunc(arguments[0].asDouble()));
-            else
-                return nullptr;  // non-numeric argument
-            if (n == 0) return GcHeap::instance().alloc<GcString>("0b0");
-            bool neg = n < 0;
-            // static_cast<uint64_t>(n) is well-defined even for negative n
-            // (two's complement). Avoids signed overflow UB when n == INT64_MIN.
-            uint64_t u = static_cast<uint64_t>(n);
-            std::string bits;
-            while (u > 0) { bits = (u & 1 ? '1' : '0') + bits; u >>= 1; }
-            return GcHeap::instance().alloc<GcString>((neg ? std::string("-0b") : std::string("0b")) + bits);
+            return integerToBaseString(arguments[0], 2);
         });
 
     vm.defineNative("oct", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            int64_t n;
-            if (arguments[0].isInt())
-                n = arguments[0].asInt();
-            else if (arguments[0].isDouble())
-                n = static_cast<int64_t>(std::trunc(arguments[0].asDouble()));
-            else
-                return nullptr;  // non-numeric argument
-            if (n == 0) return GcHeap::instance().alloc<GcString>("0o0");
-            bool neg = n < 0;
-            uint64_t u = static_cast<uint64_t>(n);
-            std::string digits;
-            while (u > 0) { digits = static_cast<char>('0' + (u & 7)) + digits; u >>= 3; }
-            return GcHeap::instance().alloc<GcString>((neg ? std::string("-0o") : std::string("0o")) + digits);
+            return integerToBaseString(arguments[0], 8);
         });
 
     vm.defineNative("hex", 1,
         [](const std::vector<Value>& arguments) -> Value {
-            int64_t n;
-            if (arguments[0].isInt())
-                n = arguments[0].asInt();
-            else if (arguments[0].isDouble())
-                n = static_cast<int64_t>(std::trunc(arguments[0].asDouble()));
-            else
-                return nullptr;  // non-numeric argument
-            if (n == 0) return GcHeap::instance().alloc<GcString>("0x0");
-            bool neg = n < 0;
-            uint64_t u = static_cast<uint64_t>(n);
-            const char* hexChars = "0123456789abcdef";
-            std::string digits;
-            while (u > 0) { digits = hexChars[u & 0xF] + digits; u >>= 4; }
-            return GcHeap::instance().alloc<GcString>((neg ? std::string("-0x") : std::string("0x")) + digits);
+            return integerToBaseString(arguments[0], 16);
         });
 
     vm.defineNative("toString", 1,
