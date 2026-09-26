@@ -270,8 +270,9 @@ therefore not comparable — the ninth is the VM defect above.
     the block comment in `src/vora.h`.
   - `jsonStringify` emits an integer within `int64` as a JSON number and
     anything larger as a decimal string, since a JSON number cannot carry
-    arbitrary precision. (JSON *input* numbers beyond `int64` still lose
-    precision inside the underlying JSON parser; unchanged.)
+    arbitrary precision. (JSON *input* numbers beyond `int64` lost precision
+    inside the underlying JSON parser at this tag; `jsonParse` was fixed to keep
+    them exact afterwards — see `[Unreleased] → Fixed`.)
   - Incidental fix required by the above: `Chunk` constant pools are now traced
     by the GC. `FunctionPrototype::trace()` was an empty stub and
     `VM::collectGarbage()` never scanned a chunk's constants, so a heap object
