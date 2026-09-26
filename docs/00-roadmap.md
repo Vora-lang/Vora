@@ -271,10 +271,30 @@ P2 项处置（v0.30 冻结前裁定，详见 `docs/18-v0.30-冻结计划.md`）
 
 | 已知限制 | 影响 | 状态 |
 |---|---|---|
-| 函数内局部容器增长超过约 512 KiB 后 VM 不可靠 | 见下 | 既有缺陷（v0.30.0 二进制同样复现），需单独一轮 GC 排查 |
+| GC 标记阶段不标记传递闭包 + 安全点只有调用类 opcode | 用后释放（垃圾值 / 帧信息错乱 / segfault / 挂死）、长循环内存无界 | 既有缺陷（v0.30.0 二进制同样复现）。**设计已完成**：`docs/20-gc-safety-design.md`，待实现 |
 
-GC **只在 `OP_CALL` / `OP_CALL_N` / `OP_TAIL_CALL` 三处**触发，所以一个只分配、不调用
-任何函数的循环永远不回收；而某次真正发生的回收若撞上正在增长的局部容器，会留下损坏的帧：
+一轮专门排查已定位到**两个彼此独立**的缺陷（详见 `docs/20-gc-safety-design.md`）：
+
+1. **标记阶段只标记「直接根」**：`collectMinor` / `collectMajor` 的闭包循环只调 `obj->trace()`
+   从不 `setMarked()`，为此而写的 `GcHeap::mark()` 是死代码。于是经 `trace()` 到达的对象
+   （数组元素、字典值、函数原型、嵌套容器……）在 sweep 时被释放，父对象里留下悬垂指针；
+   **对象图有环时遍历本身不终止，确定性挂死**。
+2. **安全点只有调用类 opcode**（`OP_CALL` / `OP_CALL_N` / `OP_TAIL_CALL` / `OP_CALL_KW`），
+   没有循环回边，所以只分配、不调用任何函数的循环永远不回收。
+
+最小复现（确定性挂死，10 行）：
+
+```vora
+func tick() { return 1 }
+let a = [1]
+let b = [a]
+a.add(b)                       // a -> b -> a，从根可达的环
+let i = 0
+while (i < 30000) { let junk = [i] i = i + tick() }
+print("cycle survived:", len(a))   // 修复前：超时被杀
+```
+
+原报告的那一形状（函数内局部容器增长）在本机实测 5/6 段错误：
 
 ```vora
 func build(n) {
@@ -283,13 +303,14 @@ func build(n) {
     while (i < n) { arr.add(1); i += 1 }
     return len(arr)
 }
-print(build(20000))     // 约四次里三次 segfault
+print(build(20000))     // 修复前：约六次里五次 segfault
 ```
 
-同一成因的其他表现：20 行文件里报出 `[368:368]` 这样的帧号；`Invalid property name in
-constant pool` 指向不可能的第 714 列。它也是 `tests/unit/test_bigint.cpp` 的
-`bigint_survives_gc_while_referenced_from_a_constant_pool` 在可用内存不足约 8 GB 时失败的原因 ——
-该用例的脚本用字符串拼接造出 40 万字符（约 8 GB 分配），而这个循环同样没有回收机会。
+同一成因的其他表现：20 行文件里报出 `[368:368]` 这样的帧号、`[594:-229376]` 这样的负列号、
+`Invalid property name in constant pool` 指向不可能的第 714 列。它也是
+`tests/unit/test_bigint.cpp` 的 `bigint_survives_gc_while_referenced_from_a_constant_pool`
+在可用内存不足约 8 GB 时失败的原因 —— 该用例的脚本用字符串拼接造出 40 万字符（约 8 GB 分配），
+而这个循环没有任何回收机会，所以它测的是空闲内存而不是正确性（设计文档 §4.2 给出改造方案）。
 
 **测量口径**：对全部已跟踪的 `.va` 文件逐个**就地**格式化（相对 import 依赖文件自身目录），
 再比较幂等性与格式化前后运行行为。当前：242 个文件、**非幂等 0 个**、不可解析 2 个
